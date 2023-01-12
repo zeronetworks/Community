@@ -1,3 +1,4 @@
+Import-Module ActiveDirectory, GroupPolicy
 $adDomain = Get-ADDomain
 
 $rules = New-object "System.Collections.Generic.Dictionary[[String],[String]]"
