@@ -1,3 +1,10 @@
+<#
+    .Synopsis
+    Simple API Call to add an OT/IoT asset entry to Zero Networks
+    .Description
+    This example will loop through OT assets in a provided CSV file and then add each individual asset to Zero Networks OT/IoT asset group.
+#>
+
 $apikey = "<apiKey>"
 
 $OTAssets = import-csv .\ESXHostIPs.csv

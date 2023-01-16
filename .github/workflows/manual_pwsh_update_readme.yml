@@ -21,6 +21,23 @@ jobs:
 
           ForEach ($folder in $folders) {
               Add-Content -Path "./README.md" -Value "## $($folder.name)"
+
+              $files = Get-ChildItem $folder.FullName -File
+              if ($files.count -gt 0) {
+                  Add-Content -Path "./README.md" -Value "|Filename|Description|"
+                  Add-Content -Path "./README.md" -Value "|---|---|"
+
+                  ForEach ($file in $files) {
+
+                      # Check for synopsis
+                      if ((Get-Help $file.Fullname).Description) {
+                          $description = (Get-Help $file.Fullname).Synopsis
+                      } else {$description = ""}
+
+                      ## Add description
+                      Add-Content -Path "./README.md" -Value "|$($file.name)|$($description)|"
+                  }
+              }
           }
 
       ## Configure github user settings 

@@ -1,3 +1,10 @@
+<#
+    .Synopsis
+    Gets any firewall rules associated with other AD group policies (GPOs)
+    .Description
+    Gets any firewall rules associated with other AD group policies (GPOs)
+#>
+
 Import-Module ActiveDirectory, GroupPolicy
 $adDomain = Get-ADDomain
 
