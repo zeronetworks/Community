@@ -1,0 +1,116 @@
+name: Powershell - Create folders
+
+on:
+  workflow_dispatch:
+
+jobs:
+  ## Simple Hello World
+  Sync_Repo_and_Build:
+    name: Create folder/files in demo/
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Github repository
+        uses: actions/checkout@v2
+      - name: Check to see if documentation.json exists
+        shell: pwsh
+        run: |
+          Write-output "Checking if documentation.json exist"
+          ####### Documentation Folder ########
+
+          ## Check to see if master.json exists
+          $filename = "documentation.json"
+          if (Test-Path $filename) {
+              $json = Get-Content $filename | ConvertFrom-Json
+              Write-output "File exists"
+          } else {
+              Write-output "No documentation.json exists"
+              exit
+              #$json = @{
+              #    categories = @('Take','Where','While','project')
+              #}
+          }
+
+          $basePath = 'demo\folder_creation\documentation'
+          ## Recursively delete documentation directory
+          if (Test-Path "$($basepath)") { Remove-Item -Recurse -Force $basePath }
+
+          ## Get distinct parent tabs
+          $tabs = $json.tab | Get-Unique
+
+          ForEach ($tab in $tabs) {
+              ## If parent tab does not exist, create it
+              If(!(test-path $tab))
+              {
+                      New-Item -ItemType Directory -Force -Path "$($basePath)\$($tab)"
+              } else {
+                  Write-Host "'$($tab)' folder exists. Skipping parent tab creation."
+              }
+          }
+
+          ForEach ($exercise in $json) {
+              ## If parent tab does not exist, create it
+              $path = "$basePath\$($exercise.tab)"
+
+              If(!(test-path $path))
+              {
+                      New-Item -ItemType Directory -Force -Path $path
+              } else {
+                  Write-Host "'$($path)' folder exists. Skipping section tab creation."
+              } 
+
+              "<br># $($exercise.section) <br> $($exercise.markdown)" | Out-File -FilePath (Join-Path -Path $path -ChildPath "$($exercise.section).md")
+
+              ## Append to section Readme
+              "# $($exercise.section)" | Out-file -FilePath (Join-Path -Path "$($basePath)\$($exercise.tab)" -ChildPath "README.md") -Append
+              $exercise.markdown | Out-file -FilePath (Join-Path -Path "$($basePath)\$($exercise.tab)" -ChildPath "README.md") -Append
+          }
+
+      ## Configure github user settings 
+      - name: Configure Github Settings
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+
+      ## Create file
+      - name: append to file
+        run: date >> published.txt
+
+      - name: Clone another repo
+        run: |
+          git clone https://github.com/scautomation/Bicep-AzureMonitor-Sentinel.git cloned/scautomation/Bicep-AzureMonitor-Sentinel
+          
+      ## Check for changes prior to pushing
+      - name: Check for changes
+        run: git status
+
+      ## Add files for changes
+      - name: Stage changed files
+        run: git add .
+
+      ## Commit changes
+      - name: Commit changed files
+        run: git commit -m "Auto updating published.txt file"
+
+      ## push updates
+      - name: Push changes
+        run: git push
+
+  Clone_Another_Repo:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone repo
+        shell: pwsh
+        run: |
+          git clone https://github.com/scautomation/Bicep-AzureMonitor-Sentinel.git cloned/scautomation/Bicep-AzureMonitor-Sentinel
+
+  Other:
+    runs-on: ubuntu-latest
+    steps:
+      - name: multi-line test
+        shell: pwsh
+        run: |
+          Write-Host "Test"
+          Write-Host "The github user is: $($env:GITHUB_ACTOR)"
+          Write-Host "PWD: $($pwd.path)"
+          $myIP = ((curl ifconfig.me/all.json) | ConvertFrom-JSON)
+          Write-Host $myIP.forwarded
