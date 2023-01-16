@@ -1,4 +1,2 @@
-﻿# Zero Networks - Samples Repository
+# Zero Networks - Samples Repository
 ## Segment
-
-test
