@@ -1,0 +1,46 @@
+name: Powershell - Update Readme.md
+
+on:
+  workflow_dispatch:
+
+jobs:
+  ## Sync repo and build
+  Sync_Repo_and_Build:
+    name: Create folder/files in demo/
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Github repository
+        uses: actions/checkout@v2
+      - name: Check to see if documentation.json exists
+        shell: pwsh
+        run: |
+          $excludedFolders = @('.github')
+          $folders = Get-ChildItem -Directory "./" | Where-Object {$_.Name -notin $excludedFolders}
+
+          "# Zero Networks - Samples Repository" | Out-File "./README.md"
+
+          ForEach ($folder in $folders) {
+              Add-Content -Path "./README.md" -Value "## $($folder.name)"
+          }
+
+      ## Configure github user settings 
+      - name: Configure Github Settings
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+
+      ## Check for changes prior to pushing
+      - name: Check for changes
+        run: git status
+
+      ## Add files for changes
+      - name: Stage changed files
+        run: git add .
+
+      ## Commit changes
+      - name: Commit changed files
+        run: git commit -m "Updating README.md"
+
+      ## push updates
+      - name: Push changes
+        run: git push
