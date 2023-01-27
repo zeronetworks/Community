@@ -2,7 +2,6 @@ name: Powershell - Update Readme.md
 
 on:
   workflow_dispatch:
-  push:
 
 jobs:
   ## Sync repo and build
