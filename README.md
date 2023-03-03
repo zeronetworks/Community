@@ -2,9 +2,18 @@
 ## Segment
 |Filename|Description|
 |---|---|
+|auditMonitoredAssets.ps1|auditMonitoredAssets.ps1 
+|
+|enrollLinuxAsset.ps1|enrollLinuxAsset.ps1 
+|
+|purgeKerberosOnHosts.ps1|purgeKerberosOnHosts.ps1 
+|
+|Network Port Connectivity Check.ps1|Does network connectivity Test on Clients and Trust Server on the required ports based on the Deployment guide|
+|Logs - Parse WinRM from Trust Server logs and Summarize.ps1|Sample Script to parse through the trust server logs and summarize the last 1000 entries for quick troubleshooting|
 |CreateOTAssets.ps1|Simple API Call to add an OT/IoT asset entry to Zero Networks|
 |Get-ADGPOsWithFWRules.ps1|Gets any firewall rules associated with other AD group policies (GPOs)|
-|Unprotect-ZNLearningButNotConnected.ps1||
+|Unprotect-ZNLearningButNotConnected.ps1|Unprotect-ZNLearningButNotConnected.ps1 
+|
 ## TrustMeter
 |Filename|Description|
 |---|---|
