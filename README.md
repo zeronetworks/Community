@@ -9,6 +9,7 @@
 |Logs - Parse WinRM from Trust Server logs and Summarize.ps1|Sample Script to parse through the trust server logs and summarize the last 1000 entries for quick troubleshooting|
 |CreateOTAssets.ps1|Simple API Call to add an OT/IoT asset entry to Zero Networks|
 |Get-ADGPOsWithFWRules.ps1|Gets any firewall rules associated with other AD group policies (GPOs)|
+[ZN_Troubleshooter_v01.ps1 | This scripts purpose is to help quickly troubleshoot common scenarios related to issues on the Trust Server or monitored/protected assets|
 |Unprotect-ZNLearningButNotConnected.ps1|Unprotect-ZNLearningButNotConnected.ps1 |
 ## TrustMeter
 |Filename|Description|
