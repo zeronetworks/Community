@@ -17,11 +17,13 @@ The purpose of this script is to perform a network port scan on assets managed b
    - Perform the same scan against these protected assets.
    - Compare exposed ports before/after being protected by Zero Networks.✅
 
-
 ### Note
 - For any protected assets, you may have to exclude the asset performing the scan from JIT MFA policies in order not to trigger multiple MFA prompts. 
 - It is suggested to create a scanner group and then exclude any assets that will perform scans from JIT MFA policies. 
 
+### Pre-requisites
+- You will need to download the latest version of [Trust Meter](https://zeronetworks.com/trustmeter/).
+- Once you download it, you will copy this script to the same folder you extracted Trust Meter.
 
 ### Running the script
    You can run the script with no arguments and it will prompt you with the required parameters it needs. 
