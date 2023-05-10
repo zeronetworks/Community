@@ -40,6 +40,12 @@
 
 param($apiToken, $baseURL = "https://portal.zeronetworks.com/api/v1", $mode="deep", $assetGroups)
 
+if (!(Test-Path $PSScriptRoot\TrustMeter.exe)) { 
+    Write-Error "TrustMeter.exe not detected where this script was ran. Please ensure this script is in the same folder as TrustMeter.exe`n"
+    Write-Host "`nYou can download the latest version of TrustMeter at https://zeronetworks.com/trustmeter/"
+    break
+}
+
 Clear-Host
 Write-Host -ForegroundColor DarkCyan -BackgroundColor Cyan "POC - TrustMeter Port Scan Report`n"
 Write-Host -ForegroundColor Cyan "   Purpose: " -NoNewline; Write-Host "The purpose of this script is to perform a simple network port scan to help identify how exposed ports are on each asset. `n   These exposed ports could potentially be exploited/compromised by an attacker depending on the type of vulnerability. `n"
