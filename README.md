@@ -13,14 +13,11 @@
 </details>
 
 
-&nbsp; **[auditMonitoredAssets.ps1](Segment/audit-monitored-assets/auditMonitoredAssets.ps1)** - auditMonitoredAssets.ps1 
+&nbsp; **[auditMonitoredAssets.ps1](Segment/audit-monitored-assets/auditMonitoredAssets.ps1)** - This script accepts a CSV of assets which SHOULD be monitored, and queries the ZN API to see if they are showing as monitored..
 
+&nbsp; **[enrollLinuxAsset.ps1](Segment/Enroll%20Linux%20in%20Dashboard/enrollLinuxAsset.ps1)** - This script accepts a CSV of Linux servers, and adds them to the Zero Networks dashboard as a manual Linux asset.
 
-&nbsp; **[enrollLinuxAsset.ps1](Segment/Enroll%20Linux%20in%20Dashboard/enrollLinuxAsset.ps1)** - enrollLinuxAsset.ps1 
-
-
-&nbsp; **[purgeKerberosOnHosts.ps1](Segment/purge-klist-gpupdate/purgeKerberosOnHosts.ps1)** - purgeKerberosOnHosts.ps1 
-
+&nbsp; **[purgeKerberosOnHosts.ps1](Segment/purge-klist-gpupdate/purgeKerberosOnHosts.ps1)** - This script accepts a CSV of remote Windows servers, and runs several command useful for forcing GPO processing
 
 &nbsp; **[Logs - Parse WinRM from Trust Server logs and Summarize.ps1](Segment/Trust%20Server/Logs%20-%20Parse%20WinRM%20from%20Trust%20Server%20logs%20and%20Summarize.ps1)** - Sample Script to parse through the trust server logs and summarize the last 1000 entries for quick troubleshooting
 
@@ -44,4 +41,4 @@
 
 
 
- Generated 05/11/2023 22:12:07
+ Generated 05/11/2023 22:28:50
