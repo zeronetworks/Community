@@ -32,17 +32,6 @@
 
 
 ## TrustMeter
-&nbsp; **[auditMonitoredAssets.ps1](Segment/audit-monitored-assets/auditMonitoredAssets.ps1)** - auditMonitoredAssets.ps1 
-
-
-&nbsp; **[enrollLinuxAsset.ps1](Segment/Enroll%20Linux%20in%20Dashboard/enrollLinuxAsset.ps1)** - enrollLinuxAsset.ps1 
-
-
-&nbsp; **[purgeKerberosOnHosts.ps1](Segment/purge-klist-gpupdate/purgeKerberosOnHosts.ps1)** - purgeKerberosOnHosts.ps1 
-
-
-&nbsp; **[Logs - Parse WinRM from Trust Server logs and Summarize.ps1](Segment/Trust%20Server/Logs%20-%20Parse%20WinRM%20from%20Trust%20Server%20logs%20and%20Summarize.ps1)** - Sample Script to parse through the trust server logs and summarize the last 1000 entries for quick troubleshooting
-
 &nbsp; **[POC_TrustMeter_ScanManagedAssets.ps1](TrustMeter/POC/POC_TrustMeter_ScanManagedAssets.ps1)** - The purpose of this script is to perform a network port scan on assets managed by Zero Networks.
 
 &nbsp; **[Ex1 - Simple scan for open ports on all AD assets.ps1](TrustMeter/Ex1%20-%20Simple%20scan%20for%20open%20ports%20on%20all%20AD%20assets.ps1)** - Example 1 - Scans for open ports on any AD asset within the Domain
@@ -55,4 +44,4 @@
 
 
 
- Generated 05/11/2023 19:52:18
+ Generated 05/11/2023 19:55:12
