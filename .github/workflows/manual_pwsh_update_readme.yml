@@ -27,7 +27,7 @@ jobs:
           $basePath = "."
 
           "# Zero Networks - Community Repository" | Out-File "$($basePath)/README.md"
-          $singleScripts = @()
+          
           function Add-LineFileInfo {
               param($readmePath, $file, $relativePath, $prefix = "&nbsp;")
               # Check for synopsis
@@ -44,6 +44,7 @@ jobs:
 
           ## iterate through main folders
           ForEach ($folder in $mainFolders) {
+              $singleScripts = @()
               Write-Host $folder
               Add-Content -Path "$($basePath)/README.md" -Value "## $($folder.name)" ## Build headers from main directory
 
