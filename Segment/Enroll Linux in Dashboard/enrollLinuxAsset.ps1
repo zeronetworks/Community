@@ -1,12 +1,12 @@
-﻿<#PSScriptInfo
-.NAME Thomas Obarowski
-.LINK https://github.com/tjobarow/
-.AUTHOR tjobarow@gmail.com
+﻿<#
 
-.VERSION 1.0
+.NOTES
+    NAME: Thomas Obarowski
+    LINK: https://github.com/tjobarow/
+    AUTHOR: tjobarow@gmail.com
+    VERSION: 1.0
 
-
-.Synopsis
+.SYNOPSIS
    This script accepts a CSV of Linux servers, and adds them to the Zero Networks dashboard as a manual Linux asset. 
    
 .DESCRIPTION
@@ -19,6 +19,8 @@
         - The displayName and FQDN parameters of the API call are the same value - the full FQDN of the linux host (linuxserver.company.com)
         - The API token is read from a text file, named token.txt - you must create this file for the API call to succeed
     - This information is logged to a .log file, including the asset ID returned from the API
+
+    Note: Make sure to update the string to match your company's domain on lines 67 & 72 
 
 .EXAMPLE
    Update .csv to contain contains several hostnames of linux servers: 
@@ -45,9 +47,7 @@
 
 .OUTPUTS
    Log file named "<%Y-%m-$d>-enroll-linux-script.log" (where <%Y-%m-$d> is the current Year-Month-Day)
-
-.NOTES
-   Make sure to update the string to match your company's domain on lines 67 & 72 
+   
 #>
 
 # Log info

@@ -1,81 +1,81 @@
-﻿<#PSScriptInfo
-.NAME Thomas Obarowski
-.LINK https://github.com/tjobarow/
-.AUTHOR tjobarow@gmail.com
+﻿<#
 
-.VERSION 1.0
+    .NOTES
+        Filename: auditMonitoredAssets.ps1
+        Author: Thomas Obarowski <tjobarow@gmail.com>
+        LINK: https://github.com/tjobarow/
+        VERSION: 1.0
 
+    .SYNOPSIS
+        This script accepts a CSV of assets which SHOULD be monitored, and queries the ZN API to see if they are showing as monitored.. 
+    
+    .DESCRIPTION
+        This script does the following:
+        - Reads a list of asset hostnames from a CSV named targeted-assets.csv
+        - Retrieves all monitored assets from ZN API
+            - Uses some basic math to determine how many pages of data need to be retrieved to get all monitored assets
+            - REQUIRES YOUR API TOKEN BE STORED IN A FILE NAMED token.txt WITHIN SAME DIRECTORY AS SCRIPT
+        - Checks to see if each asset within targeted-assets.csv exists within all of the monitored assets retrieved from ZN API
+        - It will write the data to a new CSV named <%Y-%m-%d>-mon-assets-audit-report.csv, which saves into the directory the script is ran from
+            - The CSV includes every asset from targeted-assets.csv in column 1, and whether (true/false) they are monitored in column 2
 
-.Synopsis
-   This script accepts a CSV of assets which SHOULD be monitored, and queries the ZN API to see if they are showing as monitored.. 
-   
-.DESCRIPTION
-    This script does the following:
-    - Reads a list of asset hostnames from a CSV named targeted-assets.csv
-    - Retrieves all monitored assets from ZN API
-        - Uses some basic math to determine how many pages of data need to be retrieved to get all monitored assets
-        - REQUIRES YOUR API TOKEN BE STORED IN A FILE NAMED token.txt WITHIN SAME DIRECTORY AS SCRIPT
-    - Checks to see if each asset within targeted-assets.csv exists within all of the monitored assets retrieved from ZN API
-    - It will write the data to a new CSV named <%Y-%m-%d>-mon-assets-audit-report.csv, which saves into the directory the script is ran from
-        - The CSV includes every asset from targeted-assets.csv in column 1, and whether (true/false) they are monitored in column 2
+        Note
+        Make sure you have your API token saved in a text file named token.txt within the same directory
+            - You can realisticly pass this script your token however you see fit. The token is required to construct the request headers
+            - on line 99.
 
-.EXAMPLE
-   Update .csv to contain contains asset hostnames: 
-   testserver1.company.com
-   testserver2
-   testserver3
+            Based on trial and error, my understanding of asset status via API is:
+                protection state:
+                    1 = monitored
+                    2 = learning
+                    3 = protected
 
-   (It doesn't matter whether you put the domain or not, as the script will only pay attention to the actual hostname, not domain )
+    .EXAMPLE
+        Update .csv to contain contains asset hostnames: 
+        testserver1.company.com
+        testserver2
+        testserver3
 
-    The script will then run, read the contents of the CSV, query the ZN API for all monitored assets, and then compare the list of
-    targeted assets (from targeted-assets.csv) to the monitored assets returned from ZN API. It logs this process to the console, as
-    well as a log file. 
+        (It doesn't matter whether you put the domain or not, as the script will only pay attention to the actual hostname, not domain )
 
-        2023-02-06 2023 10:09:02: Found host testserver1 in CSV file...
-        2023-02-06 2023 10:09:02: Found host testserver2 in CSV file...
-        ... (portions omitted) ...
-        2023-02-06 2023 10:09:02: Setting up request headers...
-        2023-02-06 2023 10:09:02: Making API call to determine # of monitored assets that exist..
-        2023-02-06 2023 10:09:02: Found a total of 234 monitored assets currently in ZN...
-        2023-02-06 2023 10:09:02: Will need to make 3 to /assets/monitored endpoint to get all monitored assets... (Page limit = 100)...
-        2023-02-06 2023 10:09:02: Making request  #1 to ZN /assets/monitored API endpoint...
-        ... (portions omitted) ...
-        2023-02-06 2023 10:09:02: API call returned testserver1 as a monitored asset...
-        2023-02-06 2023 10:09:02: API call returned testserver3 as a monitored asset...
-        ... (portions omitted) ...
-        2023-02-06 2023 10:09:04: Comparing list of assets which should be monitored, to what is actually monitored per ZN API...
-        2023-02-06 2023 10:09:04: testserver1 is showing as remotely monitored...
-        2023-02-06 2023 10:09:04: testserver2 is NOT SHOWING as remotely monitored...
-        ... (portions omitted) ...
+            The script will then run, read the contents of the CSV, query the ZN API for all monitored assets, and then compare the list of
+            targeted assets (from targeted-assets.csv) to the monitored assets returned from ZN API. It logs this process to the console, as
+            well as a log file. 
 
-    The script then prints this data to console, as well as exports it to a CSV.
+                2023-02-06 2023 10:09:02: Found host testserver1 in CSV file...
+                2023-02-06 2023 10:09:02: Found host testserver2 in CSV file...
+                ... (portions omitted) ...
+                2023-02-06 2023 10:09:02: Setting up request headers...
+                2023-02-06 2023 10:09:02: Making API call to determine # of monitored assets that exist..
+                2023-02-06 2023 10:09:02: Found a total of 234 monitored assets currently in ZN...
+                2023-02-06 2023 10:09:02: Will need to make 3 to /assets/monitored endpoint to get all monitored assets... (Page limit = 100)...
+                2023-02-06 2023 10:09:02: Making request  #1 to ZN /assets/monitored API endpoint...
+                ... (portions omitted) ...
+                2023-02-06 2023 10:09:02: API call returned testserver1 as a monitored asset...
+                2023-02-06 2023 10:09:02: API call returned testserver3 as a monitored asset...
+                ... (portions omitted) ...
+                2023-02-06 2023 10:09:04: Comparing list of assets which should be monitored, to what is actually monitored per ZN API...
+                2023-02-06 2023 10:09:04: testserver1 is showing as remotely monitored...
+                2023-02-06 2023 10:09:04: testserver2 is NOT SHOWING as remotely monitored...
+                ... (portions omitted) ...
 
-        2023-02-06 2023 10:09:04: Printing contents of status list...
-        hostName           monitorStatus
-        --------           -------------
-        testserver1             True
-        testserver2             False
-        Saving results of script to CSV file...
+            The script then prints this data to console, as well as exports it to a CSV.
 
-.INPUTS
-    - File named "targeted-assets.csv" that lives in the same directory as the script is ran from
-    - Text file named "token.txt" which contains your dashboard API token
+                2023-02-06 2023 10:09:04: Printing contents of status list...
+                hostName           monitorStatus
+                --------           -------------
+                testserver1             True
+                testserver2             False
+                Saving results of script to CSV file...
 
-.OUTPUTS
-   Log file named "<%Y-%m-$d>-audit-mon-assets-script.log" (where <%Y-%m-$d> is the current Year-Month-Day)
-   CSV file named "<%Y-%m-$d>-mon-assets-audit-report.csv" that contains the monitored status of each targeted asset
+    .INPUTS
+        - File named "targeted-assets.csv" that lives in the same directory as the script is ran from
+        - Text file named "token.txt" which contains your dashboard API token
 
+    .OUTPUTS
+    Log file named "<%Y-%m-$d>-audit-mon-assets-script.log" (where <%Y-%m-$d> is the current Year-Month-Day)
+    CSV file named "<%Y-%m-$d>-mon-assets-audit-report.csv" that contains the monitored status of each targeted asset
 
-.NOTES
-   Make sure you have your API token saved in a text file named token.txt within the same directory
-    - You can realisticly pass this script your token however you see fit. The token is required to construct the request headers
-    - on line 99.
-
-    Based on trial and error, my understanding of asset status via API is:
-        protection state:
-            1 = monitored
-            2 = learning
-            3 = protected
 #>
 
 #Log data

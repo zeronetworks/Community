@@ -1,12 +1,12 @@
-﻿<#PSScriptInfo
-.NAME Thomas Obarowski
-.LINK https://github.com/tjobarow/
-.AUTHOR tjobarow@gmail.com
+﻿<#
 
-.VERSION 1.0
+.NOTES
+    NAME: Thomas Obarowski
+    LINK: https://github.com/tjobarow/
+    AUTHOR: tjobarow@gmail.com
+    VERSION: 1.0
 
-
-.Synopsis
+.SYNOPSIS
    This script accepts a CSV of remote Windows servers, and runs several command useful for forcing GPO processing
    
 .DESCRIPTION
