@@ -32,7 +32,7 @@
 > [Logs - Parse WinRM from Trust Server logs and Summarize.ps1](%2fhome%2frunner%2fwork%2fCommunity%2fCommunity%2fSegment%2fLogs+-+Parse+WinRM+from+Trust+Server+logs+and+Summarize.ps1) - Sample Script to parse through the trust server logs and summarize the last 1000 entries for quick troubleshooting
 
 ## TrustMeter
-> [Ex1 - Simple scan for open ports on all AD assets.ps1](TrustMeter/Ex1 - Simple scan for open ports on all AD assets.ps1) - Example 1 - Scans for open ports on any AD asset within the Domain
+> [Ex1 - Simple scan for open ports on all AD assets.ps1](TrustMeter/Ex1%20-%20Simple%20scan%20for%20open%20ports%20on%20all%20AD%20assets.ps1) - Example 1 - Scans for open ports on any AD asset within the Domain
 
 > [Ex2 - Simple scan for open ports on all AD Assets in Forest.ps1](%2fhome%2frunner%2fwork%2fCommunity%2fCommunity%2fTrustMeter%2fEx2+-+Simple+scan+for+open+ports+on+all+AD+Assets+in+Forest.ps1) - Example 2 - Scans for open ports on any AD asset within the AD Forest
 
