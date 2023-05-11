@@ -1,6 +1,12 @@
 name: Powershell - Update Readme.md
 
 on:
+  push:
+    paths:
+      - "**.ps1"
+  pull_request:
+    paths:
+      - "**.ps1"
   workflow_dispatch:
 
 jobs:
@@ -21,7 +27,7 @@ jobs:
           $basePath = "."
 
           "# Zero Networks - Community Repository" | Out-File "$($basePath)/README.md"
-          $singleScripts = @()
+          
           function Add-LineFileInfo {
               param($readmePath, $file, $relativePath, $prefix = "&nbsp;")
               # Check for synopsis
@@ -38,15 +44,16 @@ jobs:
 
           ## iterate through main folders
           ForEach ($folder in $mainFolders) {
+              $singleScripts = @()
               Write-Host $folder
               Add-Content -Path "$($basePath)/README.md" -Value "## $($folder.name)" ## Build headers from main directory
 
               $subfolders = Get-ChildItem $folder.FullName -Exclude "images" -Directory
-              #| Where-Object { ((Get-ChildItem $_.FullName -Directory -Exclude "images").Count -gt 0) -or ((Get-ChildItem $_.FullName -Recurse -File -Filter '*.ps1').Count -gt 1) }
+               #| Where-Object { ((Get-ChildItem $_.FullName -Directory -Exclude "images").Count -gt 0) -or ((Get-ChildItem $_.FullName -Recurse -File -Filter '*.ps1').Count -gt 1) }
 
               ForEach ($subfolder in $subfolders) {
                   Write-Host "  $($subfolder.Name)"
-                  
+
                   ## Check if has other sub folders with more than one script
                   if ((Get-ChildItem $subfolder.FullName -Recurse -File -Filter '*.ps1').Count -gt 1 ) {
                       Add-Content -Path "$($basePath)/README.md" -Value "`n<details>`n<summary>$($subfolder.baseName)</summary>`n"
