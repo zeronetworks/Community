@@ -1,50 +1,39 @@
-<# POC_TrustMeter_ScanManagedAssets.ps1
+<# 
+    .NOTES
+        Filename: Ex1 - POC_TrustMeter_ScanManagedAssets.ps1
+        Author: Jing Nghik <jing@zeronetworks.com>
+        Modified date: 5/11/2023
 
-.NAME Jing Nghik
-.LINK https://github.com/teachjing
-.AUTHOR jing@zeronetworks.com
+    .SYNOPSIS
+    The purpose of this script is to perform a network port scan on assets managed by Zero Networks.
+    
+    .DESCRIPTION
 
-.VERSION 1.0
+    These exposed ports could potentially be exploited/compromised by an attacker depending on the type of vulnerability. 
+    Its important to iteratively close these open ports unless its expected behavior. 
 
-.Synopsis
-   The purpose of this script is to perform a network port scan on assets managed by Zero Networks.
-   
-.DESCRIPTION
-   These exposed ports could potentially be exploited/compromised by an attacker depending on the type of vulnerability. 
-   Its important to iteratively close these open ports unless its expected behavior. 
+    This script was created mainly with the intent of reviewing open ports on assets targeted for the POC 
+    Steps are:
+    - Conduct a scan on assets either in monitoring, learning state. (Save this report for comparison)
+    - Set same assets to protection.
+    - Perform the same scan against these protected assets.
+    - Compare exposed ports before/after being protected by Zero Networks.
 
-   This script was created mainly with the intent of reviewing open ports on assets targeted for the POC 
-   Steps are:
-   - Conduct a scan on assets either in monitoring, learning state. (Save this report for comparison)
-   - Set same assets to protection.
-   - Perform the same scan against these protected assets.
-   - Compare exposed ports before/after being protected by Zero Networks.
+    Note
+        - For any protected assets, you may have to exclude the asset performing the scan from JIT MFA policies in order not to trigger multiple MFA prompts. 
+        - It is suggested to create a scanner group and then exclude any assets that will perform scans from JIT MFA policies. 
 
-.EXAMPLE
-   You can run the script with no arguments and it will prompt you with the required parameters it needs. 
-      .\POC_TrustMeter_ScanManagedAssets.ps1
+    .EXAMPLE
+    You can run the script with no arguments and it will prompt you with the required parameters it needs. 
+        .\POC_TrustMeter_ScanManagedAssets.ps1
 
-   You can also run this script with arguments if you wish to perform this scan in one-line without having input any required parameters. 
+    You can also run this script with arguments if you wish to perform this scan in one-line without having input any required parameters. 
 
-   Performs a scan on assets in learning and protected
-   .\POC_TrustMeter_ScanManagedAssets.ps1 -apiToken <Api Token created in portal> -mode deep -assetGroups "learning,protected" 
-
-.OUTPUTS
-   An HTML report will automatically be created
-   Output from scans will be stored in a subdirectory titled "POC"
-
-.NOTES
-    - For any protected assets, you may have to exclude the asset performing the scan from JIT MFA policies in order not to trigger multiple MFA prompts. 
-    - It is suggested to create a scanner group and then exclude any assets that will perform scans from JIT MFA policies. 
+    Performs a scan on assets in learning and protected
+    .\POC_TrustMeter_ScanManagedAssets.ps1 -apiToken <Api Token created in portal> -mode deep -assetGroups "learning,protected" 
 #>
 
 param($apiToken, $baseURL = "https://portal.zeronetworks.com/api/v1", $mode="deep", $assetGroups)
-
-if (!(Test-Path $PSScriptRoot\TrustMeter.exe)) { 
-    Write-Error "TrustMeter.exe not detected where this script was ran. Please ensure this script is in the same folder as TrustMeter.exe`n"
-    Write-Host "`nYou can download the latest version of TrustMeter at https://zeronetworks.com/trustmeter/"
-    break
-}
 
 Clear-Host
 Write-Host -ForegroundColor DarkCyan -BackgroundColor Cyan "POC - TrustMeter Port Scan Report`n"
@@ -53,7 +42,7 @@ Write-Host -ForegroundColor Yellow "   Note: " -NoNewline; Write-Host "This scri
 Read-host "`nPress Enter to continue"
 
 if ($apiToken -eq $null) {
-    Write-Host -ForegroundColor Yellow "No API Token provided (We use this to automatically grab assets in monitored,learning, and/or protection). An API token (read-only) can be created in the portal at 'https://portal-dev.zeronetworks.com/#/settings/tokens"
+    Write-Host -ForegroundColor Yellow "No API Token provided (We use this to automatically grab assets in learning/protection). An API token (read-only) can be created in the portal at 'https://portal-dev.zeronetworks.com/#/settings/tokens"
     $apiToken = Read-Host "Please paste generated token here"
 }
 
@@ -103,11 +92,17 @@ if($assetGroups.tolower() -match "(learn|learning|all)") {$scanIPs += Add-ZNAsse
 ## Add Protected assets to scan pool
 if($assetGroups.tolower() -match "(protected|protection|all)") {$scanIPs += Add-ZNAssets -type "protected" -apiToken $apiToken}
 
-## Remove any duplicate IPs
-$scanIPs = $scanIPs | select -Unique
+## Remove any duplicate IPs and local IPs
+$scanIPs = $scanIPs | select -Unique | Where-Object {((Get-NetIPAddress -AddressFamily IPv4).IPAddress) -notcontains $_}
 
 Write-Host -foreground Cyan "`nStarting trust meter and including IP(s) from assets in learning/protected"
 & .\TrustMeter.exe "--skipad" "--skipcloud" "--skipgui" "-cs" "no" "--mode" $mode "--ipranges" ($scanIPs -join (','))
+
+## Create POC Subfolder if doensn't exist
+If(!(test-path .\POC))
+{
+      New-Item -ItemType Directory -Path .\POC -Force | Out-Null
+}
 
 ## Moving Report to POC subfolder
 $dateTime = '{0}' -f ([system.string]::format('{0:yyyyMMdd_HHmmss}',(Get-Date)))

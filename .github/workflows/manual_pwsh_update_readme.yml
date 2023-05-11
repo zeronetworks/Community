@@ -14,31 +14,71 @@ jobs:
       - name: Check to see if documentation.json exists
         shell: pwsh
         run: |
+          Add-Type -AssemblyName System.Web
+
           $excludedFolders = @('.github')
-          $folders = Get-ChildItem -Directory "./" | Where-Object {$_.Name -notin $excludedFolders}
+          $mainFolders = Get-ChildItem -Directory "./" | Where-Object {$_.Name -notin $excludedFolders}
+          $basePath = "."
 
-          "# Zero Networks - Samples Repository" | Out-File "./README.md"
+          "# Zero Networks - Community Repository" | Out-File "$($basePath)/README.md"
+          function Add-LineFileInfo {
+              param($readmePath, $file, $relativePath, $prefix = ">")
+              # Check for synopsis
+              if ((Get-Help $file.Fullname).Synopsis) {
+                  $description = (Get-Help $file.Fullname).Synopsis
+                  $description
+              } else {$description = ""}
 
-          ForEach ($folder in $folders) {
-              Add-Content -Path "./README.md" -Value "## $($folder.name)"
+              ## Add descriptionf
+              $encodedURL = [System.Web.HttpUtility]::UrlEncode((Join-Path $relativePath $file.Name)) 
+              Add-Content -Path $readmePath -Value "$($prefix) [$($file.Name)]($encodedURL) - $($description)`n"
+          }
 
-              $files = Get-ChildItem $folder.FullName -File
-              if ($files.count -gt 0) {
-                  Add-Content -Path "./README.md" -Value "|Filename|Description|"
-                  Add-Content -Path "./README.md" -Value "|---|---|"
+          ## iterate through main folders
+          ForEach ($folder in $mainFolders) {
+              Write-Host $folder
+              Add-Content -Path "$($basePath)/README.md" -Value "## $($folder.name)" ## Build headers from main directory
 
-                  ForEach ($file in $files) {
+              $subfolders = Get-ChildItem $folder.FullName -Exclude "images" -Directory
+              #| Where-Object { ((Get-ChildItem $_.FullName -Directory -Exclude "images").Count -gt 0) -or ((Get-ChildItem $_.FullName -Recurse -File -Filter '*.ps1').Count -gt 1) }
 
-                      # Check for synopsis
-                      if ((Get-Help $file.Fullname).Description) {
-                          $description = (Get-Help $file.Fullname).Synopsis
-                      } else {$description = ""}
+              $singleScripts = @()
+              ForEach ($subfolder in $subfolders) {
+                  Write-Host "  $($subfolder.Name)"
+                  
+                  ## Check if has other sub folders with more than one script
+                  if ((Get-ChildItem $subfolder.FullName -Recurse -File -Filter '*.ps1').Count -gt 1 ) {
+                      Add-Content -Path "$($basePath)/README.md" -Value "`n<details>`n<summary>$($subfolder.baseName)</summary>`n"
 
-                      ## Add description
-                      Add-Content -Path "./README.md" -Value "|$($file.name)|$($description)|"
+                      $files = Get-ChildItem $subfolder.FullName -File -Filter '*.ps1' -Recurse
+                      ForEach ($file in $files) {
+                          Write-Host "    $($file.Name)"
+                          Add-LineFileInfo -readmePath "$($basePath)/README.md" -file $file -relativePath "$($folder)/$($subfolder.BaseName)" -prefix ">>"
+                      }
+                      Add-Content -Path "$($basePath)/README.md" -Value "`n</details>`n`n"
+                  }
+
+                  ## If subfolder only has one script, add it to the others.
+                  else {
+                      $singleScripts += Get-ChildItem $subfolder.FullName -File -Filter '*.ps1' -Recurse
+                    }           
+              }
+
+              # if files in current directory
+              if ((Get-ChildItem $folder.FullName -Filter '*.ps1' -File).Count -gt 0) {
+                  $files = Get-ChildItem $folder.FullName -Filter '*.ps1' -File
+                  $files += $singleScripts
+                  ForEach($file in $files) {
+                      Write-Host "  $($file.Name)"
+                      Add-LineFileInfo -readmePath "$($basePath)/README.md" -file $file -relativePath "$($folder)/$($folderfolder.BaseName)"
                   }
               }
           }
+
+          Add-Content -Path "$($basePath)/README.md" -Value "`n`n Generated $(Get-Date)"
+
+          #Get-Content $basePath\README.md
+          #.$basePath\README.md
 
       ## Configure github user settings 
       - name: Configure Github Settings
