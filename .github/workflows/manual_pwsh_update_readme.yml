@@ -1,6 +1,12 @@
 name: Powershell - Update Readme.md
 
 on:
+  push:
+    paths:
+      - "**.ps1"
+  pull_request:
+    paths:
+      - "**.ps1"
   workflow_dispatch:
 
 jobs:
