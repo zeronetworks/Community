@@ -106,4 +106,4 @@
 <br>POC - **[POC_TrustMeter_ScanManagedAssets.ps1](TrustMeter/POC/POC_TrustMeter_ScanManagedAssets.ps1)** - The purpose of this script is to perform a network port scan on assets managed by Zero Networks.
 
 <br><br>
-![generated_image](https://img.shields.io/badge/generated%20date-05/12/2023%2005:02:03-blue)
+![generated_image](https://img.shields.io/badge/generated%20date-05/12/2023%2005:02:35-blue)
