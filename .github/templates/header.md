@@ -1,8 +1,7 @@
 <br>
-<p align="center">
-<center>
-<img src="https://avatars.githubusercontent.com/u/46243031?s=200&v=4">
-<h2>Community Repo</h2>
+    
+<p align="center"><img src="https://avatars.githubusercontent.com/u/46243031?s=200&v=4" alt="name"></p>
+<p align="center">Community Repo</p>
 
 <p align="center">
 <a href="https://github.com/zeronetworks/Community/fork" target="blank">
@@ -20,8 +19,6 @@
 </a>
 <h4 align="center">A collaborative collection of valuable scripts for configuring, managing, and troubleshooting issues with Zero Networks, actively contributed by the community and Zero Networks </h4>
 
-</center>
-</p>
 
 <p align="center">
     <a href="https://zeronetworks.com/zero-network-segment/" target="blank">Segment</a>
