@@ -1,7 +1,7 @@
 <br>
     
 <p align="center"><img src="https://avatars.githubusercontent.com/u/46243031?s=200&v=4" alt="name"></p>
-<p align="center"><h2>Community Repo</h2></p>
+<p align="center">Community Repo</p>
 
 <p align="center">
 <a href="https://github.com/zeronetworks/Community/fork" target="blank">
