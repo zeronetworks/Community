@@ -20,14 +20,14 @@ jobs:
       - name: Check to see if documentation.json exists
         shell: pwsh
         run: |
+
           Add-Type -AssemblyName System.Web
 
           $excludedFolders = @('.github')
           $mainFolders = Get-ChildItem -Directory "./" | Where-Object {$_.Name -notin $excludedFolders}
           $basePath = "."
 
-          "# Zero Networks - Community Repository" | Out-File "$($basePath)/README.md"
-          
+          Get-Content "$($basePath)/.github/templates/header.md" -Encoding UTF8 | Out-File "$($basePath)/README.md"
           function Add-LineFileInfo {
               param($readmePath, $file, $relativePath, $prefix = "&nbsp;")
               # Check for synopsis
@@ -39,26 +39,25 @@ jobs:
               ## Add descriptionf
               #$encodedURL = [System.Web.HttpUtility]::UrlEncode((Join-Path $relativePath $file.Name)) 
               $encodedURL = "$($relativePath)/$($file.Name)".Replace(' ','%20')
-              Add-Content -Path $readmePath -Value "$($prefix) **[$($file.Name)]($encodedURL)** - $($description)`n"
+              Add-Content -Path $readmePath -Value "$($prefix)**[$($file.Name)]($encodedURL)** - $($description)`n"
           }
 
           ## iterate through main folders
           ForEach ($folder in $mainFolders) {
               $singleScripts = @()
               Write-Host $folder
-              Add-Content -Path "$($basePath)/README.md" -Value "## $($folder.name)" ## Build headers from main directory
+              Add-Content -Path "$($basePath)/README.md" -Value "`n<br>`n`n## $($folder.name)" ## Build headers from main directory
 
               $subfolders = Get-ChildItem $folder.FullName -Exclude "images" -Directory
-               #| Where-Object { ((Get-ChildItem $_.FullName -Directory -Exclude "images").Count -gt 0) -or ((Get-ChildItem $_.FullName -Recurse -File -Filter '*.ps1').Count -gt 1) }
+              #| Where-Object { ((Get-ChildItem $_.FullName -Directory -Exclude "images").Count -gt 0) -or ((Get-ChildItem $_.FullName -Recurse -File -Filter '*.ps1').Count -gt 1) }
 
               ForEach ($subfolder in $subfolders) {
                   Write-Host "  $($subfolder.Name)"
-
+                  
                   ## Check if has other sub folders with more than one script
                   if ((Get-ChildItem $subfolder.FullName -Recurse -File -Filter '*.ps1').Count -gt 1 ) {
-                      Add-Content -Path "$($basePath)/README.md" -Value "`n<details>`n<summary>$($subfolder.baseName)</summary>`n"
-
                       $files = Get-ChildItem $subfolder.FullName -File -Filter '*.ps1' -Recurse
+                      Add-Content -Path "$($basePath)/README.md" -Value "`n<details>`n<summary>$($subfolder.baseName) ($($files.Count))</summary>`n"
                       ForEach ($file in $files) {
                           Write-Host "    $($file.Name)"
                           Add-LineFileInfo -readmePath "$($basePath)/README.md" -file $file -relativePath "$($folder)/$($subfolder.BaseName)" -prefix "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"
@@ -71,13 +70,14 @@ jobs:
                       $singleScripts += [PSCustomObject]@{
                           file = Get-ChildItem $subfolder.FullName -File -Filter '*.ps1' -Recurse
                           relativePath = "$($folder.Name)/$($subfolder.Name)"
+                          prefix = $subfolder.Name
                       }
                     }           
               }
 
               # add scripts
               ForEach($script in $singleScripts) {
-                  Add-LineFileInfo -readmePath "$($basePath)/README.md" -file $script.file -relativePath $script.relativePath
+                  Add-LineFileInfo -readmePath "$($basePath)/README.md" -file $script.file -relativePath $script.relativePath -prefix "<br>$($script.prefix) - "
               }
 
               # if files in current directory
@@ -90,7 +90,7 @@ jobs:
               }
           }
 
-          Add-Content -Path "$($basePath)/README.md" -Value "`n`n Generated $(Get-Date)"
+          Add-Content -Path "$($basePath)/README.md" -Value "<br><br>`n![generated_image](https://img.shields.io/badge/generated%20date-$((Get-Date).ToString().Replace(' ','%20'))-blue)"
 
       ## Configure github user settings 
       - name: Configure Github Settings
