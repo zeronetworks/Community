@@ -90,7 +90,12 @@ jobs:
               }
           }
 
-          Add-Content -Path "$($basePath)/README.md" -Value "<br><br>`n![generated_image](https://img.shields.io/badge/generated%20date-$((Get-Date).ToString().Replace(' ','%20'))-blue)"
+          ## Add Contributing body
+          Add-Content "$($basePath)/README.md" -Value (Get-Content "$($basePath)/.github/templates/contributing.md" -Encoding UTF8)
+
+          ## Generate Time
+          Add-Content -Path "$($basePath)/README.md" -Value "`n<br><br>`n![generated_image](https://img.shields.io/badge/generated%20date-$((Get-Date).ToString().Replace(' ','%20'))-blue)"
+
 
       ## Configure github user settings 
       - name: Configure Github Settings
