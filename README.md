@@ -49,9 +49,12 @@
 
 
 <details>
-<summary>Asset Management (4)</summary>
+<summary>Asset Management (5)</summary>
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[CreateOTAssets.ps1](/home/runner/work/Community/Community/Segment/Asset%20Management/CreateOTAssets.ps1)** - Simple API Call to add an OT/IoT asset entry to Zero Networks
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Move-ProtectToLearning.ps1](/home/runner/work/Community/Community/Segment/Asset%20Management/Move-ProtectToLearning.ps1)** - Move-ProtectToLearning.ps1 
+
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Unprotect-ZNLearningButNotConnected.ps1](/home/runner/work/Community/Community/Segment/Asset%20Management/Unprotect-ZNLearningButNotConnected.ps1)** - Unprotect-ZNLearningButNotConnected.ps1 
 
@@ -122,4 +125,4 @@ If you have a script you would like to share to the community or improvements on
 - Once the pull request is approved and merged you can pull the changes from `upstream` to your local repo.
 
 <br><br>
-![generated_image](https://img.shields.io/badge/generated%20date-05/12/2023%2005:45:27-blue)
+![generated_image](https://img.shields.io/badge/generated%20date-05/16/2023%2012:09:19-blue)
