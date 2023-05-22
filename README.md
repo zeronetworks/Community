@@ -67,6 +67,14 @@
 </details>
 
 
+<details>
+<summary>MFA Push (1)</summary>
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[getSecretMicrosoftAuth.ps1](/home/runner/work/Community/Community/Segment/Active%20Directory/Get-ADGPOsWithFWRules.ps1)** - Generates Client secret for Microsoft Authenticator push notifications
+
+
+</details>
+
 
 <details>
 <summary>Troubleshooting (2)</summary>
@@ -80,7 +88,13 @@
 </details>
 
 
-<br>Trust Server - **[Logs - Parse WinRM from Trust Server logs and Summarize.ps1](Segment/Trust%20Server/Logs%20-%20Parse%20WinRM%20from%20Trust%20Server%20logs%20and%20Summarize.ps1)** - Sample Script to parse through the trust server logs and summarize the last 1000 entries for quick troubleshooting
+<details>
+<summary>Trust Server (1)</summary>
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Logs - Parse WinRM from Trust Server logs and Summarize.ps1](/home/runner/work/Community/Community/Segment/Active%20Directory/Get-ADGPOsWithFWRules.ps1)** - Sample Script to parse through the trust server logs and summarize the last 1000 entries for quick troubleshooting
+
+
+</details>
 
 
 <br>
@@ -101,10 +115,16 @@
 
 </details>
 
+<details>
+<summary>POC (1)</summary>
 
-<br>POC - **[POC_TrustMeter_ScanManagedAssets.ps1](TrustMeter/POC/POC_TrustMeter_ScanManagedAssets.ps1)** - The purpose of this script is to perform a network port scan on assets managed by Zero Networks.
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[POC_TrustMeter_ScanManagedAssets.ps1](/home/runner/work/Community/Community/Segment/Active%20Directory/Get-ADGPOsWithFWRules.ps1)** - The purpose of this script is to perform a network port scan on assets managed by Zero Networks.
 
-<br>
+
+</details>
+
+
+
 
 ---
 
