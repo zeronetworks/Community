@@ -1,5 +1,5 @@
 #Get API key from settings and paste here
-$APIKey = $Env:ZNAPIKey
+$APIKey = ""
 
 #Get the block rule id from the portal and paste here
 $blockRuleId = ""
