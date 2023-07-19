@@ -1,8 +1,8 @@
 #Get API key from settings and paste here
 $APIKey = ""
 
-#Get the block rule id from the portal and paste here
-$blockRuleId = ""
+#Get the block rule description from the portal and paste here
+$blockRuleName = "Kens Bad URL v2"
 
 #Get the filepath of bad URLs
 $badURLFilePath = "c:\tmp\badurls.txt"
@@ -11,13 +11,39 @@ $badURLFilePath = "c:\tmp\badurls.txt"
 $znHeaders = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
 $znHeaders.Add("Authorization",$APIKey)
 $znHeaders.Add("Accept","application/json")
+$filters = "_limit=400&order=desc"
 
 $uri = "https://portal.zeronetworks.com/api/v1"
 
 $blockedURLs = @()
 
-#Get the block rule
-$blockRule = (Invoke-RestMethod -Uri "$uri/protection/rules/outbound-block/$blockRuleId" -Method Get -ContentType application/json -Headers $znHeaders).items
+#Get the block rule - Handling paging
+$doneScrolling = $false
+do {
+    $blockRules = (Invoke-RestMethod -Uri "$uri/protection/rules/outbound-block/?$filters" -Method Get -ContentType application/json -Headers $znHeaders).items
+    $activities += $blockRules.items
+    if($blockRules.scrollCursor){
+        $scrollCuror = $blockRules.scrollCursor
+        $filters = "_limit=400&order=desc&from=$from&to=$to&_cursor=$scrollCuror"
+    }
+    else {
+        $doneScrolling = $true
+    }
+} while (
+    $doneScrolling = $false
+)
+
+
+foreach($blockRule in $blockRules){
+    if($blockRule.description -eq $blockRuleName ){
+        $blockRuleId = $blockRule.id
+        break
+    } else {
+        Write-Host "Rule not found"
+        exit
+    }
+}
+
 
 #Get the bad URLs from file
 $badURLs = Get-Content $badURLFilePath
