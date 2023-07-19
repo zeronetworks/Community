@@ -2,7 +2,7 @@
 $APIKey = $Env:ZNAPIKey
 
 #Get the block rule id from the portal and paste here
-$blockRuleId = "3891346e-e7fb-4a82-9805-e695c1e13f75"
+$blockRuleId = ""
 
 #Get the filepath of bad URLs
 $badURLFilePath = "c:\tmp\badurls.txt"
