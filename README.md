@@ -94,6 +94,9 @@
 </details>
 
 
+<br>API - **[Login-ZNAADSAML.ps1](Segment/API/Login-ZNAADSAML.ps1)** - Login-ZNAADSAML.ps1 
+
+
 <br>MFA Push - **[getSecretMicrosoftAuth.ps1](Segment/MFA%20Push/getSecretMicrosoftAuth.ps1)** - getSecretMicrosoftAuth.ps1 
 
 
@@ -142,4 +145,4 @@ If you have a script you would like to share to the community or improvements on
 - Once the pull request is approved and merged you can pull the changes from `upstream` to your local repo.
 
 <br><br>
-![generated_image](https://img.shields.io/badge/generated%20date-07/20/2023%2018:29:01-blue)
+![generated_image](https://img.shields.io/badge/generated%20date-08/29/2023%2019:34:14-blue)
