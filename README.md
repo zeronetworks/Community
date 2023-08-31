@@ -150,4 +150,4 @@ If you have a script you would like to share to the community or improvements on
 - Once the pull request is approved and merged you can pull the changes from `upstream` to your local repo.
 
 <br><br>
-![generated_image](https://img.shields.io/badge/generated%20date-08/31/2023%2018:01:00-blue)
+![generated_image](https://img.shields.io/badge/generated%20date-08/31/2023%2019:02:16-blue)
