@@ -83,11 +83,14 @@
 
 
 <details>
-<summary>Troubleshooting (2)</summary>
+<summary>Troubleshooting (3)</summary>
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Network Port Connectivity Check.ps1](/home/runner/work/Community/Community/Segment/Troubleshooting/Network%20Port%20Connectivity%20Check.ps1)** - Does network connectivity Test on Clients and Trust Server on the required ports based on the Deployment guide
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[ZN_Troubleshooter_v01.ps1](/home/runner/work/Community/Community/Segment/Troubleshooting/ZN_Troubleshooter_v01.ps1)** - ZN_Troubleshooter_v01.ps1 
+
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[ZNConnectivityTest.ps1](/home/runner/work/Community/Community/Segment/Troubleshooting/ZNConnectivityTest.ps1)** - ZNConnectivityTest.ps1 
 
 
 
@@ -145,4 +148,4 @@ If you have a script you would like to share to the community or improvements on
 - Once the pull request is approved and merged you can pull the changes from `upstream` to your local repo.
 
 <br><br>
-![generated_image](https://img.shields.io/badge/generated%20date-08/29/2023%2019:34:14-blue)
+![generated_image](https://img.shields.io/badge/generated%20date-08/31/2023%2013:33:09-blue)
