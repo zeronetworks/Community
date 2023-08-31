@@ -21,7 +21,7 @@ $currentSetting = Invoke-RestMethod -Method Get -Uri "https://portal.zeronetwork
 foreach($ip in $ipsToAdd){
     #check if the IP is already in the list
     if($currentSetting.config.externalIpsList -notcontains $ip){
-        $currentSetting.config.externalIpsList += $ip
+        $currentSetting.config.externalIpsList += $ip.ToString()
     }
 }
 
