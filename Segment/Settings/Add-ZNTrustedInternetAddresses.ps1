@@ -16,7 +16,7 @@ $Path = Read-Host -Prompt "Enter the path to the file containing the IPs to add"
 
 $ipsToAdd = Get-Content -Path $Path
 
-$currentSetting = Invoke-RestMethod -Method Get -Uri "https://portal-dev.zeronetworks.com/api/v1/settings/system/trusted-external" -Headers $znHeaders
+$currentSetting = Invoke-RestMethod -Method Get -Uri "https://portal.zeronetworks.com/api/v1/settings/system/trusted-external" -Headers $znHeaders
 
 foreach($ip in $ipsToAdd){
     #check if the IP is already in the list
@@ -25,4 +25,4 @@ foreach($ip in $ipsToAdd){
     }
 }
 
-Invoke-RestMethod -Method Put -Uri "https://portal-dev.zeronetworks.com/api/v1/settings/system/trusted-external" -Headers $znHeaders -Body ($currentSetting.config | ConvertTo-Json)
+Invoke-RestMethod -Method Put -Uri "https://portal.zeronetworks.com/api/v1/settings/system/trusted-external" -Headers $znHeaders -Body ($currentSetting.config | ConvertTo-Json)
