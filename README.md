@@ -103,6 +103,8 @@
 <br>MFA Push - **[getSecretMicrosoftAuth.ps1](Segment/MFA%20Push/getSecretMicrosoftAuth.ps1)** - getSecretMicrosoftAuth.ps1 
 
 
+<br>Settings - **[Add-ZNTrustedInternetAddresses.ps1](Segment/Settings/Add-ZNTrustedInternetAddresses.ps1)** - Simple API Call to Trusted Internet IPs
+
 <br>Trust Server - **[Logs - Parse WinRM from Trust Server logs and Summarize.ps1](Segment/Trust%20Server/Logs%20-%20Parse%20WinRM%20from%20Trust%20Server%20logs%20and%20Summarize.ps1)** - Sample Script to parse through the trust server logs and summarize the last 1000 entries for quick troubleshooting
 
 
@@ -148,4 +150,4 @@ If you have a script you would like to share to the community or improvements on
 - Once the pull request is approved and merged you can pull the changes from `upstream` to your local repo.
 
 <br><br>
-![generated_image](https://img.shields.io/badge/generated%20date-08/31/2023%2013:33:09-blue)
+![generated_image](https://img.shields.io/badge/generated%20date-08/31/2023%2018:01:00-blue)
