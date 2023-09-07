@@ -3,6 +3,7 @@ $APIKey = ''
 #Headers
 $znHeaders = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
 $znHeaders.Add("Authorization",$APIKey)
+$znHeaders.Add("Content-Type","application/json")
 
 $uri = "https://portal.zeronetworks.com/api/v1"
 
@@ -23,8 +24,18 @@ foreach($asset in ($assetsToCheck | where {$_.assetStatus -eq 1})){
     $unprotectItems += $asset.id
 }
 
-$unprotectBody = @{
-    "items" = @($unprotectItems)
-}
+$a=1
+$batchitems = @()
+foreach($item in $unprotectItems){
+    $batchitems += $item
+    $unprotectBody = @{
+        "items" = @($batchitems)
+    }
+    
+    if($a % 100 -eq 0){
+        Invoke-RestMethod -Uri "$uri/assets/actions/unprotect" -Method POST -Body ($unprotectBody | ConvertTo-Json) -Headers $znHeaders
+        $batchitems = @()
+    }
 
-Invoke-RestMethod -Uri "$uri/assets/unprotect" -Method POST -Body $unprotectBody -Headers $znHeaders
+    $a++
+}
