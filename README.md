@@ -59,9 +59,9 @@
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Unprotect-ZNLearningButNotConnected.ps1](/home/runner/work/Community/Community/Segment/Asset%20Management/Unprotect-ZNLearningButNotConnected.ps1)** - Unprotect-ZNLearningButNotConnected.ps1 
 
 
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[enrollLinuxAsset.ps1](/home/runner/work/Community/Community/Segment/Asset%20Management/enrollLinuxAsset.ps1)** - This script accepts a CSV of Linux servers, and adds them to the Zero Networks dashboard as a manual Linux asset.
-
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[auditMonitoredAssets.ps1](/home/runner/work/Community/Community/Segment/Asset%20Management/auditMonitoredAssets.ps1)** - This script accepts a CSV of assets which SHOULD be monitored, and queries the ZN API to see if they are showing as monitored..
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[enrollLinuxAsset.ps1](/home/runner/work/Community/Community/Segment/Asset%20Management/enrollLinuxAsset.ps1)** - This script accepts a CSV of Linux servers, and adds them to the Zero Networks dashboard as a manual Linux asset.
 
 
 </details>
@@ -97,6 +97,18 @@
 </details>
 
 
+
+<details>
+<summary>Trust Server (2)</summary>
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Logs - Parse WinRM from Trust Server logs and Summarize.ps1](/home/runner/work/Community/Community/Segment/Trust%20Server/Logs%20-%20Parse%20WinRM%20from%20Trust%20Server%20logs%20and%20Summarize.ps1)** - Sample Script to parse through the trust server logs and summarize the last 1000 entries for quick troubleshooting
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[znlog-filter.ps1](/home/runner/work/Community/Community/Segment/Trust%20Server/znlog-filter.ps1)** - Sample Script to parse through the trust server WinRM logs including those that are in zips.
+
+
+</details>
+
+
 <br>API - **[Login-ZNAADSAML.ps1](Segment/API/Login-ZNAADSAML.ps1)** - Login-ZNAADSAML.ps1 
 
 
@@ -104,8 +116,6 @@
 
 
 <br>Settings - **[Add-ZNTrustedInternetAddresses.ps1](Segment/Settings/Add-ZNTrustedInternetAddresses.ps1)** - Simple API Call to Trusted Internet IPs
-
-<br>Trust Server - **[Logs - Parse WinRM from Trust Server logs and Summarize.ps1](Segment/Trust%20Server/Logs%20-%20Parse%20WinRM%20from%20Trust%20Server%20logs%20and%20Summarize.ps1)** - Sample Script to parse through the trust server logs and summarize the last 1000 entries for quick troubleshooting
 
 
 <br>
@@ -150,4 +160,4 @@ If you have a script you would like to share to the community or improvements on
 - Once the pull request is approved and merged you can pull the changes from `upstream` to your local repo.
 
 <br><br>
-![generated_image](https://img.shields.io/badge/generated%20date-09/07/2023%2013:03:22-blue)
+![generated_image](https://img.shields.io/badge/generated%20date-10/17/2023%2018:57:05-blue)
