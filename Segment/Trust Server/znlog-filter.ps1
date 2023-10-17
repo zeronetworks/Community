@@ -1,31 +1,31 @@
 <#
-    .SYNOPSIS
-    Sample Script to parse through the trust server WinRM logs including those that are in zips.
+.SYNOPSIS
+	Sample Script to parse through the trust server WinRM logs including those that are in zips.
 
-    .DESCRIPTION
-    This script will first grab zipi files depending on the number of days you set for lookback (default lookback two days).
-    Next the script will extract the zip files into the temp folder path.
-    After that, the script will copy the current Trust-WinRM.log file to the temp folder path.
-    Finally, the script will loop through all log files looking for lines that contain the assetID supplied and write those lines to a new file.
+.DESCRIPTION
+	This script will first grab zipi files depending on the number of days you set for lookback (default lookback two days).
+	Next the script will extract the zip files into the temp folder path.
+	After that, the script will copy the current Trust-WinRM.log file to the temp folder path.
+	Finally, the script will loop through all log files looking for lines that contain the assetID supplied and write those lines to a new file.
 
-    .PARAMETER targetAssetId
-		This is the Zero Networks Internal ID for the asset.  It can be found
-        by going to the Asset page in the portal and looking at the URL.  
-        The asset ID will be in the format of 'a:a:XYZabc12'
-	.PARAMETER logFolderPath
-		Path to where the trust-winrm.log and trust-winrm.log.zip file(s) reside.
-        Defaults to installation path\logs
-	.PARAMETER lookBack
-		Number of days to look back in zip files.  Default = 2 days back.
-	.PARAMETER dpath
-		Path to where the extracted zip files should be placed and the outputfile.
-    .PARAMETER outputFile
-		Name of the output file.
+.PARAMETER targetAssetId
+	This is the Zero Networks Internal ID for the asset.  It can be found
+	by going to the Asset page in the portal and looking at the URL.  
+	The asset ID will be in the format of 'a:a:XYZabc12'
+.PARAMETER logFolderPath
+	Path to where the trust-winrm.log and trust-winrm.log.zip file(s) reside.
+	Defaults to installation path\logs
+.PARAMETER lookBack
+	Number of days to look back in zip files.  Default = 2 days back.
+.PARAMETER dpath
+	Path to where the extracted zip files should be placed and the outputfile.
+.PARAMETER outputFile
+	Name of the output file.
 
-    .NOTES
-        Filename: znlog-filter.ps1
-        Author: Ken Ward <ken.ward@zeronetworks.com>
-        Modified date: 10/17/2023
+.NOTES
+	Filename: znlog-filter.ps1
+	Author: Ken Ward <ken.ward@zeronetworks.com>
+	Modified date: 10/17/2023
 #>
 
 $defaultAssetID = "a:a:XYZabc12"
