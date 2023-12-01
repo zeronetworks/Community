@@ -65,9 +65,9 @@
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Unprotect-ZNLearningButNotConnected.ps1](/home/runner/work/Community/Community/Segment/Asset%20Management/Unprotect-ZNLearningButNotConnected.ps1)** - Unprotect-ZNLearningButNotConnected.ps1 
 
 
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[auditMonitoredAssets.ps1](/home/runner/work/Community/Community/Segment/Asset%20Management/auditMonitoredAssets.ps1)** - This script accepts a CSV of assets which SHOULD be monitored, and queries the ZN API to see if they are showing as monitored..
-
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[enrollLinuxAsset.ps1](/home/runner/work/Community/Community/Segment/Asset%20Management/enrollLinuxAsset.ps1)** - This script accepts a CSV of Linux servers, and adds them to the Zero Networks dashboard as a manual Linux asset.
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[auditMonitoredAssets.ps1](/home/runner/work/Community/Community/Segment/Asset%20Management/auditMonitoredAssets.ps1)** - This script accepts a CSV of assets which SHOULD be monitored, and queries the ZN API to see if they are showing as monitored..
 
 
 </details>
@@ -89,11 +89,14 @@
 
 
 <details>
-<summary>Troubleshooting (3)</summary>
+<summary>Troubleshooting (4)</summary>
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Network Port Connectivity Check.ps1](/home/runner/work/Community/Community/Segment/Troubleshooting/Network%20Port%20Connectivity%20Check.ps1)** - Does network connectivity Test on Clients and Trust Server on the required ports based on the Deployment guide
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[ZN_Troubleshooter_v01.ps1](/home/runner/work/Community/Community/Segment/Troubleshooting/ZN_Troubleshooter_v01.ps1)** - ZN_Troubleshooter_v01.ps1 
+
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[ZN_Troubleshooter_v02.ps1](/home/runner/work/Community/Community/Segment/Troubleshooting/ZN_Troubleshooter_v02.ps1)** - ZN_Troubleshooter_v02.ps1 
 
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[ZNConnectivityTest.ps1](/home/runner/work/Community/Community/Segment/Troubleshooting/ZNConnectivityTest.ps1)** - ZNConnectivityTest.ps1 
@@ -166,4 +169,4 @@ If you have a script you would like to share to the community or improvements on
 - Once the pull request is approved and merged you can pull the changes from `upstream` to your local repo.
 
 <br><br>
-![generated_image](https://img.shields.io/badge/generated%20date-10/31/2023%2018:44:04-blue)
+![generated_image](https://img.shields.io/badge/generated%20date-12/01/2023%2020:18:14-blue)
