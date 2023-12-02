@@ -45,11 +45,21 @@ if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 {
     # If not running as admin, write an error message and exit
     Write-Error "This script requires administrative privileges. Please run it as an administrator."
-    exit
+    Start-Process powershell.exe "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs; exit 
+    #exit
 }
 
 # Define the path for the log file
 $logFilePath = "C:\temp\zeronetworksts.txt"
+
+# Get the directory path from the file path
+$folderPath = Split-Path -Path $logFilePath
+
+# Check if the folder exists
+if (-not (Test-Path -Path $folderPath)) {
+    # The folder does not exist, so create it
+    New-Item -ItemType Directory -Path $folderPath
+} 
 
 function Check-ServiceStatus {
     param (
