@@ -51,7 +51,8 @@ if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 
 # Define the path for the log file
 $logFile = "ZN_TroubleshootingReport.txt"
-$gopReport = "GPOreport.xml"
+$logFilePath = (Join-Path $env:LOCALAPPDATA "ZeroNetworks\$logFile")
+$gopReport = "GPOReport.xml"
 
 
 # Get the directory path from the file path
@@ -121,13 +122,13 @@ function Check-FirewallAuditLogsEnabled {
 function Create-GpoReport {
     $path = Join-Path $env:LOCALAPPDATA "ZeroNetworks"
     If(!(test-path -PathType container $path)) { New-Item -ItemType Directory -Path $path }
-    if (test-path $path\report.xml) { Remove-Item $path\report.xml} ## Remove old report
-    cmd.exe /c "gpresult /X $($path)\report.xml /f"
-    (Join-Path $env:LOCALAPPDATA "ZeroNetworks\report.xml")
+    if (test-path $path\$gopReport) { Remove-Item $path\$gopReport} ## Remove old report
+    cmd.exe /c "gpresult /X $($path)\$gopReport /f"
+    (Join-Path $env:LOCALAPPDATA "ZeroNetworks\$gopReport")
 }
 function Check-ZNGPOs {
     $path = Join-Path $env:LOCALAPPDATA "ZeroNetworks"
-    $GPResultXML = [xml](Get-Content -Path "$($path)\report.xml")
+    $GPResultXML = [xml](Get-Content -Path "$($path)\$gopReport")
     $GPONames = $GPResultXML.Rsop.ComputerResults.GPO | Select-Object *, @{N="Id";E={$_.Path.Identifier."#text"}} | Where-Object {$_.Name -in @("ZeroNetworksMonitor","ZeroNetworksProtect")} | Select Name, Enabled, IsValid, SecurityFilter
     $names = @("ZeroNetworksMonitor","ZeroNetworksProtect") 
     $check = foreach ($name in $names) { 
@@ -252,7 +253,7 @@ Check-LocalWinRMListening
 
 Check-FirewallAuditLogsEnabled
 
-Check-Comms2Segment 
+#Check-Comms2Segment 
 
 Create-GpoReport
 Check-ZNGPOs
