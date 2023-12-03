@@ -216,6 +216,33 @@ function Check-GPOConflict {
             
         }
 
+function Check-Comms2Segment {
+    $fwRule = Get-NetFirewallRule -PolicyStore ActiveStore | Where-Object {$_.DisplayName -eq "ZNRemoteAccess"} | Select *, @{ N="Trust Servers"; Expression={($_ | Get-NetFirewallAddressFilter).RemoteAddress}}
+    $fwRule = $fwRule | Select-Object DisplayName, Enabled, Profile, Direction, Action, "Trust Servers"
+    $trustServers = ForEach ($server in $fwRule."Trust Servers") {
+        ## Reverse lookup trust server IP
+        Try {
+            $resolvedName = (Resolve-DnsName $server -ErrorAction Ignore).NameHost
+        }
+        Catch {
+        }
+        [PSCustomObject]@{
+            IP = $server
+            "Hostname" = $resolvedName
+            "DNS Check" = if ($resolvedName) {"Success"} else {"Failed"}
+        }
+    }
+
+    $trustServers | ForEach-Object {
+        if($_.Hostname -ne ""){$sslCheck = Test-NetConnection -ComputerName $_.Hostname -Port 443 }
+
+        $_ | Add-Member -MemberType NoteProperty -Name "Port" -value $sslCheck.Port -Force
+        $_ | Add-Member -MemberType NoteProperty -Name "Protocol" -value $sslCheck.Protocol -Force
+        $_ | Add-Member -MemberType NoteProperty -Name "Connectivity To Trust Server" -value $(if ($sslCheck.Result) {"Success"} else {"Failed"}) -Force
+    }
+    $trustServers | FT
+    
+}
 
 Check-ServiceStatus -ServiceName "WinRM" -LogFilePath $logFilePath
 Check-ServiceStatus -ServiceName "MpsSvc" -LogFilePath $logFilePath
@@ -223,6 +250,8 @@ Check-ServiceStatus -ServiceName "MpsSvc" -LogFilePath $logFilePath
 Check-LocalWinRMListening
 
 Check-FirewallAuditLogsEnabled
+
+Check-Comms2Segment 
 
 Create-GpoReport
 Check-ZNGPOs
