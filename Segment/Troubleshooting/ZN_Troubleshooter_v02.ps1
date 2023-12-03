@@ -50,7 +50,8 @@ if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 }
 
 # Define the path for the log file
-$logFilePath = "C:\temp\zeronetworksts.txt"
+$logFile = "ZN_TroubleshootingReport.txt"
+$gopReport = "GPOreport.xml"
 
 
 # Get the directory path from the file path
