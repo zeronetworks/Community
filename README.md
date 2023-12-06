@@ -49,6 +49,20 @@
 
 
 <details>
+<summary>API (2)</summary>
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Login-ZNAADSAML.ps1](/home/runner/work/Community/Community/Segment/API/Login-ZNAADSAML.ps1)** - Login-ZNAADSAML.ps1 
+
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[sample.ps1](/home/runner/work/Community/Community/Segment/API/sample.ps1)** - sample.ps1 
+
+
+
+</details>
+
+
+
+<details>
 <summary>Asset Management (7)</summary>
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[CreateOTAssets.ps1](/home/runner/work/Community/Community/Segment/Asset%20Management/CreateOTAssets.ps1)** - Simple API Call to add an OT/IoT asset entry to Zero Networks
@@ -65,9 +79,9 @@
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Unprotect-ZNLearningButNotConnected.ps1](/home/runner/work/Community/Community/Segment/Asset%20Management/Unprotect-ZNLearningButNotConnected.ps1)** - Unprotect-ZNLearningButNotConnected.ps1 
 
 
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[auditMonitoredAssets.ps1](/home/runner/work/Community/Community/Segment/Asset%20Management/auditMonitoredAssets.ps1)** - This script accepts a CSV of assets which SHOULD be monitored, and queries the ZN API to see if they are showing as monitored..
-
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[enrollLinuxAsset.ps1](/home/runner/work/Community/Community/Segment/Asset%20Management/enrollLinuxAsset.ps1)** - This script accepts a CSV of Linux servers, and adds them to the Zero Networks dashboard as a manual Linux asset.
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[auditMonitoredAssets.ps1](/home/runner/work/Community/Community/Segment/Asset%20Management/auditMonitoredAssets.ps1)** - This script accepts a CSV of assets which SHOULD be monitored, and queries the ZN API to see if they are showing as monitored..
 
 
 </details>
@@ -113,9 +127,6 @@
 
 
 </details>
-
-
-<br>API - **[Login-ZNAADSAML.ps1](Segment/API/Login-ZNAADSAML.ps1)** - Login-ZNAADSAML.ps1 
 
 
 <br>MFA Push - **[getSecretMicrosoftAuth.ps1](Segment/MFA%20Push/getSecretMicrosoftAuth.ps1)** - getSecretMicrosoftAuth.ps1 
@@ -166,4 +177,4 @@ If you have a script you would like to share to the community or improvements on
 - Once the pull request is approved and merged you can pull the changes from `upstream` to your local repo.
 
 <br><br>
-![generated_image](https://img.shields.io/badge/generated%20date-10/31/2023%2018:44:04-blue)
+![generated_image](https://img.shields.io/badge/generated%20date-12/06/2023%2014:53:54-blue)
