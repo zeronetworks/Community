@@ -250,7 +250,7 @@ Check-ServiceStatus -ServiceName "WinRM" -LogFilePath $logFilePath
 Check-ServiceStatus -ServiceName "MpsSvc" -LogFilePath $logFilePath
 
 Check-LocalWinRMListening
-
+  
 Check-FirewallAuditLogsEnabled
 
 #Check-Comms2Segment 
