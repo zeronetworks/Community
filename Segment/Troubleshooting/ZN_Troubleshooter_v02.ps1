@@ -4,7 +4,7 @@
 .AUTHOR ken@zeronetworks.com
 .VERSION 2.0
 .Synopsis
-   This scripts purpose is to help quickly troubleshoot common scenarios related to issues on the Trust Server or monitored/protected assets
+   This scripts purpose is to help quickly troubleshoot common scenarios related to issues on the Segmentation Server or monitored/protected assets
    
 .DESCRIPTION
    This script does the following
@@ -214,15 +214,15 @@ function Check-GPOConflict {
             if($p.value) {$filtered += $p}
         }
     }
-    $filtered | Format-Table
+    $filtered | Format-Table | Out-File -FilePath $LogFilePath -Append
             
         }
 
 function Check-Comms2Segment {
-    $fwRule = Get-NetFirewallRule -PolicyStore ActiveStore | Where-Object {$_.DisplayName -eq "ZNRemoteAccess"} | Select *, @{ N="Trust Servers"; Expression={($_ | Get-NetFirewallAddressFilter).RemoteAddress}}
-    $fwRule = $fwRule | Select-Object DisplayName, Enabled, Profile, Direction, Action, "Trust Servers"
-    $trustServers = ForEach ($server in $fwRule."Trust Servers") {
-        ## Reverse lookup trust server IP
+    $fwRule = Get-NetFirewallRule -PolicyStore ActiveStore | Where-Object {$_.DisplayName -eq "ZNRemoteAccess"} | Select-Object *, @{ N="Segmentation Servers"; Expression={($_ | Get-NetFirewallAddressFilter).RemoteAddress}}
+    $fwRule = $fwRule | Select-Object DisplayName, Enabled, Profile, Direction, Action, "Segmentation Servers"
+    $trustServers = ForEach ($server in $fwRule."Segmentation Servers") {
+        ## Reverse lookup segmentation server IP
         Try {
             $resolvedName = (Resolve-DnsName $server -ErrorAction Ignore).NameHost
         }
@@ -240,9 +240,9 @@ function Check-Comms2Segment {
 
         $_ | Add-Member -MemberType NoteProperty -Name "Port" -value $sslCheck.Port -Force
         $_ | Add-Member -MemberType NoteProperty -Name "Protocol" -value $sslCheck.Protocol -Force
-        $_ | Add-Member -MemberType NoteProperty -Name "Connectivity To Trust Server" -value $(if ($sslCheck.Result) {"Success"} else {"Failed"}) -Force
+        $_ | Add-Member -MemberType NoteProperty -Name "Connectivity To Segmentation Server" -value $(if ($sslCheck.Result) {"Success"} else {"Failed"}) -Force
     }
-    $trustServers | FT
+    $trustServers | Format-Table | Out-File -FilePath $LogFilePath -Append
     
 }
 
