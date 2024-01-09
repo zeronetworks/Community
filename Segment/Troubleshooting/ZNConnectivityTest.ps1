@@ -1,6 +1,5 @@
 # Define an array of URLs and Ports to test
 $connections = @(
-    @{ "Url" = "34.74.201.149"; "Port" = 30022 },
     @{ "Url" = "monitor.zeronetworks.com"; "Port" = 443 },
     @{ "Url" = "portal.zeronetworks.com"; "Port" = 443 },
     @{ "Url" = "download.zeronetworks.com"; "Port" = 443 },
