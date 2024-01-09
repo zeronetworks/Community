@@ -9,7 +9,8 @@ $computers = Get-ADGroupMember -Identity 'ZeroNetworksMonitoredAssets' | Where-O
 
 # Define script block for the commands to run on remote machines
 $scriptBlock = {
-    klist -lh 0 -li 0x3e7 purge
+    klist -li 0x3e4 purge
+    klist -li 0x3e7 purge
     gpupdate /force
 }
 
