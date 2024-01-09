@@ -21,6 +21,7 @@ foreach ($conn in $connections) {
     $url = $conn.Url
     $port = $conn.Port
     $result = Test-NetConnection -ComputerName $url -Port $port
+    Resolve-DnsName $url 
 
     # Check the result and print out failures
     if (-not $result.TcpTestSucceeded) {
