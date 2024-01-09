@@ -21,12 +21,16 @@ foreach ($conn in $connections) {
     $url = $conn.Url
     $port = $conn.Port
     $result = Test-NetConnection -ComputerName $url -Port $port
-    Resolve-DnsName $url 
+    $dns = Resolve-DnsName $url -ErrorAction SilentlyContinue 
 
     # Check the result and print out failures
     if (-not $result.TcpTestSucceeded) {
         Write-Host "Failed to connect to $url on port $port"
         $failedConnections += [PSCustomObject]@{ "Url" = $url; "Port" = $port }
+    }
+
+    if (-not $dns) {
+        Write-Host "Failed to resolve $url"
     }
 }
 
