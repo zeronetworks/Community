@@ -1,0 +1,22 @@
+# Import Active Directory Module
+Import-Module ActiveDirectory
+
+# Prompt user for credentials
+$credentials = Get-Credential
+
+# Get all computer objects from the group 'ZeroNetworksMonitoredAssets'
+$computers = Get-ADGroupMember -Identity 'ZeroNetworksMonitoredAssets' | Where-Object { $_.objectClass -eq 'computer' }
+
+# Define script block for the commands to run on remote machines
+$scriptBlock = {
+    klist -lh 0 -li 0x3e7 purge
+    gpupdate /force
+}
+
+# Iterate over each computer and invoke the commands
+foreach ($computer in $computers) {
+    Invoke-Command -ComputerName $computer.Name -Credential $credentials -ScriptBlock $scriptBlock -AsJob
+}
+
+# Optionally, you can wait for all jobs to complete and then receive their output
+# Get-Job | Wait-Job | Receive-Job
