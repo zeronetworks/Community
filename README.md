@@ -79,9 +79,9 @@
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Unprotect-ZNLearningButNotConnected.ps1](/home/runner/work/Community/Community/Segment/Asset%20Management/Unprotect-ZNLearningButNotConnected.ps1)** - Unprotect-ZNLearningButNotConnected.ps1 
 
 
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[enrollLinuxAsset.ps1](/home/runner/work/Community/Community/Segment/Asset%20Management/enrollLinuxAsset.ps1)** - This script accepts a CSV of Linux servers, and adds them to the Zero Networks dashboard as a manual Linux asset.
-
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[auditMonitoredAssets.ps1](/home/runner/work/Community/Community/Segment/Asset%20Management/auditMonitoredAssets.ps1)** - This script accepts a CSV of assets which SHOULD be monitored, and queries the ZN API to see if they are showing as monitored..
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[enrollLinuxAsset.ps1](/home/runner/work/Community/Community/Segment/Asset%20Management/enrollLinuxAsset.ps1)** - This script accepts a CSV of Linux servers, and adds them to the Zero Networks dashboard as a manual Linux asset.
 
 
 </details>
@@ -119,7 +119,10 @@
 
 
 <details>
-<summary>Trust Server (2)</summary>
+<summary>Trust Server (3)</summary>
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Add-ZNOutboundRulesProtectGPO.ps1](/home/runner/work/Community/Community/Segment/Trust%20Server/Add-ZNOutboundRulesProtectGPO.ps1)** - Add-ZNOutboundRulesProtectGPO.ps1 
+
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Logs - Parse WinRM from Trust Server logs and Summarize.ps1](/home/runner/work/Community/Community/Segment/Trust%20Server/Logs%20-%20Parse%20WinRM%20from%20Trust%20Server%20logs%20and%20Summarize.ps1)** - Sample Script to parse through the trust server logs and summarize the last 1000 entries for quick troubleshooting
 
@@ -177,4 +180,4 @@ If you have a script you would like to share to the community or improvements on
 - Once the pull request is approved and merged you can pull the changes from `upstream` to your local repo.
 
 <br><br>
-![generated_image](https://img.shields.io/badge/generated%20date-01/09/2024%2018:38:47-blue)
+![generated_image](https://img.shields.io/badge/generated%20date-02/06/2024%2018:53:09-blue)
