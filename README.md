@@ -103,7 +103,10 @@
 
 
 <details>
-<summary>Troubleshooting (3)</summary>
+<summary>Troubleshooting (4)</summary>
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[CollectSMBDetails.ps1](/home/runner/work/Community/Community/Segment/Troubleshooting/CollectSMBDetails.ps1)** - CollectSMBDetails.ps1 
+
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Network Port Connectivity Check.ps1](/home/runner/work/Community/Community/Segment/Troubleshooting/Network%20Port%20Connectivity%20Check.ps1)** - Does network connectivity Test on Clients and Trust Server on the required ports based on the Deployment guide
 
@@ -180,4 +183,4 @@ If you have a script you would like to share to the community or improvements on
 - Once the pull request is approved and merged you can pull the changes from `upstream` to your local repo.
 
 <br><br>
-![generated_image](https://img.shields.io/badge/generated%20date-02/06/2024%2018:53:09-blue)
+![generated_image](https://img.shields.io/badge/generated%20date-03/26/2024%2013:49:56-blue)
