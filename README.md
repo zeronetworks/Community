@@ -122,9 +122,12 @@
 
 
 <details>
-<summary>Trust Server (3)</summary>
+<summary>Trust Server (4)</summary>
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Add-ZNOutboundRulesProtectGPO.ps1](/home/runner/work/Community/Community/Segment/Trust%20Server/Add-ZNOutboundRulesProtectGPO.ps1)** - Add-ZNOutboundRulesProtectGPO.ps1 
+
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[breakglass-single.ps1](/home/runner/work/Community/Community/Segment/Trust%20Server/breakglass-single.ps1)** - breakglass-single.ps1 
 
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Logs - Parse WinRM from Trust Server logs and Summarize.ps1](/home/runner/work/Community/Community/Segment/Trust%20Server/Logs%20-%20Parse%20WinRM%20from%20Trust%20Server%20logs%20and%20Summarize.ps1)** - Sample Script to parse through the trust server logs and summarize the last 1000 entries for quick troubleshooting
@@ -183,4 +186,4 @@ If you have a script you would like to share to the community or improvements on
 - Once the pull request is approved and merged you can pull the changes from `upstream` to your local repo.
 
 <br><br>
-![generated_image](https://img.shields.io/badge/generated%20date-03/26/2024%2013:49:56-blue)
+![generated_image](https://img.shields.io/badge/generated%20date-04/09/2024%2018:52:36-blue)
