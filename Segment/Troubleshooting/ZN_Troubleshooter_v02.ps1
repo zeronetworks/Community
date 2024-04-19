@@ -76,7 +76,7 @@ function Check-ServiceStatus {
     $service = Get-Service -Name $ServiceName
     if ($service.Status -ne 'Running') {
         $warningMessage = "$ServiceName service is not running."
-        Write-Warning $warningMessage
+        Write-Host $warningMessage
         $warningMessage | Out-File -FilePath $LogFilePath -Append
     } else {
         $output = "$ServiceName service is running"
@@ -96,7 +96,7 @@ function Check-LocalWinRMListening {
             Write-Host "Local host is listening on WinRM port $port."
         } else {
             $warningMessage = "Local host is not listening on WinRM port $port."
-            Write-Warning $warningMessage
+            Write-Host $warningMessage
             $warningMessage | Out-File -FilePath $LogFilePath -Append
         }
     }
@@ -113,7 +113,7 @@ function Check-FirewallAuditLogsEnabled {
             Write-Host "Audit logs for $subcategory are enabled (Success and Failure)."
         } else {
             $warningMessage = "Audit logs for $subcategory are not fully enabled. Current setting: $auditPolicy"
-            Write-Warning $warningMessage
+            Write-Host $warningMessage
             $warningMessage | Out-File -FilePath $LogFilePath -Append
         }
     }
@@ -142,7 +142,7 @@ function Check-ZNGPOs {
 
     if ($noGpoEntries) {
         $warningMessage = "Not able to locate ZeroNetworks configured group policies assigned to this asset"
-        Write-Warning $warningMessage
+        Write-Host $warningMessage
         $warningMessage | Out-File -FilePath $LogFilePath -Append
     } else {
         Write-Host "GPOs found."
@@ -235,12 +235,15 @@ function Check-Comms2Segment {
         }
     }
 
-    $trustServers | ForEach-Object {
-        if($_.Hostname -ne ""){$sslCheck = Test-NetConnection -ComputerName $_.Hostname -Port 443 }
+    $resolvedSegmentsrvs = $trustServers | Where-Object {$_."DNS Check" -ne "Failed"} 
+    
+    ForEach ($Segsrv in $resolvedSegmentsrvs) {
+        $sslCheck = Test-NetConnection -ComputerName $Segsrv.Hostname -Port 443 
 
-        $_ | Add-Member -MemberType NoteProperty -Name "Port" -value $sslCheck.Port -Force
-        $_ | Add-Member -MemberType NoteProperty -Name "Protocol" -value $sslCheck.Protocol -Force
-        $_ | Add-Member -MemberType NoteProperty -Name "Connectivity To Segmentation Server" -value $(if ($sslCheck.Result) {"Success"} else {"Failed"}) -Force
+        $Segsrv | Add-Member -MemberType NoteProperty -Name "Port" -value "443" -Force
+        $Segsrv | Add-Member -MemberType NoteProperty -Name "Protocol" -value "TCP" -Force
+        $Segsrv | Add-Member -MemberType NoteProperty -Name "Connectivity To Segmentation Server" -value $(if ($sslCheck.TcpTestSucceeded) {"Success"} else {"Failed"}) -Force
+        $Segsrv | Format-Table | Out-File -FilePath $LogFilePath -Append
     }
     $trustServers | Format-Table | Out-File -FilePath $LogFilePath -Append
     
@@ -253,7 +256,7 @@ Check-LocalWinRMListening
   
 Check-FirewallAuditLogsEnabled
 
-#Check-Comms2Segment 
+Check-Comms2Segment 
 
 Create-GpoReport
 Check-ZNGPOs
