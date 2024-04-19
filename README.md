@@ -65,9 +65,9 @@
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Unprotect-ZNLearningButNotConnected.ps1](/home/runner/work/Community/Community/Segment/Asset%20Management/Unprotect-ZNLearningButNotConnected.ps1)** - Unprotect-ZNLearningButNotConnected.ps1 
 
 
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[auditMonitoredAssets.ps1](/home/runner/work/Community/Community/Segment/Asset%20Management/auditMonitoredAssets.ps1)** - This script accepts a CSV of assets which SHOULD be monitored, and queries the ZN API to see if they are showing as monitored..
-
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[enrollLinuxAsset.ps1](/home/runner/work/Community/Community/Segment/Asset%20Management/enrollLinuxAsset.ps1)** - This script accepts a CSV of Linux servers, and adds them to the Zero Networks dashboard as a manual Linux asset.
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[auditMonitoredAssets.ps1](/home/runner/work/Community/Community/Segment/Asset%20Management/auditMonitoredAssets.ps1)** - This script accepts a CSV of assets which SHOULD be monitored, and queries the ZN API to see if they are showing as monitored..
 
 
 </details>
@@ -169,4 +169,4 @@ If you have a script you would like to share to the community or improvements on
 - Once the pull request is approved and merged you can pull the changes from `upstream` to your local repo.
 
 <br><br>
-![generated_image](https://img.shields.io/badge/generated%20date-12/07/2023%2021:07:35-blue)
+![generated_image](https://img.shields.io/badge/generated%20date-04/19/2024%2016:35:33-blue)
