@@ -1,3 +1,9 @@
+<#
+    .Synopsis
+    Get a filtered list of clients ready for Identity Segment Learning and add to learning.
+    .Description
+    This example will use the Zero Networks PowerShell module to get all clients ready for identity learning and add them in batches to learning.
+#>
 $apiKey = ''
 
 if (-not(Get-Module -ListAvailable -Name ZeroNetworks)) {
