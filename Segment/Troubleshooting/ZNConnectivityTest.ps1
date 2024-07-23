@@ -11,6 +11,8 @@ $connections = @(
     @{ "Url" = "connect-backend.zeronetworks.com"; "Port" = 443},
     @{ "Url" = "connect-auth.zeronetworks.com"; "Port" = 443},
     @{ "Url" = "connect.zeronetworks.com"; "Port" = 443},
+    @{ "Url" = "jamf-connector.zeronetworks.com"; "Port" = 443},
+    @{ "Url" = "register-cloud-connector.zeronetworks.com"; "Port" = 443},
     @{ "Url" = "34.74.201.149"; "Port" = 443},
     @{ "Url" = "35.201.109.138"; "Port" = 443}
 )
