@@ -7,7 +7,8 @@ $file = "PATH_TO_FILE.txt"
 $adDomain = "YOUR_DOMAIN.com"
 # how many days you want to learn.
 $daysToLearn = 30
-$$maintenanceWindowId "e:m:rsij1N89"
+#mainanance window id.
+$maintenanceWindowId = "e:m:xxxxxxx"
 
 # check for zero networks powershell module
 if(get-module ZeroNetworks -ListAvailable){
