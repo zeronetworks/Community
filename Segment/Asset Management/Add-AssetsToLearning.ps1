@@ -7,7 +7,7 @@ $file = "PATH_TO_FILE.txt"
 $adDomain = "YOUR_DOMAIN.com"
 # how many days you want to learn.
 $daysToLearn = 30
-#mainanance window id.
+#maintenance window id.
 $maintenanceWindowId = "e:m:xxxxxxx"
 
 # check for zero networks powershell module
@@ -42,4 +42,4 @@ $body = @{
     "enforceBlocks" = $false
     "maintenanceWindowId" = $maintenanceWindowId
 }
-Invoke-RestMethod -uri "https://portal.zeronetworks.com/api/v1/assets/actions/queue" -method POST -Headers $znHeaders -Body @body
+Invoke-RestMethod -Uri "https://portal.zeronetworks.com/api/v1/assets/actions/queue" -Method POST -Headers $znHeaders -Body ($body | ConvertTo-Json)
