@@ -1,28 +1,31 @@
+#update3.0
 [CmdletBinding()]
-param (
+
+param(
     # API Token to get download URL
-    [Parameter(Position = 0)]
-    [String]
-    $APIToken = "",
+    [Parameter(mandatory=$False)]
+    [String]$APIToken = "<INSERT_API_TOKEN>",
 
     # Install/Uninstall
-    [Parameter(Position = 1)]
+    [Parameter(mandatory=$True)]
     [ValidateSet("install", "uninstall")]
-    [String]
-    $CloudConnectorFunction = "install",
+    [String]$CloudConnectorFunction,
 
     # Token to use to install the Cloud Connector
-    [Parameter(Position = 2)]
-    [string]
-    $CloudConnectorToken = "",
+    [Parameter(mandatory=$False)]
+    [string]$CloudConnectorToken = "<INSERT_CC_TOKEN>",
 
     # Cloud Connector Source
     [ValidateSet("AD", "WORKGROUP", "AZURE", "AZURE_AD", "AWS", "GCP", "IBM","ORACLE","VMWARE","ALIBABA","OVH","LUMEN")]
-    [Parameter(Position = 3)]
-    [string]
-    $CloudConnectorSource = "AD"
+    [Parameter(mandatory=$False)]
+    [string]$CloudConnectorSource
+
 )
 
+$systempath = 'C:\Windows\System32\config\systemprofile\AppData\Local\ZeroNetworks'
+if (($CloudConnectorFunction -eq "install") -and (Test-Path $systempath -ErrorAction SilentlyContinue)) {
+    Remove-Item -Path $systempath -Recurse -Force -ErrorAction SilentlyContinue
+}
 # Normalize function and source case
 $CloudConnectorFunction = $CloudConnectorFunction.ToLower()
 $CloudConnectorSource = $CloudConnectorSource.ToUpper()
@@ -40,6 +43,7 @@ switch ($CloudConnectorFunction) {
     "uninstall" { $installerArgs = "-$CloudConnectorFunction -token $CloudConnectorToken" }
 }
 
+#write-output $CloudConnectorFunction
 # Define the installer URI and fetch download URL
 $installerUri = 'https://portal.zeronetworks.com/api/v1/download/cloud-connector/installer'
 $response = Invoke-WebRequest -Uri $installerUri -Method GET -Headers $znHeaders
@@ -54,7 +58,9 @@ if (!$response -or !$response.Content) {
 # Download the installer
 try {
     Invoke-WebRequest -Uri $downloadUrl -Method GET -OutFile "$env:TEMP\$fileName.zip"
-} catch {
+}
+
+catch {
     Write-Host "Failed to download the installer"
     exit
 }
@@ -63,7 +69,11 @@ try {
 $zipPath = "$env:TEMP\$fileName.zip"
 try {
     Expand-Archive -Path $zipPath -DestinationPath "$env:TEMP\$fileName" -Force
-} catch {
+
+}
+
+catch {
+
     Write-Host "Failed to extract the installer"
     exit
 }
@@ -74,11 +84,40 @@ $installerFile = Get-ChildItem -Path "$($installerFolder.FullName)\ZnCloudConnec
 
 try {
     Start-Process -FilePath $installerFile.FullName -NoNewWindow -PassThru -Wait -ArgumentList $installerArgs
-} catch {
+}
+
+catch {
     Write-Host "Failed to run install."
     exit
 }
 
 # Clean up
-Remove-Item -Path "$env:TEMP\$fileName.zip" -Force
-Remove-Item -Path "$env:TEMP\$fileName" -Recurse -Force
+
+try{
+    Remove-Item -Path "$env:TEMP\$fileName.zip" -Force -ErrorAction SilentlyContinue | out-null
+    Remove-Item -Path "$env:TEMP\$fileName" -Recurse -Force -ErrorAction SilentlyContinue | out-null
+}
+
+catch {
+    write-output 'something may not have have been cleaned up right'
+
+}
+
+finally {
+
+    if (($CloudConnectorFunction -eq "uninstall") -and (Test-Path $systempath -ErrorAction SilentlyContinue)) {
+
+        $count = 0
+        do {
+            Start-Sleep -Seconds 1
+            $count ++
+        }
+        until ((((get-service -name 'zncloudconnector' -ErrorAction SilentlyContinue).status -ne 'Running') -and ((get-service -name 'zncloudconnectorupdater' -ErrorAction SilentlyContinue).status -ne 'Running') -and (Test-Path $systempath -ErrorAction SilentlyContinue)) -or ($count -eq 3))
+        if ($count -ne 3) {
+            Remove-Item -Path $systempath -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        else {
+            if ((Test-Path $systempath -ErrorAction SilentlyContinue)) {write-output "$systempath not cleaned up"} else {}
+        }
+    }
+}
