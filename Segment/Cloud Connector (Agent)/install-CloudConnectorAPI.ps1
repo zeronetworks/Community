@@ -1,9 +1,9 @@
-#update3.1
+#update3.2
 [CmdletBinding()]
 param(
     # API Token to get download URL
     [Parameter(Mandatory = $False)]
-    [String]$APIToken = "<INSERT_API_TOKEN>",
+    [String]$APIToken =  " ",
 
     # Install/Uninstall
     [Parameter(Mandatory = $True)]
@@ -12,12 +12,12 @@ param(
 
     # Token to use to install the Cloud Connector
     [Parameter(Mandatory = $False)]
-    [String]$CloudConnectorToken = "<INSERT_CC_TOKEN>",
+    [String]$CloudConnectorToken = " ",
 
     # Cloud Connector Source
     [ValidateSet("AD", "WORKGROUP", "AZURE", "AZURE_AD", "AWS", "GCP", "IBM", "ORACLE", "VMWARE", "ALIBABA", "OVH", "LUMEN")]
     [Parameter(Mandatory = $False)]
-    [String]$CloudConnectorSource
+    [String]$CloudConnectorSource = "WORKGROUP"
 )
 
 # Logging function
@@ -33,14 +33,10 @@ function Write-Log {
 Write-Log -Message "Script execution started."
 
 # Validate API Token
-if ($APIToken -eq "<INSERT_API_TOKEN>") {
+if ($APIToken -eq "") {
     Write-Log -Message "API Token is required but not provided." -Level "ERROR"
     exit
 }
-
-# Normalize function and source case
-$CloudConnectorFunction = $CloudConnectorFunction.ToLower()
-$CloudConnectorSource = $CloudConnectorSource.ToUpper()
 
 # Define installer arguments
 switch ($CloudConnectorFunction) {
@@ -112,6 +108,13 @@ try {
 } catch {
     Write-Log -Message "Failed to execute the installer: $_" -Level "ERROR"
     exit
+}
+
+#Tail setup log
+$setupLogPath = "$env:LOCALAPPDATA\ZeroNetworks\logs\setup.log"
+if (Test-Path -Path $setupLogPath) {
+    $setupText = Get-Content $setupLogPath  -Tail 1
+    Write-Log -Message $setupText  
 }
 
 # Clean up temporary files
