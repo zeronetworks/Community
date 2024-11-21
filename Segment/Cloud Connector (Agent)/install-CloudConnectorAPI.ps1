@@ -1,123 +1,147 @@
-#update3.0
+#update3.1
 [CmdletBinding()]
-
 param(
     # API Token to get download URL
-    [Parameter(mandatory=$False)]
+    [Parameter(Mandatory = $False)]
     [String]$APIToken = "<INSERT_API_TOKEN>",
 
     # Install/Uninstall
-    [Parameter(mandatory=$True)]
+    [Parameter(Mandatory = $True)]
     [ValidateSet("install", "uninstall")]
     [String]$CloudConnectorFunction,
 
     # Token to use to install the Cloud Connector
-    [Parameter(mandatory=$False)]
-    [string]$CloudConnectorToken = "<INSERT_CC_TOKEN>",
+    [Parameter(Mandatory = $False)]
+    [String]$CloudConnectorToken = "<INSERT_CC_TOKEN>",
 
     # Cloud Connector Source
-    [ValidateSet("AD", "WORKGROUP", "AZURE", "AZURE_AD", "AWS", "GCP", "IBM","ORACLE","VMWARE","ALIBABA","OVH","LUMEN")]
-    [Parameter(mandatory=$False)]
-    [string]$CloudConnectorSource
-
+    [ValidateSet("AD", "WORKGROUP", "AZURE", "AZURE_AD", "AWS", "GCP", "IBM", "ORACLE", "VMWARE", "ALIBABA", "OVH", "LUMEN")]
+    [Parameter(Mandatory = $False)]
+    [String]$CloudConnectorSource
 )
 
-$systempath = 'C:\Windows\System32\config\systemprofile\AppData\Local\ZeroNetworks'
-if (($CloudConnectorFunction -eq "install") -and (Test-Path $systempath -ErrorAction SilentlyContinue)) {
-    Remove-Item -Path $systempath -Recurse -Force -ErrorAction SilentlyContinue
+# Logging function
+$logFile = "$env:TEMP\CloudConnector.log"
+function Write-Log {
+    param (
+        [string]$Message,
+        [string]$Level = "INFO"
+    )
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    Add-Content -Path $logFile -Value "[$timestamp] [$Level] $Message"
 }
+Write-Log -Message "Script execution started."
+
+# Validate API Token
+if ($APIToken -eq "<INSERT_API_TOKEN>") {
+    Write-Log -Message "API Token is required but not provided." -Level "ERROR"
+    exit
+}
+
 # Normalize function and source case
 $CloudConnectorFunction = $CloudConnectorFunction.ToLower()
 $CloudConnectorSource = $CloudConnectorSource.ToUpper()
-$fileName = "znCC-Installer"
+
+# Define installer arguments
+switch ($CloudConnectorFunction) {
+    "install" {
+        if ($CloudConnectorToken -eq "<INSERT_CC_TOKEN>") {
+            Write-Log -Message "Cloud Connector Token is required for installation but not provided." -Level "ERROR"
+            exit
+        }
+        $installerArgs = "-$CloudConnectorFunction -token $CloudConnectorToken -source $CloudConnectorSource"
+    }
+    "uninstall" {
+        $installerArgs = "-$CloudConnectorFunction"
+    }
+}
 
 # Set up headers for API request
 $znHeaders = @{
     "Authorization" = $APIToken
-    "content-type" = "application/json"
+    "Content-Type"  = "application/json"
 }
 
-# Define installer arguments based on function type
-switch ($CloudConnectorFunction) {
-    "install" { $installerArgs = "-$CloudConnectorFunction -token $CloudConnectorToken -source $CloudConnectorSource" }
-    "uninstall" { $installerArgs = "-$CloudConnectorFunction -token $CloudConnectorToken" }
-}
-
-#write-output $CloudConnectorFunction
-# Define the installer URI and fetch download URL
+# API request for download URL
 $installerUri = 'https://portal.zeronetworks.com/api/v1/download/cloud-connector/installer'
-$response = Invoke-WebRequest -Uri $installerUri -Method GET -Headers $znHeaders
-# Validate Response
-if (!$response -or !$response.Content) {
-    Write-Host "Failed to retrieve download URL from the API."
+$response = Invoke-WebRequest -Uri $installerUri -Method GET -Headers $znHeaders -ErrorAction Stop
+if ($response.StatusCode -ne 200) {
+    Write-Log -Message "Failed to retrieve the download URL. HTTP Status Code: $($response.StatusCode)" -Level "ERROR"
     exit
 }
 
+# Parse the response
 [string]$downloadUrl = ($response.Content | ConvertFrom-Json).url
+if (-not $downloadUrl) {
+    Write-Log -Message "Download URL is missing in the API response." -Level "ERROR"
+    exit
+}
 
 # Download the installer
+$fileName = "znCC-Installer"
+$zipPath = "$env:TEMP\$fileName.zip"
 try {
-    Invoke-WebRequest -Uri $downloadUrl -Method GET -OutFile "$env:TEMP\$fileName.zip"
-}
-
-catch {
-    Write-Host "Failed to download the installer"
+    Invoke-WebRequest -Uri $downloadUrl -Method GET -OutFile $zipPath -ErrorAction Stop
+    Write-Log -Message "Installer downloaded successfully."
+} catch {
+    Write-Log -Message "Failed to download the installer: $_" -Level "ERROR"
     exit
 }
 
-# Extract the Zip file
-$zipPath = "$env:TEMP\$fileName.zip"
+# Extract the zip file
+$installerFolderPath = "$env:TEMP\$fileName"
 try {
-    Expand-Archive -Path $zipPath -DestinationPath "$env:TEMP\$fileName" -Force
-
+    Expand-Archive -Path $zipPath -DestinationPath $installerFolderPath -Force -ErrorAction Stop
+    Write-Log -Message "Installer extracted successfully."
+} catch {
+    Write-Log -Message "Failed to extract the installer: $_" -Level "ERROR"
+    exit
 }
 
-catch {
-
-    Write-Host "Failed to extract the installer"
+# Locate the installer executable
+$installerFile = Get-ChildItem -Path "$installerFolderPath" -Filter "ZnCloudConnectorSetup-x64.exe" -Recurse -ErrorAction Stop
+if (-not $installerFile) {
+    Write-Log -Message "Installer executable not found in the extracted files." -Level "ERROR"
     exit
 }
 
 # Run the installer
-$installerFolder = Get-ChildItem -Path "$env:TEMP\$fileName" -Directory
-$installerFile = Get-ChildItem -Path "$($installerFolder.FullName)\ZnCloudConnectorSetup-x64.exe"
-
 try {
-    Start-Process -FilePath $installerFile.FullName -NoNewWindow -PassThru -Wait -ArgumentList $installerArgs
-}
-
-catch {
-    Write-Host "Failed to run install."
+    Start-Process -FilePath $installerFile.FullName -NoNewWindow -Wait -ArgumentList $installerArgs
+    Write-Log -Message "Installer executed successfully."
+} catch {
+    Write-Log -Message "Failed to execute the installer: $_" -Level "ERROR"
     exit
 }
 
-# Clean up
-
-try{
-    Remove-Item -Path "$env:TEMP\$fileName.zip" -Force -ErrorAction SilentlyContinue | out-null
-    Remove-Item -Path "$env:TEMP\$fileName" -Recurse -Force -ErrorAction SilentlyContinue | out-null
+# Clean up temporary files
+try {
+    Remove-Item -Path $zipPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -Path $installerFolderPath -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Log -Message "Temporary files cleaned up successfully."
+} catch {
+    Write-Log -Message "Failed to clean up temporary files: $_" -Level "WARNING"
 }
 
-catch {
-    write-output 'something may not have have been cleaned up right'
-
-}
-
-finally {
-
-    if (($CloudConnectorFunction -eq "uninstall") -and (Test-Path $systempath -ErrorAction SilentlyContinue)) {
-
-        $count = 0
-        do {
-            Start-Sleep -Seconds 1
-            $count ++
+# Handle uninstallation-specific tasks
+if ($CloudConnectorFunction -eq "uninstall") {
+    $systempath = 'C:\Windows\System32\config\systemprofile\AppData\Local\ZeroNetworks'
+    $count = 0
+    while ($count -lt 5) {
+        Start-Sleep -Seconds 2
+        $count++
+        if (-not (Get-Service -Name 'zncloudconnector' -ErrorAction SilentlyContinue).Status -eq 'Running') {
+            break
         }
-        until ((((get-service -name 'zncloudconnector' -ErrorAction SilentlyContinue).status -ne 'Running') -and ((get-service -name 'zncloudconnectorupdater' -ErrorAction SilentlyContinue).status -ne 'Running') -and (Test-Path $systempath -ErrorAction SilentlyContinue)) -or ($count -eq 3))
-        if ($count -ne 3) {
-            Remove-Item -Path $systempath -Recurse -Force -ErrorAction SilentlyContinue
-        }
-        else {
-            if ((Test-Path $systempath -ErrorAction SilentlyContinue)) {write-output "$systempath not cleaned up"} else {}
+    }
+    if ((Test-Path $systempath -ErrorAction SilentlyContinue)) {
+        try {
+            Remove-Item -Path $systempath -Recurse -Force -ErrorAction Stop
+            Write-Log -Message "Cloud Connector system files cleaned up successfully."
+        } catch {
+            Write-Log -Message "Failed to remove Cloud Connector system files: $_" -Level "WARNING"
         }
     }
 }
+
+Write-Log -Message "Script execution completed successfully."
