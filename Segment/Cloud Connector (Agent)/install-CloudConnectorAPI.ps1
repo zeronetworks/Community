@@ -17,7 +17,7 @@ param(
     # Cloud Connector Source
     [ValidateSet("AD", "WORKGROUP", "AZURE", "AZURE_AD", "AWS", "GCP", "IBM", "ORACLE", "VMWARE", "ALIBABA", "OVH", "LUMEN")]
     [Parameter(Mandatory = $False)]
-    [String]$CloudConnectorSource = "WORKGROUP"
+    [String]$CloudConnectorSource = "AD"
 )
 
 # Logging function
