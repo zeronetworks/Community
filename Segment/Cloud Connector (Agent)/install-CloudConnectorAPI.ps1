@@ -1,10 +1,6 @@
-#update3.2
+#update 4.0
 [CmdletBinding()]
 param(
-    # API Token to get download URL
-    [Parameter(Mandatory = $False)]
-    [String]$APIToken =  " ",
-
     # Install/Uninstall
     [Parameter(Mandatory = $True)]
     [ValidateSet("install", "uninstall")]
@@ -20,6 +16,7 @@ param(
     [String]$CloudConnectorSource = "AD"
 )
 
+
 # Logging function
 $logFile = "$env:TEMP\CloudConnector.log"
 function Write-Log {
@@ -32,19 +29,14 @@ function Write-Log {
 }
 Write-Log -Message "Script execution started."
 
-# Validate API Token
-if ($APIToken -eq "") {
-    Write-Log -Message "API Token is required but not provided." -Level "ERROR"
+if ($CloudConnectorToken -eq "<INSERT_CC_TOKEN>") {
+    Write-Log -Message "Cloud Connector Token is required for installation but not provided." -Level "ERROR"
     exit
 }
 
 # Define installer arguments
 switch ($CloudConnectorFunction) {
     "install" {
-        if ($CloudConnectorToken -eq "<INSERT_CC_TOKEN>") {
-            Write-Log -Message "Cloud Connector Token is required for installation but not provided." -Level "ERROR"
-            exit
-        }
         $installerArgs = "-$CloudConnectorFunction -token $CloudConnectorToken -source $CloudConnectorSource"
     }
     "uninstall" {
@@ -54,12 +46,12 @@ switch ($CloudConnectorFunction) {
 
 # Set up headers for API request
 $znHeaders = @{
-    "Authorization" = $APIToken
+    "Authorization" = $CloudConnectorToken
     "Content-Type"  = "application/json"
 }
 
 # API request for download URL
-$installerUri = 'https://portal.zeronetworks.com/api/v1/download/cloud-connector/installer'
+$installerUri = ' https://register-cloud-connector.zeronetworks.com/installer'
 $response = Invoke-WebRequest -Uri $installerUri -Method GET -Headers $znHeaders -ErrorAction Stop
 if ($response.StatusCode -ne 200) {
     Write-Log -Message "Failed to retrieve the download URL. HTTP Status Code: $($response.StatusCode)" -Level "ERROR"
@@ -114,7 +106,7 @@ try {
 $setupLogPath = "$env:LOCALAPPDATA\ZeroNetworks\logs\setup.log"
 if (Test-Path -Path $setupLogPath) {
     $setupText = Get-Content $setupLogPath  -Tail 1
-    Write-Log -Message $setupText  
+    Write-Log -Message "CloudConnector Log Output: $setupText" 
 }
 
 # Clean up temporary files
