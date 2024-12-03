@@ -1,0 +1,343 @@
+<#This script was intended to allow a customer to export to csv, the zero network portal audit logs for a defined amount of time.
+The script when run will prompt you for a start time and an end time.
+The $APIKey variable is commented out as each organization can use their preferred method to provide the token.#>
+
+$APIKey = Get-Content keys.txt
+
+#Grab environmentals to create a path to export the csv.
+$myhome = [Environment]::GetFolderPath('UserProfile')
+$CsvPath = Join-Path $myhome ("Audit Log" + $humanstarttime + "-" + $humanendtime + ".csv")
+
+#Headers
+$znHeaders = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
+$znHeaders.Add("Authorization",$APIKey)
+$znHeaders.Add("content-type","application/json")
+
+# Define the date range for the report. The script is currently setup for Q1 2024. The script will convert to Unix epoch milliseconds format which is how events are timestamped in the audit log. Time is in 24 hour time
+$humanstarttime = Read-Host 'Please provide the beginning time you would like this query to collect from. Example: 2024-05-01T00:00:00Z'
+$humanendtime = Read-Host 'Please provide the end time you would like this query to collect until. Example: 2024-06-01T00:00:00Z'
+
+$starttime = [DateTimeOffset]::Parse($humanstarttime).ToUnixTimeMilliseconds()
+$endtime = [DateTimeOffset]::Parse($humanendtime).ToUnixTimeMilliseconds()
+
+#Grab environmentals to create a path to export the csv.
+$myhome = [Environment]::GetFolderPath('UserProfile')
+$CsvPath = Join-Path $myhome ("Audit Log-" + $humanstarttime + "-to-" + $humanendtime + ".csv")
+
+$uri = "https://portal-dev.zeronetworks.com/api/v1/audit?_limit=400&_cursor=&_search=&from=" + $starttime + "&to=" + $endtime + "&_filters=&order=desc"
+
+#Get the first 400 audit logs
+
+$s = Invoke-RestMethod -Uri $uri -Method Get -Headers $znHeaders
+$t = New-Object PSobject
+$t = $s.items
+write-output $s.scrollCursor
+
+#Get the remaining audit logs in 400 count batches.
+
+while ($s.items.count -ne "0"){
+$uri = "https://portal-dev.zeronetworks.com/api/v1/audit?_limit=400&from=" + $starttime + "&to=" + $endtime + "&_cursor=" + $s.scrollCursor + "&_search=&_filters=&order=desc"
+$s = Invoke-RestMethod -Uri $uri -Method Get -Headers $znHeaders
+$t += $s.items
+write-output $s.scrollCursor
+}
+write-output $t
+
+#Import Audit Type as Enum. Make sure to download the json files from github "https://github.com/TKoziana/TKPrivate/blob/main/AuditTypes.json".
+enum AuditType {
+    AUDIT_TYPE_UNSPECIFIED = 0
+    PROTECTION_ADDING = 1
+    PROTECTION_ADDED = 2
+    PROTECTION_FAILED_ADDING = 3
+    PROTECTION_REMOVING = 4
+    PROTECTION_REMOVED = 5
+    PROTECTION_FAILED_REMOVING = 6
+    PROTECTION_QUEUED = 7
+    PROTECTION_QUEUE_REMOVED = 8
+    INBOUND_RULE_ADDED = 9
+    INBOUND_RULE_REMOVED = 10
+    INBOUND_RULE_EXPIRED = 11
+    INBOUND_RULE_EDITED = 12
+    INBOUND_REACTIVE_POLICY_ADDED = 17
+    INBOUND_REACTIVE_POLICY_REMOVED = 18
+    INBOUND_REACTIVE_POLICY_EDITED = 19
+    JIT_RULE_ADDED = 20
+    JIT_RULE_REMOVED = 21
+    JIT_RULE_EXPIRED = 22
+    JIT_RULE_REVIVED = 23
+    JIT_RULE_EDITED = 24
+    MACHINE_TOKEN_CREATED = 25
+    MACHINE_TOKEN_REMOVED = 26
+    MACHINE_TOKEN_REGENERATED = 27
+    PROTECTION_DATE_POSTPONED = 28
+    OUTBOUND_BLOCK_RULE_ADDED = 29
+    OUTBOUND_BLOCK_RULE_REMOVED = 30
+    OUTBOUND_BLOCK_RULE_EXPIRED = 31
+    OUTBOUND_BLOCK_RULE_EDITED = 32
+    INBOUND_BLOCK_RULE_ADDED = 33
+    INBOUND_BLOCK_RULE_REMOVED = 34
+    INBOUND_BLOCK_RULE_EXPIRED = 35
+    INBOUND_BLOCK_RULE_EDITED = 36
+    INBOUND_RULE_PSEUDO_EDITED = 37
+    OUTBOUND_BLOCK_RULE_PSEUDO_EDITED = 38
+    PROTECTION_FORCED_REMOVED = 39
+    PROTECTION_FORCED_REMOVING = 40
+    PROTECTION_QUEUE_FORCED_REMOVED = 41
+    PROTECTION_ADDING_DUE_TO_POLICY = 42
+    PROTECTION_ADDED_DUE_TO_POLICY = 43
+    PROTECTION_QUEUED_DUE_TO_POLICY = 44
+    PROTECTION_POLICY_ADDED = 45
+    PROTECTION_POLICY_REMOVED = 46
+    PROTECTION_POLICY_EDITED = 47
+    INBOUND_DETECTION_REJECTED = 48
+    JIT_FALLBACK_RULE_CREATED = 49
+    JIT_FALLBACK_RULE_REMOVED = 50
+    JIT_FALLBACK_RULE_EXPIRED = 51
+    INBOUND_BLOCK_RULE_PSEUDO_EDITED = 52
+    OUTBOUND_ALLOW_RULE_ADDED = 53
+    OUTBOUND_ALLOW_RULE_REMOVED = 54
+    OUTBOUND_ALLOW_RULE_EXPIRED = 55
+    OUTBOUND_ALLOW_RULE_EDITED = 56
+    OUTBOUND_ALLOW_RULE_PSEUDO_EDITED = 57
+    ROLE_CHANGED_TO_ADMIN = 58
+    ROLE_CHANGED_TO_VIEWER = 59
+    ROLE_REVOKED = 60
+    JIT_OUTBOUND_RULE_ADDED = 61
+    JIT_OUTBOUND_RULE_REMOVED = 62
+    JIT_OUTBOUND_RULE_EXPIRED = 63
+    OUTBOUND_REACTIVE_POLICY_ADDED = 64
+    OUTBOUND_REACTIVE_POLICY_REMOVED = 65
+    OUTBOUND_REACTIVE_POLICY_EDITED = 66
+    OUTBOUND_DETECTION_REJECTED = 67
+    PROTECTION_QUEUED_DONE = 68
+    PROTECTION_QUEUED_DUE_TO_POLICY_DONE = 69
+    MANUAL_LINUX_ASSET_CREATED = 70
+    MANUAL_OT_ASSET_CREATED = 71
+    PROTECTION_LEARNING_PERIOD_EXTENDED = 72
+    ADMIN_PORTAL_LOGON = 73
+    ASSET_MANAGER_ADDED = 74
+    ASSET_MANAGER_REMOVED = 75
+    ASSET_DIRECTLY_MONITORED = 76
+    ASSET_NO_LONGER_DIRECTLY_MONITORED = 77
+    ASSET_REMOTELY_MONITORED = 78
+    PROTECTION_QUEUED_UNDONE = 79
+    MANUAL_OT_ASSET_EDITED = 80
+    ROLE_CHANGED_TO_OPERATOR = 81
+    SEGMENT_SERVER_DEPLOYED = 82
+    INBOUND_RULE_REJECTED = 83
+    INBOUND_BLOCK_RULE_REJECTED = 84
+    OUTBOUND_ALLOW_RULE_REJECTED = 85
+    OUTBOUND_BLOCK_RULE_REJECTED = 86
+    INBOUND_RULE_APPROVED = 87
+    INBOUND_BLOCK_RULE_APPROVED = 88
+    OUTBOUND_ALLOW_RULE_APPROVED = 89
+    OUTBOUND_BLOCK_RULE_APPROVED = 90
+    INBOUND_RULE_APPROVED_WITH_CHANGES = 91
+    INBOUND_BLOCK_RULE_APPROVED_WITH_CHANGES = 92
+    OUTBOUND_ALLOW_RULE_APPROVED_WITH_CHANGES = 93
+    OUTBOUND_BLOCK_RULE_APPROVED_WITH_CHANGES = 94
+    CONNECT_REGION_CREATED = 95
+    CONNECT_SESSION_CREATED = 96
+    CONNECT_SESSION_EXPIRED = 97
+    CONNECT_SESSION_REVOKED = 98
+    CONNECT_SESSION_LOGOUT = 99
+    CONNECT_USER_ACCESS_CONFIGURATION_CREATED = 100
+    CONNECT_USER_ACCESS_CONFIGURATION_EDITED = 101
+    CONNECT_USER_ACCESS_CONFIGURATION_DELETED = 102
+    CONNECT_SERVER_DEPLOYED = 103
+    CONNECT_ASSET_CREATED = 104
+    PROTECTION_BLOCKED = 105
+    CONNECT_REGION_EDITED = 106
+    CONNECT_SERVER_EDITED = 107
+    IDENTITY_PROTECTION_ADDING = 108
+    IDENTITY_PROTECTION_ADDED = 109
+    IDENTITY_PROTECTION_REMOVING = 110
+    IDENTITY_PROTECTION_REMOVED = 111
+    IDENTITY_RULE_ADDED = 112
+    IDENTITY_RULE_REMOVED = 113
+    IDENTITY_RULE_EXPIRED = 114
+    IDENTITY_RULE_EDITED = 115
+    USER_IDENTITY_PROTECTED = 116
+    USER_IDENTITY_UNPROTECTED = 117
+    USER_IDENTITY_QUEUED = 118
+    USER_IDENTITY_QUEUED_REMOVED = 119
+    ASSET_RPC_MONITORING_ADDED = 120
+    ASSET_RPC_MONITORING_REMOVED = 121
+    USER_TYPE_UPDATED = 122
+    CONNECT_SESSION_EXTENDED = 123
+    ASSET_MARKED_AS_INACTIVE_BY_REPO = 124
+    ASSET_MARKED_AS_ACTIVE_BY_REPO = 125
+    ASSET_MARKED_AS_MANUALLY_INACTIVE = 126
+    ASSET_MARKED_AS_MANUALLY_ACTIVE = 127
+    BREAK_GLASS_CONFIG_ACTIVATED = 128
+    BREAK_GLASS_CONFIG_DEACTIVATED = 129
+    ASSET_BREAK_GLASS_CONFIG_ACTIVATED = 132
+    ASSET_BREAK_GLASS_CONFIG_DEACTIVATED = 133
+    RPC_PROTECTION_ADDING = 134
+    RPC_PROTECTION_ADDED = 135
+    RPC_PROTECTION_REMOVING = 136
+    RPC_PROTECTION_REMOVED = 137
+    RPC_RULE_ADDED = 138
+    RPC_RULE_REMOVED = 139
+    RPC_RULE_EXPIRED = 140
+    RPC_RULE_EDITED = 141
+    ASSET_REVIVED_BUT_STILL_INACTIVE = 142
+    USER_IDENTITY_QUEUED_DONE = 143
+    USER_IDENTITY_QUEUED_UNDONE = 144
+    ASSET_ADDED_TO_TAG_GROUP = 145
+    ASSET_REMOVED_FROM_TAG_GROUP = 146
+    USER_IDENTITY_REACTIVE_POLICY_ADDED = 147
+    USER_IDENTITY_REACTIVE_POLICY_EDITED = 148
+    USER_IDENTITY_REACTIVE_POLICY_REMOVED = 149
+    IDENTITY_JIT_RULE_ADDED = 150
+    IDENTITY_JIT_RULE_REMOVED = 151
+    IDENTITY_JIT_RULE_EXPIRED = 152
+    IDENTITY_JIT_RULE_EDITED = 153
+    IDENTITY_DETECTION_REJECTED = 154
+    ASSET_TYPE_CHANGED = 155
+    RPC_PROTECTION_QUEUED = 156
+    RPC_PROTECTION_QUEUE_REMOVED = 157
+    RPC_PROTECTION_LEARNING_QUEUE_EXTENDED = 158
+    RPC_PROTECTION_LEARNING_QUEUE_POSTPONED = 159
+    RPC_PROTECTION_LEARNING_QUEUE_DONE = 160
+    RPC_PROTECTION_LEARNING_QUEUE_UNDONE = 161
+    ASSET_ADDED_TO_ENVIRONMENT = 162
+    ASSET_REMOVED_FROM_ENVIRONMENT = 163
+    ASSET_ENVIRONMENT_UPDATED = 164
+    IDENTITY_PROTECTION_QUEUED = 165
+    IDENTITY_PROTECTION_QUEUE_REMOVED = 166
+    IDENTITY_PROTECTION_LEARNING_QUEUE_EXTENDED = 167
+    IDENTITY_PROTECTION_LEARNING_QUEUE_POSTPONED = 168
+    IDENTITY_PROTECTION_LEARNING_QUEUE_DONE = 169
+    IDENTITY_PROTECTION_LEARNING_QUEUE_UNDONE = 170
+    ENFORCING_BLOCK_RULES = 171
+    ENFORCING_BLOCK_RULES_DUE_TO_POLICY = 172
+    BLOCK_RULES_ENFORCED = 173
+    REMOVING_BLOCK_RULES = 174
+    GROUP_MARKED_AS_INACTIVE_BY_REPO = 175
+    GROUP_MARKED_AS_ACTIVE_BY_REPO = 176
+    OCCASIONAL_MFA_CONFIG_ADDED = 177
+    OCCASIONAL_MFA_CONFIG_UPDATED = 178
+    OCCASIONAL_MFA_CONFIG_REMOVED = 179
+    IDENTITY_PROTECTION_POLICY_ADDED = 180
+    IDENTITY_PROTECTION_POLICY_REMOVED = 181
+    IDENTITY_PROTECTION_POLICY_EDITED = 182
+    IDENTITY_PROTECTION_FORCED_REMOVED = 183
+    IDENTITY_PROTECTION_QUEUE_FORCED_REMOVED = 184
+    IDENTITY_PROTECTION_FORCED_REMOVING = 185
+    SSP_LOGON = 186
+    OS_TYPE_CHANGED = 187
+    USER_MARKED_AS_INACTIVE_BY_REPO = 188
+    USER_MARKED_AS_ACTIVE_BY_REPO = 189
+    CONNECT_SERVER_DELETED = 190
+    CONNECT_REGION_DELETED = 191
+    EXTERNAL_ACCESS_POLICY_ADDED = 192
+    EXTERNAL_ACCESS_POLICY_REMOVED = 193
+    EXTERNAL_ACCESS_POLICY_EDITED = 194
+    SWITCH_ADDED = 195
+    SWITCH_EDITED = 196
+    SWITCH_REMOVED = 197
+    OT_PROTECTION_ADDING = 198
+    OT_PROTECTION_ADDED = 199
+    OT_PROTECTION_REMOVING = 200
+    OT_PROTECTION_REMOVED = 201
+    SWITCH_RULE_ADDED = 202
+    SWITCH_RULE_REMOVED = 203
+    SWITCH_RULE_EDITED = 204
+    SWITCH_RULE_EXPIRED = 205
+    DOWNLOAD_PORTAL_LOGON = 206
+    EXTERNAL_ACCESS_PORTAL_LOGON = 207
+    MAINTENANCE_WINDOW_ADDED = 208
+    MAINTENANCE_WINDOW_DELETED = 209
+    MAINTENANCE_WINDOW_UPDATED = 210
+    MAINTENANCE_WINDOW_SET_AS_DEFAULT = 211
+    TAG_GROUP_CREATED = 212
+    PORTAL_USER_ADDED_TO_ENV = 213
+    PORTAL_USER_REMOVED_FROM_ENV = 214
+    USERS_PROTECTION_LEARNING_PERIOD_EXTENDED = 215
+    ASSET_OUTBOUND_RESTRICTION_ENABLED = 216
+    ASSET_OUTBOUND_RESTRICTION_DISABLED = 217
+    ASSET_OUTBOUND_RESTRICTION_CHANGED = 218
+    ASSET_MIRRORED = 219
+    ASSET_QUARANTINE_ENABLED = 220
+    ASSET_QUARANTINE_DISABLED = 221
+    PORTAL_USER_INVITED_TO_ENV = 222
+    PORTAL_USER_ROLE_CHANGED_TO_ADMIN = 223
+    PORTAL_USER_ROLE_CHANGED_TO_VIEWER = 224
+    PORTAL_USER_ROLE_CHANGED_TO_OPERATOR = 225
+    PORTAL_USER_REINVITED_TO_ENV = 226
+    PORTAL_USER_ACCEPTED_INVITE_TO_ENV = 227
+    PORTAL_USER_REJECTED_INVITE_TO_ENV = 228
+    INBOUND_AE_EXCLUSION_REMOVED = 229
+    OUTBOUND_AE_EXCLUSION_REMOVED = 230
+    ASSET_MANAGER_PERMISSION_CHANGED = 231
+    MONITOR_SWITCH_INTERFACES = 232
+    UNMONITOR_SWITCH_INTERFACES = 233
+    NETWORKS_LICENSE_LIMIT_EXCEEDED_ATTEMPTED = 234
+    NETWORKS_LICENSE_AVAILABLE = 235
+    IDENTITY_LICENSE_LIMIT_EXCEEDED_ATTEMPTED = 236
+    IDENTITY_LICENSE_AVAILABLE = 237
+    RPC_LICENSE_LIMIT_EXCEEDED_ATTEMPTED = 238
+    RPC_LICENSE_AVAILABLE = 239
+    NETWORK_ANTI_TAMPERING = 240
+    IDENTITY_ANTI_TAMPERING = 241
+    RPC_ANTI_TAMPERING = 242
+    USER_MARKED_AS_MANUALLY_INACTIVE = 243
+    USER_MARKED_AS_MANUALLY_ACTIVE = 244
+    USER_REVIVED_BUT_STILL_INACTIVE = 245
+    IDENTITY_PROTECTION_BLOCKED = 246
+    RPC_PROTECTION_BLOCKED = 247
+    OUTBOUND_AE_EXCLUSION_ADDED = 248
+    INBOUND_AE_EXCLUSION_ADDED = 249
+    OUTBOUND_AE_EXCLUSION_EDITED = 250
+    INBOUND_AE_EXCLUSION_EDITED = 251
+    K8S_CLUSTER_ADDED = 252
+    K8S_CLUSTER_EDITED = 253
+    K8S_CLUSTER_DELETED = 254
+    USER_MARKED_AS_DISABLED = 255
+    USER_MARKED_AS_ENABLED = 256
+    USER_REVIVED_BUT_STILL_DISABLED = 257
+    USER_MARK_AS_REPO_INACTIVE_FROM_DISABLED = 258
+    USER_MARK_AS_MANUAL_INACTIVE_FROM_DISABLED = 259
+}
+
+$AuditTypeReadable = Import-Csv auditTypeReadable.csv
+
+enum EnforceSource {
+    ReactivePolicy = 1
+    Automated = 2
+    AccessPortal = 3
+    AdminPortal = 4
+    AI = 5
+    API = 6
+    Setup = 7
+    Connect = 8
+}
+$AuditTypeReadable = Import-Csv ./auditTypeReadable.csv
+
+#Creating a new PS Object to organize the data.
+$excel = @()
+$auditout = New-Object PSobject
+
+    ForEach ($timestamp in $t){
+        $auditout = New-Object PSobject
+        $auditout | Add-Member -NotePropertyName "timestamp" -NotePropertyValue $timestamp.timestamp
+        $auditout | Add-Member -NotePropertyName "isoTimeStamp" -NotePropertyValue $timestamp.isoTimestamp
+        $Atype = [AuditType]::ToObject([AuditType], $timestamp.auditType) 
+        foreach ($_ in $AuditTypeReadable) {if ($_.AuditType -eq $Atype) {$Atype = $_.Human}}
+        $auditout | Add-Member -NotePropertyName "auditType" -NotePropertyValue $Atype
+        $esource = [EnforceSource]::ToObject([EnforceSource], $timestamp.enforcementSource)
+        $auditout | Add-Member -NotePropertyName "enforcementSource" -NotePropertyValue $esource
+        $auditout | Add-Member -NotePropertyName "destimnationEntitiesListId" -NotePropertyValue $timestamp.destinationEntitiesList.id
+        $auditout | Add-Member -NotePropertyName "destimnationEntitiesListName" -NotePropertyValue $timestamp.destinationEntitiesList.name
+        $auditout | Add-Member -NotePropertyName "Details" -NotePropertyValue $timestamp.details
+        $auditout | Add-Member -NotePropertyName "reportedObjectId" -NotePropertyValue $timestamp.reportedObjectId
+        $auditout | Add-Member -NotePropertyName "performedBy" -NotePropertyValue $timestamp.performedBy
+        $excel += $auditout
+   }
+$excel
+
+#Export the logs to CSV.
+$excel | Export-Csv -Path $CsvPath -NoTypeInformation
+write-output "Your Audit Log has been exported to"$CsvPath"."
+
