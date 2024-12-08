@@ -40,7 +40,7 @@ write-output $s.scrollCursor
 }
 write-output $t
 
-#Import Audit Type as Enum. Make sure to download the json files from github "https://github.com/TKoziana/TKPrivate/blob/main/AuditTypes.json".
+#Import Audit Type as Enum. Make sure to download the json files from github "https://github.com/zeronetworks/Community/blob/master/.github/modules/ps/AuditTypes.json".
 enum AuditType {
     AUDIT_TYPE_UNSPECIFIED = 0
     PROTECTION_ADDING = 1
