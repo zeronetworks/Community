@@ -21,7 +21,7 @@ $endtime = [DateTimeOffset]::Parse($humanendtime).ToUnixTimeMilliseconds()
 $myhome = [Environment]::GetFolderPath('UserProfile')
 $CsvPath = Join-Path $myhome ("Audit Log-" + $humanstarttime + "-to-" + $humanendtime + ".csv")
 
-$uri = "https://portal-dev.zeronetworks.com/api/v1/audit?_limit=400&_cursor=&_search=&from=" + $starttime + "&to=" + $endtime + "&_filters=&order=desc"
+$uri = "https://portal.zeronetworks.com/api/v1/audit?_limit=400&_cursor=&_search=&from=" + $starttime + "&to=" + $endtime + "&_filters=&order=desc"
 
 #Get the first 400 audit logs
 
@@ -33,7 +33,7 @@ write-output $s.scrollCursor
 #Get the remaining audit logs in 400 count batches.
 
 while ($s.items.count -ne "0"){
-$uri = "https://portal-dev.zeronetworks.com/api/v1/audit?_limit=400&from=" + $starttime + "&to=" + $endtime + "&_cursor=" + $s.scrollCursor + "&_search=&_filters=&order=desc"
+$uri = "https://portal.zeronetworks.com/api/v1/audit?_limit=400&from=" + $starttime + "&to=" + $endtime + "&_cursor=" + $s.scrollCursor + "&_search=&_filters=&order=desc"
 $s = Invoke-RestMethod -Uri $uri -Method Get -Headers $znHeaders
 $t += $s.items
 write-output $s.scrollCursor
