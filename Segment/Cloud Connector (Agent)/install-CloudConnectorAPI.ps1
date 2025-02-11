@@ -2,13 +2,13 @@
 [CmdletBinding()]
 param(
     # Install/Uninstall
-    [Parameter(Mandatory = $True)]
+    [Parameter(Mandatory = $False)]
     [ValidateSet("install", "uninstall")]
-    [String]$CloudConnectorFunction,
+    [String]$CloudConnectorFunction = "install",
 
     # Token to use to install the Cloud Connector
     [Parameter(Mandatory = $False)]
-    [String]$CloudConnectorToken = " ",
+    [String]$CloudConnectorToken = "<INSERT_CC_TOKEN>",
 
     # Cloud Connector Source
     [ValidateSet("AD", "WORKGROUP", "AZURE", "AZURE_AD", "AWS", "GCP", "IBM", "ORACLE", "VMWARE", "ALIBABA", "OVH", "LUMEN")]
@@ -39,8 +39,8 @@ switch ($CloudConnectorFunction) {
     "install" {
         $installerArgs = "-$CloudConnectorFunction -token $CloudConnectorToken -source $CloudConnectorSource"
     }
-    "uninstall" {
-        $installerArgs = "-$CloudConnectorFunction"
+    "uninstall" { 
+        $installerArgs = "-$CloudConnectorFunction -token $CloudConnectorToken"
     }
 }
 
