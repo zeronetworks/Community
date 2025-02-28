@@ -78,5 +78,5 @@ if ($ClientSecret) {
     Set-Clipboard -Value $ClientSecret
     Write-Host -ForegroundColor DarkYellow "Copied to the clipboard if your OS supports it!"
 } else {
-    Write-Warning "No secret was found. Could be an authorization issue! Check that you have the proper permissions and that you are connected to the intended Tenant context. You can change these using -TenantId."
+    Write-Warning "No secret was found. Could be an authorization issue! Check that you have the proper permissions and that you are connected to the intended Tenant and Subscription context. You can change these using -TenantId and -SubscriptionName."
 }
