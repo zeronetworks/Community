@@ -1,0 +1,6 @@
+﻿ipv4,type,displayName,fqdn,switchId,interfaceName
+192.168.200.1,11,zz_gateway,,,
+192.168.200.2,4,zz_camera,,,
+192.168.200.3,5,zz_tv,,,
+192.168.200.4,8,zz_printer,,,
+192.168.200.5,9,zz_scanner,,,
