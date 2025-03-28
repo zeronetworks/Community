@@ -52,7 +52,7 @@ $znHeaders = @{
 
 # API request for download URL
 $installerUri = ' https://register-cloud-connector.zeronetworks.com/installer'
-$response = Invoke-WebRequest -Uri $installerUri -Method GET -Headers $znHeaders -ErrorAction Stop
+$response = Invoke-WebRequest -Uri $installerUri -Method GET -Headers $znHeaders -UseBasicParsing -ErrorAction Stop
 if ($response.StatusCode -ne 200) {
     Write-Log -Message "Failed to retrieve the download URL. HTTP Status Code: $($response.StatusCode)" -Level "ERROR"
     exit
@@ -69,7 +69,7 @@ if (-not $downloadUrl) {
 $fileName = "znCC-Installer"
 $zipPath = "$env:TEMP\$fileName.zip"
 try {
-    Invoke-WebRequest -Uri $downloadUrl -Method GET -OutFile $zipPath -ErrorAction Stop
+    Invoke-WebRequest -Uri $downloadUrl -Method GET -OutFile $zipPath -UseBasicParsing -ErrorAction Stop
     Write-Log -Message "Installer downloaded successfully."
 } catch {
     Write-Log -Message "Failed to download the installer: $_" -Level "ERROR"
