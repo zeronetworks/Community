@@ -51,7 +51,7 @@ $znHeaders = @{
 }
 
 # API request for download URL
-$installerUri = ' https://register-cloud-connector.zeronetworks.com/installer'
+$installerUri = 'https://register-cloud-connector.zeronetworks.com/installer'
 $response = Invoke-WebRequest -Uri $installerUri -Method GET -Headers $znHeaders -UseBasicParsing -ErrorAction Stop
 if ($response.StatusCode -ne 200) {
     Write-Log -Message "Failed to retrieve the download URL. HTTP Status Code: $($response.StatusCode)" -Level "ERROR"
