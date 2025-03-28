@@ -13,7 +13,7 @@ $gpos = Get-GPO -Domain $domain.DNSRoot -All
 foreach($gpo in $GPOs){
     $found = $false
     if(($GPO.DisplayName) -eq "ZeroNetworksMonitor"){}
-    elseif(($gpo.DisplayName) -eq "ZeroNetworksProtect"){}
+    elseif(($gpo.DisplayName) -eq "ZeroNetworksProtect-DoNotModify"){}
     else{
         Write-host "Checking " $gpo.DisplayName 
         $result = Get-GPRegistryValue -Name $gpo.DisplayName -Key "HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\WindowsFirewall\FirewallRules" -ErrorAction SilentlyContinue
