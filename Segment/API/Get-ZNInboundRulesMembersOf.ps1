@@ -9,8 +9,7 @@
 # - Console output with formatted table view
 #
 # AUTHOR:
-# Anthony Williams (@anthonws)
-# GitHub: https://github.com/anthonws
+# Antonio Vasconcelos (@anthonws - https://github.com/anthonws)
 #
 # LEGAL DISCLAIMER:
 # This script is provided "AS IS" without warranty of any kind, either express
