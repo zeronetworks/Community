@@ -79,7 +79,7 @@ $znHeaders = @{
 }
 
 # API request for download URL
-$installerUri = "$audience/installer"
+$installerUri = "https://$audience/installer"
 $response = Invoke-WebRequest -Uri $installerUri -Method GET -Headers $znHeaders -UseBasicParsing -ErrorAction Stop
 if ($response.StatusCode -ne 200) {
     Write-Log -Message "Failed to retrieve the download URL. HTTP Status Code: $($response.StatusCode)" -Level "ERROR"
