@@ -16,6 +16,34 @@ param(
     [String]$CloudConnectorSource = "AD"
 )
 
+# Extract Aud from JWT to find cloud connector URL.
+# Your JWT token
+$jwt = $CloudConnectorToken
+
+# Split the JWT into its parts
+$parts = $jwt -split '\.'
+
+if ($parts.Count -ne 3) {
+    throw "Invalid JWT format"
+}
+
+# Decode the payload (second part) from Base64URL
+$payload = $parts[1]
+$remainder = $payload.Length % 4
+if ($remainder -ne 0) {
+    $payload += '=' * (4 - $remainder)
+}
+$payload = $payload.Replace('-', '+').Replace('_', '/')
+$bytes = [Convert]::FromBase64String($payload)
+$json = [System.Text.Encoding]::UTF8.GetString($bytes)
+
+# Convert to a PowerShell object
+$payloadObj = $json | ConvertFrom-Json
+
+# Extract the 'aud' field
+$audience = $payloadObj.aud
+
+
 
 # Logging function
 $logFile = "$env:TEMP\CloudConnector.log"
@@ -51,7 +79,7 @@ $znHeaders = @{
 }
 
 # API request for download URL
-$installerUri = 'https://register-cloud-connector.zeronetworks.com/installer'
+$installerUri = "$audience/installer"
 $response = Invoke-WebRequest -Uri $installerUri -Method GET -Headers $znHeaders -UseBasicParsing -ErrorAction Stop
 if ($response.StatusCode -ne 200) {
     Write-Log -Message "Failed to retrieve the download URL. HTTP Status Code: $($response.StatusCode)" -Level "ERROR"
