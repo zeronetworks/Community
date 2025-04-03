@@ -43,7 +43,16 @@ $payloadObj = $json | ConvertFrom-Json
 # Extract the 'aud' field
 $audience = $payloadObj.aud
 
+#Check Powershell version
+$pwshVersion = $PSVersionTable.PSVersion
 
+if ($pwshVersion.Major -ge 6) {
+    # PowerShell Core or newer - UseBasicParsing is not supported
+    $useBasicParsing = $false
+} else {
+    # Windows PowerShell (e.g., 5.1) - UseBasicParsing is supported
+    $useBasicParsing = $true
+}
 
 # Logging function
 $logFile = "$env:TEMP\CloudConnector.log"
@@ -80,7 +89,11 @@ $znHeaders = @{
 
 # API request for download URL
 $installerUri = "https://$audience/installer"
-$response = Invoke-WebRequest -Uri $installerUri -Method GET -Headers $znHeaders -UseBasicParsing -ErrorAction Stop
+if ($useBasicParsing) {
+    $response = Invoke-WebRequest -Uri $installerUri -Method GET -Headers $znHeaders -UseBasicParsing -ErrorAction Stop
+} else {
+    $response = Invoke-WebRequest -Uri $installerUri -Method GET -Headers $znHeaders -ErrorAction Stop
+}
 if ($response.StatusCode -ne 200) {
     Write-Log -Message "Failed to retrieve the download URL. HTTP Status Code: $($response.StatusCode)" -Level "ERROR"
     exit
