@@ -7,6 +7,9 @@ This key is created by you within the Zero Networks portal of your tenant. It is
 
 .PARAMETER AssetName
 This is the name as it appears within the Assets of Zero Networks portal. From this, we look up the Asset ID and use that to quarantine the asset.
+
+.SYNOPSIS
+Quarantines an asset in the Zero Networks portal based on its name and risk score, using the provided API key and a predefined risk threshold.
 #>
 
 param (
