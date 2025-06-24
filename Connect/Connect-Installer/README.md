@@ -22,7 +22,7 @@ This is an automated Bash script designed to simplify the installation of the Ze
 Run the script directly:
 
 ```bash
-bash <(curl -sSL https://github.com/zeronetworks/Community/blob/master/Connect/Connect-Installer/installer.sh)
+bash <(curl -sSL https://raw.githubusercontent.com/zeronetworks/Community/refs/heads/master/Connect/Connect-Installer/installer.sh)
 ```
 
 You'll be prompted for:
@@ -34,7 +34,7 @@ You'll be prompted for:
 ### Option 2: With CLI arguments
 
 ```bash
-bash <(curl -sSL https://github.com/zeronetworks/Community/blob/master/Connect/Connect-Installer/installer.sh) --url <PACKAGE_URL>
+bash <(curl -sSL https://raw.githubusercontent.com/zeronetworks/Community/refs/heads/master/Connect/Connect-Installer/installer.sh) --url <PACKAGE_URL>
 ```
 
 You can also set your token as an environment variable:
@@ -51,7 +51,7 @@ This avoids the interactive token prompt.
 
 ```bash
 export ZNC_TOKEN="<your_jwt_token>"
-bash <(curl -sSL https://github.com/zeronetworks/Community/blob/master/Connect/Connect-Installer/installer.sh) --url "https://download.link/path/to/zero-connect-server-setup-<version>.zip"
+bash <(curl -sSL https://raw.githubusercontent.com/zeronetworks/Community/refs/heads/master/Connect/Connect-Installer/installer.sh) --url "https://download.link/path/to/zero-connect-server-setup-<version>.zip"
 ```
 
 ---
