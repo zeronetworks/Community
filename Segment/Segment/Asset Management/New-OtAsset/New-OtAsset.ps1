@@ -16,6 +16,9 @@ A fully-qualified domain name that should resolve to the IP address given. This 
 
 .PARAMETER name
 Used as the display name of the OT/IoT asset inside the Zero Networks portal. This parameter is required if not taken from an input file.
+
+.PARAMETER DryRun
+If specified, the script will only show what would be sent to the API, but will not perform any changes.
 #>
 
 param (
@@ -23,42 +26,108 @@ param (
     [string]$APIKey = $Env:ZN_API_KEY,
     [string]$ip,
     [string]$fqdn = "",
-    [string]$name
+    [string]$name,
+    [switch]$DryRun
 )
+
+function Get-ApiUrlFromJwt($jwt) {
+    $parts = $jwt -split '\.'
+    if ($parts.Count -lt 2) { return $null }
+    $payload = $parts[1].Replace('-', '+').Replace('_', '/')
+    switch ($payload.Length % 4) {
+        2 { $payload += '==' }
+        3 { $payload += '=' }
+    }
+    $json = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($payload))
+    $payloadObj = $null
+    try { $payloadObj = $json | ConvertFrom-Json } catch { return $null }
+    return $payloadObj.api_url ?? $payloadObj.tenant ?? $payloadObj.aud ?? $null
+}
 
 if (-not $APIKey) {
     Write-Host "An API key is required for this operation. It can be passed to this script or read from the environment variable ZN_API_KEY."
     Exit 1
 }
 
+$apiUrlFromJwt = Get-ApiUrlFromJwt $APIKey
+if ($apiUrlFromJwt) {
+    $uri = "https://" + $apiUrlFromJwt.TrimEnd('/') + "/api/v1"
+} else {
+    $uri = "https://portal.zeronetworks.com/api/v1"
+}
+
 $znHeaders = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
 $znHeaders.Add("Authorization",$APIKey)
 $znHeaders.Add("Content-Type","application/json")
-$uri = "https://portal.zeronetworks.com/api/v1"
 $query = "/assets/ot"
+
+function Invoke-ZnRestMethod {
+    param (
+        [string]$Uri,
+        [string]$Method,
+        $Headers,
+        $Body
+    )
+    try {
+        return Invoke-RestMethod -Uri $Uri -Method $Method -Headers $Headers -Body $Body
+            } catch {
+        Write-Host "API call failed: $($_.Exception.Message)"
+        $errorMessage = $null
+        if ($_.ErrorDetails -and $_.ErrorDetails.Message) {
+            $errorMessage = $_.ErrorDetails.Message
+        } elseif ($_.Exception.Response) {
+            try {
+                $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
+                $errorMessage = $reader.ReadToEnd()
+            } catch {
+                $errorMessage = "<Unable to read error response body>"
+            }
+        }
+        if ($errorMessage) {
+            try {
+                $responseJson = $errorMessage | ConvertFrom-Json
+                Write-Host "API Error: $($responseJson.message ?? $responseJson.error ?? $responseJson)"
+            } catch {
+                Write-Host "API Error: $errorMessage"
+            }
+        }
+        Exit 1 # This will stop the script if an API call fails the first time. Without it, the script will attempt to push each item in the request which could be quite messy! 
+    }
+}
 
 if ($csvFilePath) {
     $csvData = Import-Csv -Path $csvFilePath
 
     foreach ($row in $csvData) {
-        $jsonRow = $row | ConvertTo-Json -Depth 1
-        Write-Host "Creating: $($row.displayName)..."
-        try {
-            # Could be captured as a collection to provide AssetID output
-            $response = Invoke-RestMethod -Uri "$($uri)$($query)" -Method Post -Headers $znHeaders -Body $jsonRow   
+        $body = [PSCustomObject]@{
+            ipv4        = $row.ipv4
+            type        = [int]$row.type  # Ensure this is a number, not string
+            displayName = $row.displayName
+            fqdn        = $row.fqdn
+            switchId    = $row.switchId
+            interfaceName = $row.interfaceName
         }
-        catch {
-            # Commonly a jwt authorization error, but couldn't capture that particular exception.
-            $Error[4]
-            Exit 1
+        $jsonRow = $body | ConvertTo-Json -Depth 1
+        Write-Host "Creating: $($row.displayName)..."
+        if ($DryRun) {
+            Write-Host "[DryRun] Would POST to $($uri)$($query) with body:"
+            Write-Host $jsonRow
+        } else {
+            $response = Invoke-ZnRestMethod -Uri "$($uri)$($query)" -Method Post -Headers $znHeaders -Body $jsonRow
         }
     }
 } elseif ($ip -and $name) {
     $body = [PSCustomObject]@{
-        ipv4 = $ip
+        ipv4        = $ip
+        type        = 135
         displayName = $name
-        type = '135'
-        fqdn = $fqdn
+        fqdn        = $fqdn
     }
-    $response = Invoke-RestMethod -Uri "$($uri)$($query)" -Method Post -Headers $znHeaders -Body (ConvertTo-Json $body)
+    $jsonBody = $body | ConvertTo-Json
+    if ($DryRun) {
+        Write-Host "[DryRun] Would POST to $($uri)$($query) with body:"
+        Write-Host $jsonBody
+    } else {
+        $response = Invoke-ZnRestMethod -Uri "$($uri)$($query)" -Method Post -Headers $znHeaders -Body $jsonBody
+    }
 } else { Write-Host "You must supply either a file or IP and Name for a single asset."}
