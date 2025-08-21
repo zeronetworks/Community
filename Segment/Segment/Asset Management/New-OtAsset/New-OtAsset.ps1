@@ -51,7 +51,7 @@ if (-not $APIKey) {
 
 $apiUrlFromJwt = Get-ApiUrlFromJwt $APIKey
 if ($apiUrlFromJwt) {
-    $uri = $apiUrlFromJwt.TrimEnd('/') + "/api/v1"
+    $uri = "https://" + $apiUrlFromJwt.TrimEnd('/') + "/api/v1"
 } else {
     $uri = "https://portal.zeronetworks.com/api/v1"
 }
@@ -70,19 +70,28 @@ function Invoke-ZnRestMethod {
     )
     try {
         return Invoke-RestMethod -Uri $Uri -Method $Method -Headers $Headers -Body $Body
-    } catch {
-        Write-Host "API call failed: $($_.Exception.Message)"
-        if ($_.Exception.Response -and $_.Exception.Response.ContentLength -gt 0) {
-            $reader = New-Object IO.StreamReader($_.Exception.Response.GetResponseStream())
-            $responseBody = $reader.ReadToEnd()
-            try {
-                $responseJson = $responseBody | ConvertFrom-Json
-                Write-Host "API Error: $($responseJson.message ?? $responseJson.error ?? $responseJson)"
             } catch {
-                Write-Host "API Error: $responseBody"
+        Write-Host "API call failed: $($_.Exception.Message)"
+        $errorMessage = $null
+        if ($_.ErrorDetails -and $_.ErrorDetails.Message) {
+            $errorMessage = $_.ErrorDetails.Message
+        } elseif ($_.Exception.Response) {
+            try {
+                $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
+                $errorMessage = $reader.ReadToEnd()
+            } catch {
+                $errorMessage = "<Unable to read error response body>"
             }
         }
-        Exit 1
+        if ($errorMessage) {
+            try {
+                $responseJson = $errorMessage | ConvertFrom-Json
+                Write-Host "API Error: $($responseJson.message ?? $responseJson.error ?? $responseJson)"
+            } catch {
+                Write-Host "API Error: $errorMessage"
+            }
+        }
+        # Exit 1
     }
 }
 
@@ -90,7 +99,15 @@ if ($csvFilePath) {
     $csvData = Import-Csv -Path $csvFilePath
 
     foreach ($row in $csvData) {
-        $jsonRow = $row | ConvertTo-Json -Depth 1
+        $body = [PSCustomObject]@{
+            ipv4        = $row.ipv4
+            type        = [int]$row.type  # Ensure this is a number, not string
+            displayName = $row.displayName
+            fqdn        = $row.fqdn
+            switchId    = $row.switchId
+            interfaceName = $row.interfaceName
+        }
+        $jsonRow = $body | ConvertTo-Json -Depth 1
         Write-Host "Creating: $($row.displayName)..."
         if ($DryRun) {
             Write-Host "[DryRun] Would POST to $($uri)$($query) with body:"
@@ -101,10 +118,10 @@ if ($csvFilePath) {
     }
 } elseif ($ip -and $name) {
     $body = [PSCustomObject]@{
-        ipv4 = $ip
+        ipv4        = $ip
+        type        = 135
         displayName = $name
-        type = '135'
-        fqdn = $fqdn
+        fqdn        = $fqdn
     }
     $jsonBody = $body | ConvertTo-Json
     if ($DryRun) {
