@@ -91,7 +91,7 @@ function Invoke-ZnRestMethod {
                 Write-Host "API Error: $errorMessage"
             }
         }
-        # Exit 1
+        Exit 1 # This will stop the script if an API call fails the first time. Without it, the script will attempt to push each item in the request which could be quite messy! 
     }
 }
 
