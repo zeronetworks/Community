@@ -6,16 +6,21 @@
 CLOUD_CONNECTOR_FUNCTION="uninstall"
 CLOUD_CONNECTOR_TOKEN="<INSERT_CC_TOKEN>"
 CLOUD_CONNECTOR_SOURCE="MANUAL_MAC"
+PLATFORM="MAC_ARM64"  # Default platform
+
+# --- Valid Platforms ---
+VALID_PLATFORMS=("WIN_X64" "MAC_X64" "MAC_ARM64" "LINUX_X64" "WIN_X86" "LINUX_X86" "LEGACY_WIN_X64")
 
 # --- Ensure TMPDIR is set to a writable location ---
 TMPDIR="${TMPDIR:-/tmp}"
 
 # --- Usage Instructions ---
 usage() {
-    echo "Usage: $0 [-f <install|uninstall>] [-t <token>] [-s <source>]"
+    echo "Usage: $0 [-f <install|uninstall>] [-t <token>] [-s <source>] [-p <platform>]"
     echo "  -f, --function    Function to perform: 'install' or 'uninstall'. Default: install"
     echo "  -t, --token       Cloud Connector JWT token. (Required for install)"
-    echo "  -s, --source      Cloud Connector source. Default: AD"
+    echo "  -s, --source      Cloud Connector source. Default: MANUAL_MAC"
+    echo "  -p, --platform    Target platform. Default: MAC_ARM64"
     exit 1
 }
 
@@ -34,6 +39,10 @@ while [[ $# -gt 0 ]]; do
             CLOUD_CONNECTOR_SOURCE="$2"
             shift 2
             ;;
+        -p|--platform)
+            PLATFORM="$2"
+            shift 2
+            ;;
         -h|--help)
             usage
             ;;
@@ -43,6 +52,12 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# --- Validate Platform ---
+if [[ ! " ${VALID_PLATFORMS[@]} " =~ " ${PLATFORM} " ]]; then
+    echo "ERROR: Invalid platform '${PLATFORM}'. Must be one of: ${VALID_PLATFORMS[*]}"
+    exit 1
+fi
 
 # --- Logging Setup ---
 LOG_FILE="$TMPDIR/CloudConnector.log"
@@ -73,7 +88,6 @@ fi
 write_log "Parsing JWT to find audience."
 payload=$(echo "$CLOUD_CONNECTOR_TOKEN" | cut -d '.' -f 2)
 
-# Add padding if needed
 padding=$(( (4 - ${#payload} % 4) % 4 ))
 payload="${payload}$(printf '=%.0s' $(seq 1 $padding))"
 
@@ -90,7 +104,6 @@ if [[ "$audience" == "null" || -z "$audience" ]]; then
 fi
 write_log "Audience found: $audience"
 
-
 # --- Prepare Installer Arguments ---
 INSTALLER_ARGS=()
 
@@ -104,7 +117,7 @@ else
 fi
 
 # --- API Request for Installer URL ---
-INSTALLER_URI="https://${audience}/installer?platform=MAC_ARM64"
+INSTALLER_URI="https://${audience}/installer?platform=${PLATFORM}"
 write_log "Requesting installer URL from $INSTALLER_URI"
 
 http_response=$(curl -sS -w "\n%{http_code}" \
@@ -151,12 +164,10 @@ if [[ -z "$INSTALLER_FILE" || ! -x "$INSTALLER_FILE" ]]; then
     exit 1
 fi
 
-
 write_log "Found installer: $INSTALLER_FILE"
 write_log "Executing installer with token."
 
 chmod +x "$INSTALLER_FILE"
-#write_log "Executing installer with args: ${INSTALLER_ARGS[*]}"
 sudo "$INSTALLER_FILE" "${INSTALLER_ARGS[@]}"
 
 if [[ $? -ne 0 ]]; then
@@ -164,12 +175,6 @@ if [[ $? -ne 0 ]]; then
     exit 1
 fi
 write_log "Installer executed successfully."
-
-
-if [[ $? -ne 0 ]]; then
-    write_log "Installer execution failed." "ERROR"
-    exit 1
-fi
 
 # --- Tail Setup Log ---
 SETUP_LOG_PATH="$HOME/Library/Logs/ZeroNetworks/setup.log"
