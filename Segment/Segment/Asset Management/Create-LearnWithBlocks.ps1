@@ -34,7 +34,7 @@ do {
 
 #filter just the assets in learn with blocks
 $assetsInLearningWithBlocks = @()
-$assetsInLearningWithBlocks += $assetsInLearning | where {$_.state.protectionState -eq 15}
+$assetsInLearningWithBlocks += $assetsInLearning | where {$_.state.protectionState -eq 15 -or $_.state.protectionState -eq 16 -or $_.state.protectionState -eq 17 -or $_.state.protectionState -eq 18}
 
 #Batch the assets into custom groups
 $batch = 0
