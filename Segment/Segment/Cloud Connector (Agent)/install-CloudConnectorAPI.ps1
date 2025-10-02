@@ -136,7 +136,7 @@ if (-not $installerFile) {
 
 # Run the installer
 try {
-    Start-Process -FilePath $installerFile.FullName -NoNewWindow -Wait -ArgumentList $installerArgs
+    Start-Process -FilePath $installerFile.FullName -Wait -ArgumentList $installerArgs -WindowStyle Hidden
     Write-Log -Message "Installer executed successfully."
 } catch {
     Write-Log -Message "Failed to execute the installer: $_" -Level "ERROR"
