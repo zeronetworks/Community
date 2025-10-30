@@ -1,0 +1,11 @@
+# Ignore certain python files/directories
+pyproject.toml
+.venv
+*.pyc
+__pycache__
+
+# Ignore log directories
+logs
+
+# Ignore RMML repository
+RMML/
