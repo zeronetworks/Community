@@ -17,6 +17,7 @@ from textwrap import dedent
 from pathlib import Path
 from loguru import logger
 from src.git_ops import clone_and_validate
+from src.yaml_ops import load_yaml_files, RMMData
 
 
 def setup_logging(verbose_level: int = 0) -> None:
@@ -237,7 +238,11 @@ def main() -> int:
         
         repo_url: str = "https://github.com/LivingInSyn/RMML.git"
         logger.info(f"Attempting to clone and validate the RMML repository: {repo_url}")
-        clone_and_validate(repo_url=repo_url)
+        rmms_path = clone_and_validate(repo_url=repo_url)
+        logger.debug(f"RMM YAMLs downloaded to: {rmms_path}")
+
+        rmm_data: RMMData = load_yaml_files(rmms_path)
+        logger.info(f"Loaded data for {len(rmm_data.rmm_list)} RMMs")
 
         return 0
 
