@@ -13,7 +13,6 @@ Created: 2025-10-29
 
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 from typing import Optional
 from loguru import logger
@@ -107,8 +106,8 @@ def clone_repository(repo_url: str, branch: Optional[str] = None) -> str:
     target_path = Path.cwd() / repo_name
     
     logger.info("Starting git clone operation")
-    logger.info(f"Repository URL: {repo_url}")
-    logger.info(f"Target directory: {target_path}")
+    logger.debug(f"Repository URL: {repo_url}")
+    logger.debug(f"Target directory: {target_path}")
     if branch:
         logger.info(f"Target branch: {branch}")
     
@@ -173,36 +172,55 @@ def clone_repository(repo_url: str, branch: Optional[str] = None) -> str:
         raise RuntimeError(error_msg) from e
 
 
-def validate_cloned_repository(repo_path: str) -> bool:
+def validate_cloned_repository(repo_path: str, target_rmms_path: Optional[str] = None) -> Path:
     """
-    Validate that the cloned repository has the required RMMs structure.
+    Validate cloned repository structure, move YAML files to target directory, and clean up.
     
-    :param repo_path: Path to the cloned repository
+    Validates that the RMML directory exists, the RMMs directory exists within it,
+    and that the RMMs directory contains YAML files. If validation succeeds, moves
+    all YAML files to the target directory and removes the original RMML directory.
+    
+    :param repo_path: Path to the cloned RMML repository directory
     :type repo_path: str
-    :return: True if repository is valid
-    :rtype: bool
+    :param target_rmms_path: Optional path to target RMMs directory. If not provided,
+                             defaults to RMMs in current working directory
+    :type target_rmms_path: Optional[str]
+    :return: Path object to the target RMMs directory where YAML files were moved
+    :rtype: Path
     :raises ValueError: If repository structure is invalid
+    :raises FileNotFoundError: If no YAML files are found in RMMs directory
+    :raises RuntimeError: If file operations fail
     """
-    logger.info("Validating cloned repository...")
+    logger.info("Validating cloned repository and moving YAML files to target directory...")
     
     repo_path_obj = Path(repo_path).resolve()
     
-    # Define required checks with clear error messages
-    checks = [
-        (repo_path_obj.exists(), f"Repository directory does not exist: {repo_path_obj}"),
-        (repo_path_obj.is_dir(), f"Repository path is not a directory: {repo_path_obj}"),
-        ((repo_path_obj / ".git").is_dir(), f"Not a valid git repository: {repo_path_obj}"),
-        ((repo_path_obj / "RMMs").is_dir(), f"RMMs directory not found: {repo_path_obj / 'RMMs'}"),
-    ]
+    # Step 1: Validate RMML directory exists
+    logger.info("Step 1: Validating RMML directory exists...")
+    if not repo_path_obj.exists():
+        error_msg = f"Cloned RMML repository directory does not exist at path: {repo_path_obj}"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
     
-    # Run all checks
-    for is_valid, error_msg in checks:
-        if not is_valid:
-            logger.error(error_msg)
-            raise ValueError(error_msg)
+    if not repo_path_obj.is_dir():
+        error_msg = f"Path to cloned RMML repository is not a directory: {repo_path_obj}"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
     
-    # Check for YAML files
+    logger.debug(f"Cloned RMML repository directory validated: {repo_path_obj}")
+    
+    # Step 2: Validate RMMs directory exists
+    logger.info("Step 2: Validating RMMs directory exists within cloned repository...")
     rmms_dir = repo_path_obj / "RMMs"
+    if not rmms_dir.is_dir():
+        error_msg = f"RMMs directory not found: {rmms_dir}"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+    
+    logger.debug(f"RMMs directory validated: {rmms_dir}")
+    
+    # Step 3: Validate RMMs directory has YAML files
+    logger.info("Step 3: Validating RMMs directory contains YAML files...")
     yaml_files = list(rmms_dir.glob("*.yaml")) + list(rmms_dir.glob("*.yml"))
     
     if not yaml_files:
@@ -210,25 +228,78 @@ def validate_cloned_repository(repo_path: str) -> bool:
         logger.error(error_msg)
         raise FileNotFoundError(error_msg)
     
-    logger.info(f"Found {len(yaml_files)} YAML file(s) in RMMs directory")
-    logger.info("Repository validation completed successfully")
-    return True
+    logger.debug(f"Found {len(yaml_files)} YAML file(s) in RMMs directory")
+    
+    # Step 4: Move YAML files to target directory
+    logger.info("Step 4: Moving YAML files to target directory...")
+    
+    # Determine target directory
+    if target_rmms_path:
+        target_dir = Path(target_rmms_path).resolve()
+    else:
+        # Default to RMML/RMMs in current working directory
+        target_dir = Path.cwd() / "RMMs"
+    
+    # Create target directory if it doesn't exist
+    target_dir.mkdir(parents=True, exist_ok=True)
+    logger.debug(f"Target directory: {target_dir}")
+    
+    # Move each YAML file to target directory
+    moved_count = 0
+    try:
+        for yaml_file in yaml_files:
+            target_file = target_dir / yaml_file.name
+            
+            # If target file exists, remove it first
+            if target_file.exists():
+                logger.warning(f"Target file exists, removing: {target_file}")
+                target_file.unlink()
+            
+            # Move the file
+            shutil.move(str(yaml_file), str(target_file))
+            moved_count += 1
+            logger.debug(f"Moved {yaml_file.name} to {target_dir}")
+        
+        logger.info(f"Successfully moved {moved_count} YAML file(s) to {target_dir}")
+        
+    except Exception as e:
+        error_msg = f"Failed to move YAML files to target directory: {e}"
+        logger.error(error_msg)
+        raise RuntimeError(error_msg) from e
+    
+    # Step 5: Remove the original RMML directory
+    logger.info("Step 5: Removing original RMML directory...")
+    try:
+        shutil.rmtree(repo_path_obj)
+        logger.info(f"Successfully removed original RMML directory: {repo_path_obj}")
+    except Exception as e:
+        error_msg = f"Failed to remove original RMML directory: {e}"
+        logger.error(error_msg)
+        raise RuntimeError(error_msg) from e
+    
+    logger.info("Repository validation and file operations completed successfully")
+    return target_dir
 
 
-def clone_and_validate(repo_url: str, branch: Optional[str] = None) -> str:
+def clone_and_validate(repo_url: str, branch: Optional[str] = None, target_rmms_path: Optional[str] = None) -> Path:
     """
-    Complete workflow: check git, clone repository, and validate the result.
+    Complete workflow: check git, clone repository, validate, move files, and clean up.
     
     This is a convenience function that combines all operations in the correct order.
     The repository will be cloned to the current directory.
     If the target directory already exists, it will be removed before cloning.
+    After validation, YAML files are moved to the target directory and the cloned
+    repository is removed.
     
     :param repo_url: URL of the repository to clone
     :type repo_url: str
     :param branch: Optional branch to checkout after cloning
     :type branch: Optional[str]
-    :return: Path to the cloned repository directory
-    :rtype: str
+    :param target_rmms_path: Optional path to target RMMs directory. If not provided,
+                             defaults to RMMs in current working directory
+    :type target_rmms_path: Optional[str]
+    :return: Path object to the target RMMs directory where YAML files were moved
+    :rtype: Path
     :raises RuntimeError: If any step in the workflow fails
     :raises ValueError: If validation fails
     """
@@ -239,11 +310,11 @@ def clone_and_validate(repo_url: str, branch: Optional[str] = None) -> str:
         # Step 2: Clone the repository
         repo_path = clone_repository(repo_url, branch)
         
-        # Step 3: Validate the cloned repository
-        validate_cloned_repository(repo_path)
+        # Step 3: Validate the cloned repository, move files, and clean up
+        rmms_path = validate_cloned_repository(repo_path, target_rmms_path)
         
-        logger.info("Complete git workflow completed successfully")
-        return repo_path
+        logger.info("Completed git clone and validation workflow")
+        return rmms_path
         
     except Exception as e:
         logger.error(f"Git workflow failed: {e}")
