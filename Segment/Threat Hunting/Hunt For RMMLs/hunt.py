@@ -13,11 +13,15 @@ import argparse
 import os
 import sys
 from datetime import datetime, timedelta
-from textwrap import dedent
 from pathlib import Path
+from textwrap import dedent
+
 from loguru import logger
+
 from src.git_ops import clone_and_validate
-from src.yaml_ops import load_yaml_files, RMMData
+from src.rmmdata import RMMData, load_yaml_files
+from src.zn_hunt_ops_v2 import ZNHuntOps
+from src.zero_threat_hunt_tools import ZeroThreatHuntTools #TODO remove after testing
 
 
 def setup_logging(verbose_level: int = 0) -> None:
@@ -137,6 +141,15 @@ def parse_arguments() -> argparse.Namespace:
         help="Start datetime for querying Zero API (format: 'YYYY-MM-DD HH:MM:SS'). Defaults to one week ago if not specified.",
     )
 
+    # Repository URL
+    parser.add_argument(
+        "--repo-url",
+        dest="repo_url",
+        type=str,
+        default="https://github.com/LivingInSyn/RMML.git",
+        help="URL of the RMML repository to clone. Defaults to https://github.com/LivingInSyn/RMML.git",
+    )
+
     return parser.parse_args()
 
 
@@ -236,13 +249,25 @@ def main() -> int:
 
         logger.info("Hunt script initialized successfully")
         
-        repo_url: str = "https://github.com/LivingInSyn/RMML.git"
+        # Clone the target RMML repository. This extracts the YAML files to a dedicated RMML directory
+        repo_url: str = args.repo_url
         logger.info(f"Attempting to clone and validate the RMML repository: {repo_url}")
         rmms_path = clone_and_validate(repo_url=repo_url)
         logger.debug(f"RMM YAMLs downloaded to: {rmms_path}")
 
+        # Load the YAML files into a RMMData object
         rmm_data: RMMData = load_yaml_files(rmms_path)
         logger.info(f"Loaded data for {len(rmm_data.rmm_list)} RMMs")
+
+        #Load Zero Networks Hunt Operations class
+        """zn_hunt_ops:ZNHuntOps = ZNHuntOps(api_key=api_key, rmm_data=rmm_data)
+        zn_hunt_ops.execute_hunt(from_timestamp=from_dt)"""
+        zero_hunt: ZeroThreatHuntTools = ZeroThreatHuntTools(api_key=api_key)
+        zero_hunt.get_activities_to_domains(domains=["microsoft"])
+
+
+
+        logger.info("Hunt completed successfully")
 
         return 0
 

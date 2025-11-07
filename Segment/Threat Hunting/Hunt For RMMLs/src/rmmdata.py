@@ -12,9 +12,10 @@ This module provides functions to read and load YAML files from a directory
 into a list of dictionary objects that mirror the structure of the YAML files.
 """
 
-import yaml
 from pathlib import Path
 from typing import Any, Optional
+
+import yaml
 from loguru import logger
 
 
