@@ -12,7 +12,7 @@
 import argparse
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from textwrap import dedent
 
@@ -20,7 +20,6 @@ from loguru import logger
 
 from src.git_ops import clone_and_validate
 from src.rmmdata import RMMData, load_yaml_files
-from src.zn_hunt_ops_v2 import ZNHuntOps
 from src.zero_threat_hunt_tools import ZeroThreatHuntTools #TODO remove after testing
 
 
@@ -113,8 +112,12 @@ def parse_arguments() -> argparse.Namespace:
         epilog=dedent("""
         Examples:
             python hunt.py
-            python hunt.py --from "2024-01-01 00:00:00"
-            python hunt.py -v --from "2024-01-01 00:00:00"
+            # Use UTC
+            python hunt.py --from "2024-01-01T00:00:00Z"
+            # Or, add the offset to the timestamp
+            python hunt.py -v --from "2024-01-01T00:00:00-05:00"
+            # Specify both from and to timestamps
+            python hunt.py --from "2024-01-01T00:00:00Z" --to "2024-01-31T23:59:59Z"
             python hunt.py -vv
             
         Environment Variables:
@@ -135,10 +138,18 @@ def parse_arguments() -> argparse.Namespace:
     # Time range
     parser.add_argument(
         "--from",
-        dest="from_datetime",
+        dest="from_timestamp",
         type=str,
         required=False,
-        help="Start datetime for querying Zero API (format: 'YYYY-MM-DD HH:MM:SS'). Defaults to one week ago if not specified.",
+        help="Start datetime for querying Zero API (ISO8601 format, e.g., '2024-01-01T00:00:00Z'). Defaults to one week ago if not specified.",
+    )
+
+    parser.add_argument(
+        "--to",
+        dest="to_timestamp",
+        type=str,
+        required=False,
+        help="End datetime for querying Zero API (ISO8601 format, e.g., '2024-01-31T23:59:59Z'). Defaults to current time if not specified.",
     )
 
     # Repository URL
@@ -167,42 +178,6 @@ def load_api_key() -> str:
     return api_key.strip()
 
 
-def validate_datetime(datetime_str: str) -> datetime:
-    """
-    Validate and parse datetime string using multiple common formats.
-    
-    Attempts to parse the input string using several common datetime formats
-    in order of preference.
-    
-    :param datetime_str: Datetime string to parse
-    :type datetime_str: str
-    :return: Parsed datetime object
-    :rtype: datetime
-    :raises ValueError: If the datetime string cannot be parsed with any supported format
-    """
-    try:
-        # Try common datetime formats
-        formats = [
-            "%Y-%m-%d %H:%M:%S",
-            "%Y-%m-%dT%H:%M:%S",
-            "%Y-%m-%d",
-            "%Y-%m-%d %H:%M",
-            "%Y-%m-%dT%H:%M",
-        ]
-
-        for fmt in formats:
-            try:
-                return datetime.strptime(datetime_str, fmt)
-            except ValueError:
-                continue
-
-        raise ValueError(f"Unable to parse datetime: {datetime_str}")
-
-    except Exception as e:
-        logger.error(f"Invalid datetime format: {datetime_str}")
-        raise ValueError(f"Invalid datetime format: {datetime_str}") from e
-
-
 def main() -> int:
     """
     Main entry point for the Hunt for RMMLs script.
@@ -224,18 +199,25 @@ def main() -> int:
         logger.info("Starting Hunt for RMMLs script")
         logger.debug(f"Arguments: {args}")
 
-        # Validate datetime or use default
-        if args.from_datetime:
-            try:
-                from_dt = validate_datetime(args.from_datetime)
-                logger.info(f"Querying from datetime: {from_dt}")
-            except ValueError as e:
-                logger.error(f"Datetime validation failed: {e}")
-                return 1
+        # Set from_timestamp: use provided value or default to one week ago in ISO8601 format
+        if args.from_timestamp:
+            from_timestamp = args.from_timestamp
+            logger.info(f"Using provided from_timestamp: {from_timestamp}")
         else:
-            # Use default: one week ago
-            from_dt = datetime.now() - timedelta(weeks=1)
-            logger.info(f"No --from argument provided, using default: one week ago ({from_dt})")
+            # Use default: one week ago, converted to ISO8601 format with UTC timezone
+            one_week_ago = datetime.now(timezone.utc) - timedelta(weeks=1)
+            from_timestamp = one_week_ago.isoformat()
+            logger.info(f"No --from argument provided, using default: one week ago ({from_timestamp})")
+
+        # Set to_timestamp: use provided value or default to current time in ISO8601 format
+        if args.to_timestamp:
+            to_timestamp = args.to_timestamp
+            logger.info(f"Using provided to_timestamp: {to_timestamp}")
+        else:
+            # Use default: current time, converted to ISO8601 format with UTC timezone
+            now = datetime.now(timezone.utc)
+            to_timestamp = now.isoformat()
+            logger.info(f"No --to argument provided, using default: current time ({to_timestamp})")
 
         # Load and validate API key from environment
         try:
@@ -261,9 +243,9 @@ def main() -> int:
 
         #Load Zero Networks Hunt Operations class
         """zn_hunt_ops:ZNHuntOps = ZNHuntOps(api_key=api_key, rmm_data=rmm_data)
-        zn_hunt_ops.execute_hunt(from_timestamp=from_dt)"""
+        zn_hunt_ops.execute_hunt(from_timestamp=from_timestamp, to_timestamp=to_timestamp)"""
         zero_hunt: ZeroThreatHuntTools = ZeroThreatHuntTools(api_key=api_key)
-        zero_hunt.get_activities_to_domains(domains=["microsoft"])
+        zero_hunt.get_activities_to_domains(domains=["microsoft"],from_timestamp=from_timestamp, to_timestamp=to_timestamp)
 
 
 

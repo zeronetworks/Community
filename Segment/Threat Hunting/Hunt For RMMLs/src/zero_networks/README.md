@@ -364,7 +364,7 @@ api_key = os.getenv("ZN_API_KEY")
 api = ZeroNetworksAPI(api_key=api_key)
 
 # Get activities from a specific time period
-from_time = int(from_datetime.timestamp() * 1000)
+from_time = int(from_timestamp.timestamp() * 1000)
 to_time = int(datetime.now().timestamp() * 1000)
 
 # Iterate through activities
@@ -400,5 +400,6 @@ This code is part of the Zero Networks Community repository.
 For issues or questions:
 - Email: support@zeronetworks.com
 - Support Portal: https://support.zeronetworks.com
+
 
 
