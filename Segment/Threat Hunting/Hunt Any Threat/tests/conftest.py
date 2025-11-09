@@ -72,8 +72,8 @@ def threat_hunt_tools(api_key: str) -> Generator[ZeroThreatHuntTools, None, None
     :yield: ZeroThreatHuntTools instance
     :rtype: Generator[ZeroThreatHuntTools, None, None]
     """
-    tools = ZeroThreatHuntTools(api_key=api_key)
-    yield tools
+    zero_threat_hunt_tools = ZeroThreatHuntTools(api_key=api_key)
+    yield zero_threat_hunt_tools
 
 @pytest.fixture
 def from_timestamp() -> str:

@@ -79,6 +79,103 @@ activities = hunter.get_activities_to_domains(
 print(f"Found {len(activities)} activities")
 ```
 
+## How to find supported network activities filter fields
+### Finding supported fields
+To get the most up-to-date information to help determining what fields you can filter on, inspect the ```self.network_filters``` class attribute of the ```zero_threat_hunt_tools``` class. 
+
+***Note: There is also a filters.json file provided in the root of this directory. It was last updated November 2025.***
+
+For example:
+```python
+# zero_threat_hunt_tools.network_filters contains
+{
+    "asset": {
+        "id": "asset",
+        "type": 1,
+        "name": "Asset",
+        "placeholder": "E.g. work-pc or work-pc.corp.com",
+        "disableExcludeSupport": false,
+        "enableBulkSelection": true,
+        "isSingleValue": false
+    },
+    "directlyRetrieved": {
+        "id": "directlyRetrieved",
+        "type": 1,
+        "name": "Directly retrieved from asset",
+        "placeholder": "E.g. work-pc or work-pc.corp.com",
+        "disableExcludeSupport": false,
+        "enableBulkSelection": true,
+        "isSingleValue": false
+    },
+    "ipAddress": {
+        "id": "ipAddress",
+        "type": 1,
+        "name": "IP",
+        "placeholder": "E.g. 192.168.1.1 or 10.0.0.0/8",
+        "disableExcludeSupport": false,
+        "aliases": [
+            "address"
+        ],
+        "enableBulkSelection": true,
+        "isSingleValue": false
+    },
+}
+```
+
+### Determining display name to ID mapping for filter values
+
+Some fields offer a preset selection of values that can be selected (e.g. protocolType). Each selection has a corresponding display name, but behind the scenes, the API expects an ```integer``` value.
+
+As such, each field that has a preset selection contains a "mapping" table within it's respective entry in ```zero_threat_hunt_tools.network_filters```. If you wish to filter on fields like this, you **will need to provide the required ```integer``` value of your selection(s).
+
+*Note: IDs *are* integers, but are stored in the ```network_filters``` dictionary as ```str```.*
+
+For example, if I want to filter on only TCP traffic, rather than use the syntax:
+
+```python
+zero_threat_hunt_tools.get_activities(
+    protocolType="TCP"
+)
+```
+
+I would need to first determine which ID corresponds to TCP by reviewing the contents of either the ```selectionsByName``` or ```selectionsById``` dictionary for ```protocolType```:
+
+```python
+# Run the following
+zero_threat_hunt_tools.network_filters.get("protocolType").get("selectionsByName")
+# Will return
+{
+    "HOPOPT": "0",
+    "ICMP": "1",
+    "IGMP": "2",
+    "GGP": "3",
+    "IPv4": "4",
+    "ST": "5",
+    "TCP": "6",
+    "CBT": "7",
+    "EGP": "8",
+    ...
+    "253 (custom)": "253",
+    "254 (custom)": "254",
+    "Raw": "255"
+}
+
+# You can get it directly as well
+zero_threat_hunt_tools.network_filters.get("protocolType").get("selectionsByName").get("TCP")
+# Would return
+"6"
+```
+
+Or, if you want to resolve a selection from ID to display name, use the ```selectionsById``` dictionary instead:
+
+**Remember that IDs are stored as ```str``` despite being integer values under the API's hood. As such, you need to pass the ID in ```str``` format for this to work**
+
+```python
+zero_threat_hunt_tools.network_filters.get("protocolType").get("selectionsById").get("6")
+# Returns
+'TCP'
+```
+
 ## Usage Examples
 
 See `example.py` for comprehensive usage examples. Here are some common use cases:
@@ -144,17 +241,32 @@ activities = hunter.get_activities_to_destination_ips(
 )
 ```
 
-### Using Additional Filters
+### Search using any network activities filter fields
 
-All methods support additional keyword arguments for filtering:
+The ```get_activities``` function supports passing any arbitrary network activity filter field as a parameter. 
+
+```python
+activities = hunter.get_activities_to_domains(
+    from_timestamp="2024-01-01T00:00:00Z",
+    to_timestamp="2024-12-31T23:59:59Z",
+    dstAsset="google.com",
+    trafficType="2",
+      # Sort order: "asc" or "desc"
+)
+```
+
+
+### Adding additional filters to a preset threat hunt query
+
+All methos support additional keyword arguments for filtering:
 
 ```python
 activities = hunter.get_activities_to_domains(
     domains=["example.com"],
     from_timestamp="2024-01-01T00:00:00Z",
     to_timestamp="2024-12-31T23:59:59Z",
-    _search="suspicious",  # Text search
-    _entityId="u:a:12345678",  # Filter by entity
+    trafficType=2, # Maps to traffic type is External
+    state=[1,4] # Maps to connectionStatus includes Blocked or Blocked at source
     limit=50,  # Results per page
     order="desc"  # Sort order: "asc" or "desc"
 )
