@@ -3,19 +3,19 @@ pyproject.toml
 .venv
 *.pyc
 __pycache__
+.pylintrc
 
 # Ignore certain file types
 *.log
 *.csv
 *.yaml
+.env
 
 # Ignore log directories
 logs
 
-# Ignore RMML repository
-RMML/
-RMMs/
-
-# Ignore in dev version of zn_hunt_ops_v2
-src/zn_hunt_ops_v2.py
-src/zn_hunt_ops_v0.py
+# Ignore IDE dirs/files
+.vscode/
+.idea/
+.pytest_cache/
+__pycache__/
