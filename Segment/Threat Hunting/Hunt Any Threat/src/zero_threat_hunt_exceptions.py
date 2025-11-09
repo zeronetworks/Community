@@ -32,6 +32,13 @@ class ZeroThreatHuntError(Exception):
         return base_msg
 
 
+class ZeroThreatHuntInvalidFilter(ZeroThreatHuntError):
+    """
+    Exception raised when invalid filter values are provided to threat hunting operations.
+    """
+    pass
+
+
 class ZeroThreatHuntInvalidValues(ZeroThreatHuntError):
     """
     Exception raised when invalid values are provided to threat hunting operations.

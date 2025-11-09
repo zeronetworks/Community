@@ -11,12 +11,12 @@ conversion to simplify threat hunting workflows.
 
 import json
 from datetime import datetime, timezone
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 from loguru import logger
 
 from src.zero_networks.api import ZeroNetworksAPI
-from src.zero_threat_hunt_exceptions import ZeroThreatHuntInvalidValues
+from src.zero_threat_hunt_exceptions import ZeroThreatHuntInvalidValues, ZeroThreatHuntInvalidFilter
 
 # pylint: disable=W0102
 # pyright: ignore[reportArgumentType]
@@ -110,8 +110,9 @@ class ZeroThreatHuntTools:
         logger.trace(f"Converted to timestamp: {timestamp_ms}")
         return timestamp_ms
 
-    @staticmethod
+    
     def _filter_object_builder(
+        self,
         field_name: str,
         include_values: list[Any] | str | int | Any = [],
         exclude_values: list[Any] | str | int | Any = [],
@@ -168,7 +169,22 @@ class ZeroThreatHuntTools:
             logger.error(
                 "Attempted to create filter with empty include and exclude values"
             )
-            raise ValueError("Both include_values and exclude_values cannot be empty!")
+            raise ZeroThreatHuntInvalidFilter(f"Both include_values and exclude_values for filter {field_name} cannot be empty!")
+
+        # Validate that if exclude values are provided, the filter field
+        # supports exclude values
+        if len(exclude_values) > 0 and self.network_filters[field_name].get("disableExcludeSupport", False):
+            logger.error(
+                f"Filter {field_name} does not support exclude values!"
+            )
+            raise ZeroThreatHuntInvalidFilter(f"Filter {field_name} does not support exclude values!")
+
+        # Check if filter field only supports single value, and raise error if include values > 1
+        if len(include_values) > 1 and self.network_filters[field_name].get("isSingleValue", False):
+            logger.error(
+                f"Filter {field_name} only supports single value!"
+            )
+            raise ZeroThreatHuntInvalidFilter(f"Filter {field_name} only supports single value!")
 
         # Make sure to convert any value in includes or exclude values to str
         for i, value in enumerate(include_values):
@@ -582,13 +598,8 @@ class ZeroThreatHuntTools:
         logger.debug(f"Returning {len(activities)} activities")
         return activities
 
-    def _get_activities_with_filter(
+    def _get_activities_parse_kwargs(
         self,
-        field_name: str,
-        values: list[Any] | Any,
-        filter_description: str,
-        expected_format: str,
-        validate_value: Optional[Callable[[Any], None]] = None,
         **kwargs: Any,
     ) -> list[dict[str, Any]]:
         """
@@ -619,81 +630,48 @@ class ZeroThreatHuntTools:
         :raises ValueError: If datetime strings in kwargs cannot be parsed
         """
 
-        if not isinstance(values, list):
-            raise TypeError(
-                f"The values parameter provided must be of type <list> but instead received type {type(values)}"
-            )
-
-        # Validate that values list is not empty
-        # An empty list would result in no meaningful filter
-        if len(values) == 0:
-            logger.error(
-                f"The list of values provided for {filter_description} was empty!"
-            )
-            raise ZeroThreatHuntInvalidValues(
-                f"The list of values provided for {filter_description} was empty!",
-                invalid_values={field_name: values},
-                expected_format=expected_format,
-            )
-
-        # Validate individual values if a validation function is provided
-        # This allows custom validation logic for different value types (e.g., port range checking)
-        if validate_value:
-            for value in values:
-                validate_value(value)
-
-        logger.info(
-            f"Retrieving activities by {filter_description} filter: {len(values)} {filter_description}"
-        )
-        logger.debug(f"{field_name.capitalize()}: {values}")
-
         # Build query parameters dynamically based on kwargs
         # Default parameters (order: desc, _limit: 100) are returned if no kwargs provided
         params: dict[str, Any] = ZeroThreatHuntTools._parse_kwargs_for_params(kwargs)
+        logger.trace(f"Parsed {len(params)} parameters into API query parameters")
 
         # Check kwargs for any additional filter fields provided
-        additional_filters: dict[str, Any] = self._parse_kwargs_for_network_filters(
+        parsed_filters: dict[str, Any] = self._parse_kwargs_for_network_filters(
             kwargs=kwargs
         )
-
-        logger.trace(
-            f"Building filter object for {field_name} field with {len(values)} value(s)"
-        )
-
-        # Create empty list that will hold filters - you will see why
-        filters: list[dict[str, list[Any]]] = []
-
-        # Build filter object for the specified field
-        # This filter will match activities where the field value is one of the provided values
-        field_filter: dict[str, list[Any]] = ZeroThreatHuntTools._filter_object_builder(
-            field_name=field_name, include_values=values
-        )
-        # Append the original filter to list of filters
-        filters.append(field_filter)
-
+        logger.trace(f"Parsed {len(parsed_filters)} filters from kwargs")
+        
         # If additional filters were passed, create filter objects those as well
         # And add them to filters list
-        if additional_filters and len(additional_filters) > 0:
-            for field_name, field_values in additional_filters.items():
-                filters.append(
-                    ZeroThreatHuntTools._filter_object_builder(
-                        field_name=field_name, include_values=field_values
+        if parsed_filters and len(parsed_filters) > 0:
+            filter_objects: list[dict[str, Any]] = []
+            for field_name, field_values in parsed_filters.items():
+                include_values: list[Any] = []
+                exclude_values: list[Any] = []
+                if isinstance(field_values, dict):
+                    include_values = field_values.get("include_values", [])
+                    exclude_values = field_values.get("exclude_values", [])
+                else:
+                    include_values = field_values
+                    exclude_values = []
+                filter_objects.append(
+                    self._filter_object_builder(
+                        field_name=field_name, include_values=include_values, exclude_values=exclude_values
                     )
                 )
+            # Convert list of filter objects to json string, which is what API expects
+            # Doing *fitlers will UNPACK the list into separate NON-keyword args.
+            # This is what _filter_json_builder expects, and it itself uses the args
+            # as a list
+            _filters_for_api_call: str = ZeroThreatHuntTools._filter_json_builder(
+                *filter_objects  # pyright: ignore[reportArgumentType]
+            )  # pyright: ignore[reportArgumentType]
+            logger.trace("Generated filter JSON string to attach to API parameters.")
 
-        # Convert list of filter objects to json string, which is what API expects
-        # Doing *fitlers will UNPACK the list into separate NON-keyword args.
-        # This is what _filter_json_builder expects, and it itself uses the args
-        # as a list
-        _filters_for_api_call: str = ZeroThreatHuntTools._filter_json_builder(
-            *filters  # pyright: ignore[reportArgumentType]
-        )  # pyright: ignore[reportArgumentType]
-        logger.trace("Generated filter JSON string to attach to API parameters.")
-
-        # Add the filter to the query parameters
-        # This will be sent to the API as the _filters query parameter
-        params.update({"_filters": _filters_for_api_call})
-        logger.debug("Added _filters parameter to query")
+            # Add the filter to the query parameters
+            # This will be sent to the API as the _filters query parameter
+            params.update({"_filters": _filters_for_api_call})
+            logger.debug("Added _filters parameter to query")
 
         # Make API call to retrieve activities matching the filter
         # This will automatically handle pagination and return all matching activities
@@ -701,7 +679,7 @@ class ZeroThreatHuntTools:
         activities: list[dict[str, Any]] = self._get_activities_from_api_client(params=params)
 
         logger.info(
-            f"Retrieved {len(activities)} activities matching {filter_description} filter"
+            f"Retrieved {len(activities)} activities from API client."
         )
         return activities
 
@@ -746,9 +724,7 @@ class ZeroThreatHuntTools:
                 )
         """
 
-        # Validation function for domain strings
-        def validate_domain(domain: Any) -> None:
-            """Validate that a domain is a string."""
+        for domain in domains:
             if not isinstance(domain, str):
                 logger.error(
                     f"Invalid domain type provided: {type(domain)} (value: {domain})"
@@ -759,12 +735,12 @@ class ZeroThreatHuntTools:
                     expected_format="String domain",
                 )
 
-        return self._get_activities_with_filter(
-            field_name="dstAsset",
-            values=domains,
-            filter_description="domain",
-            expected_format="Non-empty list of domain strings",
-            validate_value=validate_domain,
+        if "dstAsset" in kwargs:
+            kwargs["dstAsset"].extend(domains)
+        else:
+            kwargs["dstAsset"] = domains
+
+        return self._get_activities_parse_kwargs(
             **kwargs,
         )
 
@@ -822,8 +798,7 @@ class ZeroThreatHuntTools:
         """
 
         # Validation function for process path strings
-        def validate_process_path(process_path: Any) -> None:
-            """Validate that a process path is a string."""
+        for process_path in process_paths:
             if not isinstance(process_path, str):
                 logger.error(
                     f"Invalid process path type provided: {type(process_path)} (value: {process_path})"
@@ -837,12 +812,12 @@ class ZeroThreatHuntTools:
                     expected_format="String process path",
                 )
 
-        return self._get_activities_with_filter(
-            field_name="srcProcessPath",
-            values=process_paths,
-            filter_description="source process path",
-            expected_format="Non-empty list of process path strings",
-            validate_value=validate_process_path,
+        if "srcProcessPath" in kwargs:
+            kwargs["srcProcessPath"].extend(process_paths)
+        else:
+            kwargs["srcProcessPath"] = process_paths
+
+        return self._get_activities_parse_kwargs(
             **kwargs,
         )
 
@@ -900,8 +875,8 @@ class ZeroThreatHuntTools:
         """
 
         # Validation function for process path strings
-        def validate_process_path(process_path: Any) -> None:
-            """Validate that a process path is a string."""
+        for process_path in process_paths:
+            # Validate that a process path is a string.
             if not isinstance(process_path, str):
                 logger.error(
                     f"Invalid process path type provided: {type(process_path)} (value: {process_path})"
@@ -915,12 +890,12 @@ class ZeroThreatHuntTools:
                     expected_format="String process path",
                 )
 
-        return self._get_activities_with_filter(
-            field_name="dstProcessPath",
-            values=process_paths,
-            filter_description="destination process path",
-            expected_format="Non-empty list of process path strings",
-            validate_value=validate_process_path,
+        if "dstProcessPath" in kwargs:
+            kwargs["dstProcessPath"].extend(process_paths)
+        else:
+            kwargs["dstProcessPath"] = process_paths
+
+        return self._get_activities_parse_kwargs(
             **kwargs,
         )
 
@@ -974,8 +949,8 @@ class ZeroThreatHuntTools:
         """
 
         # Validation function for port integers
-        def validate_port(port: Any) -> None:
-            """Validate that a port is an integer within valid range (1-65535)."""
+        for port in ports:
+            # Validate that a port is an integer within valid range (1-65535).
             if not isinstance(port, int):
                 logger.error(
                     f"Invalid port type provided: {type(port)} (value: {port})"
@@ -993,12 +968,12 @@ class ZeroThreatHuntTools:
                     expected_format="Integer port number between 1 and 65535",
                 )
 
-        return self._get_activities_with_filter(
-            field_name="dstPort",
-            values=ports,
-            filter_description="destination port",
-            expected_format="Non-empty list of port integers (1-65535)",
-            validate_value=validate_port,
+        if "dstPort" in kwargs:
+            kwargs["dstPort"].extend(ports)
+        else:
+            kwargs["dstPort"] = ports
+
+        return self._get_activities_parse_kwargs(
             **kwargs,
         )
 
@@ -1053,8 +1028,8 @@ class ZeroThreatHuntTools:
         """
 
         # Validation function for IP address strings
-        def validate_ip_address(ip_address: Any) -> None:
-            """Validate that an IP address is a string."""
+        for ip_address in ip_addresses:
+            # Validate that an IP address is a string.
             if not isinstance(ip_address, str):
                 logger.error(
                     f"Invalid IP address type provided: {type(ip_address)} (value: {ip_address})"
@@ -1068,11 +1043,43 @@ class ZeroThreatHuntTools:
                     expected_format="String IP address",
                 )
 
-        return self._get_activities_with_filter(
-            field_name="dstIpAddress",
-            values=ip_addresses,
-            filter_description="destination IP address",
-            expected_format="Non-empty list of IP address strings",
-            validate_value=validate_ip_address,
+        if "dstIpAddress" in kwargs:
+            kwargs["dstIpAddress"].extend(ip_addresses)
+        else:
+            kwargs["dstIpAddress"] = ip_addresses
+
+        return self._get_activities_parse_kwargs(
+            **kwargs,
+        )
+
+    def get_activities(self, **kwargs: Any) -> list[dict[str, Any]]:
+        """
+        Retrieve network activities that match the specified filters.
+
+        This method queries the Zero Networks API for network activities that match the
+        provided filters. It automatically handles pagination to retrieve all matching activities.
+
+        :param kwargs: Optional keyword arguments for additional filtering:
+                      - from_timestamp: Start datetime ISO8601 timestamp string
+                      - to_timestamp: End datetime ISO8601 timestamp string
+                      - _search: Search string for text-based filtering
+                      - _entityId: Entity ID to filter by
+                      - limit: Maximum number of results per page (default: 100)
+                      - order: Sort order ("asc" or "desc", default: "desc")
+                      - Add any arbitrary filter field and value pairs you want to filter by.
+                        Example:
+                            - srcIpAddress: "192.168.1.100"
+                            - dstPort: 80
+                            - srcProcessPath: "/usr/bin/teamviewer"
+                            - dstProcessPath: "C:\\Program Files\\TeamViewer\\TeamViewer.exe"
+                            - dstIpAddress: "192.168.1.100"
+                            - srcPort: 80
+        :type kwargs: Any
+        :return: List of activity dictionaries matching the filter
+        :rtype: list[dict[str, Any]]
+        :raises ZeroThreatHuntInvalidValues: If values list is empty or contains invalid values
+        :raises ZeroNetworksAPIError: If the API request fails (handled by the API client)
+        """
+        return self._get_activities_parse_kwargs(
             **kwargs,
         )

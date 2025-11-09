@@ -6,7 +6,7 @@ Pytest configuration and shared fixtures for ZeroThreatHuntTools tests.
 import os
 from pathlib import Path
 from typing import Generator
-
+from datetime import datetime, timedelta, timezone
 import pytest
 from dotenv import load_dotenv  # pyright: ignore[reportMissingImports]
 
@@ -74,3 +74,25 @@ def threat_hunt_tools(api_key: str) -> Generator[ZeroThreatHuntTools, None, None
     """
     tools = ZeroThreatHuntTools(api_key=api_key)
     yield tools
+
+@pytest.fixture
+def from_timestamp() -> str:
+    """
+    Fixture providing a from_timestamp two hours prior to current time.
+
+    :return: ISO8601 formatted timestamp string for two hours ago
+    :rtype: str
+    """
+    one_day_ago = datetime.now(timezone.utc) - timedelta(hours=2)
+    return one_day_ago.isoformat()
+
+
+@pytest.fixture
+def to_timestamp() -> str:
+    """
+    Fixture providing a to_timestamp based on current time.
+
+    :return: ISO8601 formatted timestamp string for current time
+    :rtype: str
+    """
+    return datetime.now(timezone.utc).isoformat()
