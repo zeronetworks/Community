@@ -391,7 +391,7 @@ class ZeroNetworksAPI:
         params: Optional[dict[str, Any]] = None,
         json_data: Optional[dict[str, Any]] = None,
         **kwargs: Any,
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | None:
         """
         Make an HTTP request to the Zero Networks API.
 

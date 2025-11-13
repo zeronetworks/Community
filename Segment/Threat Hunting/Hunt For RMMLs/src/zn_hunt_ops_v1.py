@@ -6,7 +6,7 @@ from loguru import logger
 
 from src.rmmdata import RMMData
 from src.zero_networks.api import ZeroNetworksAPI
-from src.zero_threat_hunt_tools import ZeroThreatHuntTools
+from src.zero_threat_hunt_tools.zero_threat_hunt_tools import ZeroThreatHuntTools
 
 
 class ZNHuntOps:
@@ -24,6 +24,35 @@ class ZNHuntOps:
 
 
     @staticmethod
+    def rmm_process_path_builder(
+        os_executables: dict[str, Any],
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        # Create empty placeholder lists for the process paths
+        src_process_path_list: list[str] = []
+        dst_process_path_list: list[str] = []
+
+        # Iterate through each OS and its executables
+        for os, executables in os_executables.items():
+            logger.trace(f"Building filters for {len(executables)} {os} executables...")
+            # Iterate through each executable for the current OS
+            for executable in executables:
+                logger.trace(f"Adding executable: {executable} to filters...")
+                # Add the executable to the lists for both source and destination process paths
+                src_process_path_list.append(executable)
+                dst_process_path_list.append(executable)
+
+        # Create filter objects for the source and destination process paths
+        src_process_path_filter: dict[str, Any] = ZeroThreatHuntTools.filter_object_builder(
+            field_name="srcProcessPath", include_values=src_process_path_list
+        )
+        dst_process_path_filter: dict[str, Any] = ZeroThreatHuntTools.filter_object_builder(
+            field_name="dstProcessPath", include_values=dst_process_path_list
+        )
+
+        # Return the filter objects for the source and destination process paths as a tuple
+        return src_process_path_filter, dst_process_path_filter
+
+        @staticmethod
     def rmm_process_path_builder(
         os_executables: dict[str, Any],
     ) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -123,28 +152,16 @@ class ZNHuntOps:
         self.rmm_data: RMMData = rmm_data
         logger.info(f"Loaded {len(self.rmm_data.rmm_list)} RMMLs into ZN Hunt Ops...")
 
-        # Fetch and cache network activity filters from the API
-        # These filters define what fields can be queried and their possible values
-        self.network_filters: list[dict[str, Any]] = self._get_network_filters()
-        logger.info(
-            f"Loaded {len(self.network_filters)} network filters into ZN Hunt Ops..."
-        )
-
         logger.info("ZN Hunt Ops initialized successfully...")
 
-
-    def execute_hunt(self, from_timestamp: datetime):
+    def execute_hunt(self, from_timestamp: str, to_timestamp: Optional[str] = None):
         logger.info("Starting RRMs hunt...")
         # Get the start and end timestamps
-        # Convert from_timestamp to milliseconds since epoch
-        from_timestamp = self.datetime_to_timestamp_ms(from_timestamp)
-        logger.debug(
-            f"Converted from_timestamp to milliseconds since epoch: {from_timestamp}"
-        )
-        to_timestamp = self.datetime_to_timestamp_ms(datetime.now())
-        logger.debug(
-            f"Converted to_timestamp to milliseconds since epoch: {to_timestamp}"
-        )
+        if not to_timestamp:
+            to_timestamp = ZeroThreatHuntTools.datetime_to_timestamp_ms(datetime.now())
+            logger.debug(
+                f"Converted to_timestamp to milliseconds since epoch: {to_timestamp}"
+            )
 
         results: list[dict[str, Any]] = []
         for rmm in self.rmm_data.rmm_simplified_list:
@@ -153,8 +170,7 @@ class ZNHuntOps:
                     rmm=rmm, from_timestamp=from_timestamp, to_timestamp=to_timestamp
                 )
             )
-
-    
+  
     def _hunt_for_rmm(
         self, rmm: dict[str, Any], from_timestamp: int, to_timestamp: int
     ) -> dict[str, Any]:

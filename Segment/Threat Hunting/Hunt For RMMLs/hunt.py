@@ -20,7 +20,7 @@ from loguru import logger
 
 from src.git_ops import clone_and_validate
 from src.rmmdata import RMMData, load_yaml_files
-from src.zero_threat_hunt_tools import ZeroThreatHuntTools #TODO remove after testing
+from src.zn_hunt_ops_v1 import ZNHuntOps
 
 
 def setup_logging(verbose_level: int = 0) -> None:
@@ -242,10 +242,8 @@ def main() -> int:
         logger.info(f"Loaded data for {len(rmm_data.rmm_list)} RMMs")
 
         #Load Zero Networks Hunt Operations class
-        """zn_hunt_ops:ZNHuntOps = ZNHuntOps(api_key=api_key, rmm_data=rmm_data)
-        zn_hunt_ops.execute_hunt(from_timestamp=from_timestamp, to_timestamp=to_timestamp)"""
-        zero_hunt: ZeroThreatHuntTools = ZeroThreatHuntTools(api_key=api_key)
-        zero_hunt.get_activities_to_domains(domains=["microsoft"],from_timestamp=from_timestamp, to_timestamp=to_timestamp)
+        zn_hunt_ops: ZNHuntOps = ZNHuntOps(api_key=api_key, rmm_data=rmm_data)
+        zn_hunt_ops.execute_hunt(from_timestamp=from_timestamp, to_timestamp=to_timestamp)
 
 
 
