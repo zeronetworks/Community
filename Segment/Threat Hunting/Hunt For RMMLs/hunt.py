@@ -12,6 +12,7 @@
 import argparse
 import os
 import sys
+from typing import Any
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from textwrap import dedent
@@ -50,6 +51,8 @@ def setup_logging(verbose_level: int = 0) -> None:
     console_format = (
         "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
         "<level>{level: <8}</level> | "
+        "<cyan>PID:{process.id}</cyan> | "
+        "<cyan>TID:{thread.id}</cyan> | "
         "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> | "
         "<level>{message}</level>"
     )
@@ -70,6 +73,8 @@ def setup_logging(verbose_level: int = 0) -> None:
     file_format = (
         "{time:YYYY-MM-DD HH:mm:ss.SSS} | "
         "{level: <8} | "
+        "PID:{process.id} | "
+        "TID:{thread.id} | "
         "{name}:{function}:{line} | "
         "{message}"
     )
@@ -243,8 +248,9 @@ def main() -> int:
 
         #Load Zero Networks Hunt Operations class
         zn_hunt_ops: ZNHuntOps = ZNHuntOps(api_key=api_key, rmm_data=rmm_data)
-        zn_hunt_ops.execute_hunt(from_timestamp=from_timestamp, to_timestamp=to_timestamp)
+        results: list[dict[str, Any]] = zn_hunt_ops.execute_hunt(from_timestamp=from_timestamp, to_timestamp=to_timestamp)
 
+        #TODO format results to pretty print table and to CSV
 
 
         logger.info("Hunt completed successfully")

@@ -111,7 +111,7 @@ class ZeroThreatHuntTools:
         return timestamp_ms
 
     
-    def _filter_object_builder(
+    def filter_object_builder(
         self,
         field_name: str,
         include_values: list[Any] | str | int | Any = [],
@@ -140,7 +140,7 @@ class ZeroThreatHuntTools:
             .. code-block:: python
 
                 # Filter for specific domains
-                filter_obj = ZeroThreatHuntTools._filter_object_builder(
+                filter_obj = ZeroThreatHuntTools.filter_object_builder(
                     field_name="dstAsset",
                     include_values=["example.com", "test.com"]
                 )
@@ -655,7 +655,7 @@ class ZeroThreatHuntTools:
                     include_values = field_values
                     exclude_values = []
                 filter_objects.append(
-                    self._filter_object_builder(
+                    self.filter_object_builder(
                         field_name=field_name, include_values=include_values, exclude_values=exclude_values
                     )
                 )
@@ -952,14 +952,17 @@ class ZeroThreatHuntTools:
         for port in ports:
             # Validate that a port is an integer within valid range (1-65535).
             if not isinstance(port, int):
-                logger.error(
-                    f"Invalid port type provided: {type(port)} (value: {port})"
-                )
-                raise ZeroThreatHuntInvalidValues(
-                    "Invalid port provided",
-                    invalid_values={"port": port, "port_type": str(type(port))},
-                    expected_format="Integer port number (1-65535)",
-                )
+                try:
+                    port = int(port)
+                except ValueError:
+                    logger.error(
+                        f"Invalid port type provided: {type(port)} (value: {port})"
+                    )
+                    raise ZeroThreatHuntInvalidValues(
+                        "Invalid port provided",
+                        invalid_values={"port": port, "port_type": str(type(port))},
+                        expected_format="Integer port number (1-65535)",
+                    )
             if port < 1 or port > 65535:
                 logger.error(f"Port out of valid range: {port}")
                 raise ZeroThreatHuntInvalidValues(
