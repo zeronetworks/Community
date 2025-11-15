@@ -4,13 +4,15 @@ Pytest configuration and shared fixtures for ZeroThreatHuntTools tests.
 
 # pylint: disable=W0621
 import os
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Generator
-from datetime import datetime, timedelta, timezone
+
 import pytest
 from dotenv import load_dotenv  # pyright: ignore[reportMissingImports]
 
-from src.zero_threat_hunt_tools import ZeroThreatHuntTools
+from src.zero_threat_hunt_tools.zero_threat_hunt_tools import \
+    ZeroThreatHuntTools
 
 
 def load_env_file() -> None:
@@ -74,6 +76,7 @@ def threat_hunt_tools(api_key: str) -> Generator[ZeroThreatHuntTools, None, None
     """
     zero_threat_hunt_tools = ZeroThreatHuntTools(api_key=api_key)
     yield zero_threat_hunt_tools
+
 
 @pytest.fixture
 def from_timestamp() -> str:

@@ -2,8 +2,10 @@
 Tests for ZeroThreatHuntTools.get_activities method.
 """
 
-from src.zero_threat_hunt_exceptions import ZeroThreatHuntInvalidFilter
 import pytest  # pyright: ignore[reportUnusedImport]
+
+from src.zero_threat_hunt_tools.zero_threat_hunt_exceptions import \
+    ZeroThreatHuntInvalidFilter
 
 
 class TestGetActivities:
@@ -43,9 +45,7 @@ class TestGetActivities:
         :type from_timestamp: str
         """
         activities = threat_hunt_tools.get_activities(
-            from_timestamp=from_timestamp,
-            dstPort=443,
-            trafficType=2
+            from_timestamp=from_timestamp, dstPort=443, trafficType=2
         )
 
         assert isinstance(activities, list)
@@ -65,20 +65,12 @@ class TestGetActivities:
         :type from_timestamp: str
         """
 
-        dstPort = {
-            "include_values": [80, 443],
-            "exclude_values": [8080]
-        }
+        dstPort = {"include_values": [80, 443], "exclude_values": [8080]}
 
-        trafficType = {
-            "include_values": [2],
-            "exclude_values": []
-        }
+        trafficType = {"include_values": [2], "exclude_values": []}
 
         activities = threat_hunt_tools.get_activities(
-            dstPort = dstPort,
-            trafficType = trafficType,
-            from_timestamp = from_timestamp
+            dstPort=dstPort, trafficType=trafficType, from_timestamp=from_timestamp
         )
 
         assert isinstance(activities, list)
@@ -98,19 +90,11 @@ class TestGetActivities:
         :type from_timestamp: str
         """
 
-        dstPort = {
-            "include_values": [80, 443],
-            "exclude_values": [8080]
-        }
+        dstPort = {"include_values": [80, 443], "exclude_values": [8080]}
 
-        trafficType = {
-            "include_values": [],
-            "exclude_values": [2]
-        }
+        trafficType = {"include_values": [], "exclude_values": [2]}
 
         with pytest.raises(ZeroThreatHuntInvalidFilter):
             threat_hunt_tools.get_activities(
-                from_timestamp=from_timestamp,
-                dstPort=dstPort,
-                trafficType=trafficType
+                from_timestamp=from_timestamp, dstPort=dstPort, trafficType=trafficType
             )

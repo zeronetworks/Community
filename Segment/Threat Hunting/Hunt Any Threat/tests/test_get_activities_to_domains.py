@@ -4,7 +4,8 @@ Tests for ZeroThreatHuntTools.get_activities_to_domains method.
 
 import pytest
 
-from src.zero_threat_hunt_exceptions import ZeroThreatHuntInvalidValues, ZeroThreatHuntInvalidFilter
+from src.zero_threat_hunt_tools.zero_threat_hunt_exceptions import (
+    ZeroThreatHuntInvalidFilter, ZeroThreatHuntInvalidValues)
 
 
 class TestGetActivitiesToDomains:
