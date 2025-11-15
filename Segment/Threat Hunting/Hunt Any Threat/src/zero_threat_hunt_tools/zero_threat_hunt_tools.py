@@ -16,7 +16,8 @@ from typing import Any, Optional
 from loguru import logger
 
 from src.zero_networks.api import ZeroNetworksAPI
-from src.zero_threat_hunt_exceptions import ZeroThreatHuntInvalidValues, ZeroThreatHuntInvalidFilter
+from src.zero_threat_hunt_tools.zero_threat_hunt_exceptions import (
+    ZeroThreatHuntInvalidFilter, ZeroThreatHuntInvalidValues)
 
 # pylint: disable=W0102
 # pyright: ignore[reportArgumentType]
@@ -110,8 +111,7 @@ class ZeroThreatHuntTools:
         logger.trace(f"Converted to timestamp: {timestamp_ms}")
         return timestamp_ms
 
-    
-    def _filter_object_builder(
+    def filter_object_builder(
         self,
         field_name: str,
         include_values: list[Any] | str | int | Any = [],
@@ -140,7 +140,7 @@ class ZeroThreatHuntTools:
             .. code-block:: python
 
                 # Filter for specific domains
-                filter_obj = ZeroThreatHuntTools._filter_object_builder(
+                filter_obj = ZeroThreatHuntTools.filter_object_builder(
                     field_name="dstAsset",
                     include_values=["example.com", "test.com"]
                 )
@@ -169,22 +169,28 @@ class ZeroThreatHuntTools:
             logger.error(
                 "Attempted to create filter with empty include and exclude values"
             )
-            raise ZeroThreatHuntInvalidFilter(f"Both include_values and exclude_values for filter {field_name} cannot be empty!")
+            raise ZeroThreatHuntInvalidFilter(
+                f"Both include_values and exclude_values for filter {field_name} cannot be empty!"
+            )
 
         # Validate that if exclude values are provided, the filter field
         # supports exclude values
-        if len(exclude_values) > 0 and self.network_filters[field_name].get("disableExcludeSupport", False):
-            logger.error(
+        if len(exclude_values) > 0 and self.network_filters[field_name].get(
+            "disableExcludeSupport", False
+        ):
+            logger.error(f"Filter {field_name} does not support exclude values!")
+            raise ZeroThreatHuntInvalidFilter(
                 f"Filter {field_name} does not support exclude values!"
             )
-            raise ZeroThreatHuntInvalidFilter(f"Filter {field_name} does not support exclude values!")
 
         # Check if filter field only supports single value, and raise error if include values > 1
-        if len(include_values) > 1 and self.network_filters[field_name].get("isSingleValue", False):
-            logger.error(
+        if len(include_values) > 1 and self.network_filters[field_name].get(
+            "isSingleValue", False
+        ):
+            logger.error(f"Filter {field_name} only supports single value!")
+            raise ZeroThreatHuntInvalidFilter(
                 f"Filter {field_name} only supports single value!"
             )
-            raise ZeroThreatHuntInvalidFilter(f"Filter {field_name} only supports single value!")
 
         # Make sure to convert any value in includes or exclude values to str
         for i, value in enumerate(include_values):
@@ -640,7 +646,7 @@ class ZeroThreatHuntTools:
             kwargs=kwargs
         )
         logger.trace(f"Parsed {len(parsed_filters)} filters from kwargs")
-        
+
         # If additional filters were passed, create filter objects those as well
         # And add them to filters list
         if parsed_filters and len(parsed_filters) > 0:
@@ -655,8 +661,10 @@ class ZeroThreatHuntTools:
                     include_values = field_values
                     exclude_values = []
                 filter_objects.append(
-                    self._filter_object_builder(
-                        field_name=field_name, include_values=include_values, exclude_values=exclude_values
+                    self.filter_object_builder(
+                        field_name=field_name,
+                        include_values=include_values,
+                        exclude_values=exclude_values,
                     )
                 )
             # Convert list of filter objects to json string, which is what API expects
@@ -676,11 +684,11 @@ class ZeroThreatHuntTools:
         # Make API call to retrieve activities matching the filter
         # This will automatically handle pagination and return all matching activities
         logger.debug("Initiating API call to retrieve activities")
-        activities: list[dict[str, Any]] = self._get_activities_from_api_client(params=params)
-
-        logger.info(
-            f"Retrieved {len(activities)} activities from API client."
+        activities: list[dict[str, Any]] = self._get_activities_from_api_client(
+            params=params
         )
+
+        logger.info(f"Retrieved {len(activities)} activities from API client.")
         return activities
 
     def get_activities_to_domains(
@@ -952,14 +960,17 @@ class ZeroThreatHuntTools:
         for port in ports:
             # Validate that a port is an integer within valid range (1-65535).
             if not isinstance(port, int):
-                logger.error(
-                    f"Invalid port type provided: {type(port)} (value: {port})"
-                )
-                raise ZeroThreatHuntInvalidValues(
-                    "Invalid port provided",
-                    invalid_values={"port": port, "port_type": str(type(port))},
-                    expected_format="Integer port number (1-65535)",
-                )
+                try:
+                    port = int(port)
+                except ValueError:
+                    logger.error(
+                        f"Invalid port type provided: {type(port)} (value: {port})"
+                    )
+                    raise ZeroThreatHuntInvalidValues(
+                        "Invalid port provided",
+                        invalid_values={"port": port, "port_type": str(type(port))},
+                        expected_format="Integer port number (1-65535)",
+                    )
             if port < 1 or port > 65535:
                 logger.error(f"Port out of valid range: {port}")
                 raise ZeroThreatHuntInvalidValues(

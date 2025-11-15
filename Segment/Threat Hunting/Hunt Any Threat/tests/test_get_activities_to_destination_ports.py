@@ -4,8 +4,8 @@ Tests for ZeroThreatHuntTools.get_activities_to_destination_ports method.
 
 import pytest
 
-from src.zero_threat_hunt_exceptions import ZeroThreatHuntInvalidFilter
-from src.zero_threat_hunt_tools import ZeroThreatHuntInvalidValues
+from src.zero_threat_hunt_tools.zero_threat_hunt_exceptions import (
+    ZeroThreatHuntInvalidFilter, ZeroThreatHuntInvalidValues)
 
 
 class TestGetActivitiesToDestinationPorts:
@@ -160,7 +160,7 @@ class TestGetActivitiesToDestinationPorts:
         """
         with pytest.raises(ZeroThreatHuntInvalidValues):
             threat_hunt_tools.get_activities_to_destination_ports(
-                ["443", 80], from_timestamp=from_timestamp
+                ["443", 1234567], from_timestamp=from_timestamp
             )
 
     def test_get_activities_to_destination_ports_out_of_range_low(

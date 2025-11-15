@@ -4,7 +4,8 @@ Tests for ZeroThreatHuntTools.get_activities_to_destination_ips method.
 
 import pytest
 
-from src.zero_threat_hunt_exceptions import ZeroThreatHuntInvalidFilter, ZeroThreatHuntInvalidValues
+from src.zero_threat_hunt_tools.zero_threat_hunt_exceptions import (
+    ZeroThreatHuntInvalidFilter, ZeroThreatHuntInvalidValues)
 
 
 class TestGetActivitiesToDestinationIPs:

@@ -36,6 +36,7 @@ class ZeroThreatHuntInvalidFilter(ZeroThreatHuntError):
     """
     Exception raised when invalid filter values are provided to threat hunting operations.
     """
+
     pass
 
 
