@@ -186,9 +186,7 @@ class ZeroNetworksAPI:
         parts = api_key.strip().split(".")
 
         if len(parts) != 3:
-            raise ValueError(
-                f"Invalid JWT format: expected 3 parts separated by '.', got {len(parts)}"
-            )
+            raise ValueError(f"Invalid JWT format: expected 3 parts separated by '.', got {len(parts)}")
 
         # Extract the payload (second part)
         payload_encoded = parts[1]
@@ -304,9 +302,7 @@ class ZeroNetworksAPI:
             }
         )
 
-        logger.debug(
-            f"Initialized Zero Networks API client with base URL: {self.base_url}"
-        )
+        logger.debug(f"Initialized Zero Networks API client with base URL: {self.base_url}")
 
     def _handle_response(self, response: requests.Response) -> dict[str, Any]:
         """
@@ -354,32 +350,20 @@ class ZeroNetworksAPI:
             response_body.get("message")
             or response_body.get("error")
             or response_body.get("detail")
-            or error_messages.get(
-                response.status_code, f"HTTP {response.status_code} Error"
-            )
+            or error_messages.get(response.status_code, f"HTTP {response.status_code} Error")
         )
 
         # Raise appropriate exception based on status code
         if response.status_code == 401:
-            raise ZeroNetworksAuthenticationError(
-                error_msg, response.status_code, response_body
-            )
+            raise ZeroNetworksAuthenticationError(error_msg, response.status_code, response_body)
         elif response.status_code == 403:
-            raise ZeroNetworksAuthorizationError(
-                error_msg, response.status_code, response_body
-            )
+            raise ZeroNetworksAuthorizationError(error_msg, response.status_code, response_body)
         elif response.status_code == 404:
-            raise ZeroNetworksNotFoundError(
-                error_msg, response.status_code, response_body
-            )
+            raise ZeroNetworksNotFoundError(error_msg, response.status_code, response_body)
         elif response.status_code == 400:
-            raise ZeroNetworksBadRequestError(
-                error_msg, response.status_code, response_body
-            )
+            raise ZeroNetworksBadRequestError(error_msg, response.status_code, response_body)
         elif response.status_code >= 500:
-            raise ZeroNetworksServerError(
-                error_msg, response.status_code, response_body
-            )
+            raise ZeroNetworksServerError(error_msg, response.status_code, response_body)
         else:
             # Generic API error for other status codes
             raise ZeroNetworksAPIError(error_msg, response.status_code, response_body)
@@ -422,9 +406,7 @@ class ZeroNetworksAPI:
         # leading slash to strip lol
         if not endpoint.startswith("/"):
             endpoint = f"/{endpoint}"
-        url = urljoin(
-            "https://" + self.base_url + self.api_path_uri + "/", endpoint.lstrip("/")
-        )
+        url = urljoin("https://" + self.base_url + self.api_path_uri + "/", endpoint.lstrip("/"))
 
         # Log request details
         logger.debug(f"API Request: {method} {url}")
@@ -458,24 +440,18 @@ class ZeroNetworksAPI:
 
                 # If we have attempts left, retry
                 if attempt < self.max_retries - 1:
-                    logger.warning(
-                        f"Request failed (attempt {attempt + 1}/{self.max_retries}): {e}. Retrying..."
-                    )
+                    logger.warning(f"Request failed (attempt {attempt + 1}/{self.max_retries}): {e}. Retrying...")
                     continue
                 else:
                     # Out of retries - raise the exception
-                    logger.error(
-                        f"Request failed after {self.max_retries} attempts: {e}"
-                    )
+                    logger.error(f"Request failed after {self.max_retries} attempts: {e}")
                     raise
 
         # This should never be reached, but just in case
         if last_exception:
             raise last_exception
 
-    def get(
-        self, endpoint: str, params: Optional[dict[str, Any]] = None, **kwargs: Any
-    ) -> dict[str, Any]:
+    def get(self, endpoint: str, params: Optional[dict[str, Any]] = None, **kwargs: Any) -> dict[str, Any]:
         """
         Make a GET request to the API.
 
@@ -511,9 +487,7 @@ class ZeroNetworksAPI:
         :return: Parsed JSON response
         :rtype: dict[str, Any]
         """
-        return self._request(
-            "POST", endpoint, params=params, json_data=json_data, **kwargs
-        )
+        return self._request("POST", endpoint, params=params, json_data=json_data, **kwargs)
 
     def put(
         self,
@@ -536,13 +510,9 @@ class ZeroNetworksAPI:
         :return: Parsed JSON response
         :rtype: dict[str, Any]
         """
-        return self._request(
-            "PUT", endpoint, params=params, json_data=json_data, **kwargs
-        )
+        return self._request("PUT", endpoint, params=params, json_data=json_data, **kwargs)
 
-    def delete(
-        self, endpoint: str, params: Optional[dict[str, Any]] = None, **kwargs: Any
-    ) -> dict[str, Any]:
+    def delete(self, endpoint: str, params: Optional[dict[str, Any]] = None, **kwargs: Any) -> dict[str, Any]:
         """
         Make a DELETE request to the API.
 
@@ -634,10 +604,7 @@ class ZeroNetworksAPI:
             # Extract items from response
             items = response.get(items_key, [])
             if not isinstance(items, list):
-                logger.warning(
-                    f"Expected list in '{items_key}', got {type(items)}. "
-                    f"Treating as empty list."
-                )
+                logger.warning(f"Expected list in '{items_key}', got {type(items)}. " f"Treating as empty list.")
                 items = []
 
             # Yield each item
@@ -668,8 +635,7 @@ class ZeroNetworksAPI:
             # (though this is not guaranteed - the API might return partial pages)
             if limit and len(items) < limit:
                 logger.debug(
-                    f"Received fewer items than limit ({len(items)} < {limit}). "
-                    f"Assuming end of pagination."
+                    f"Received fewer items than limit ({len(items)} < {limit}). " f"Assuming end of pagination."
                 )
                 break
         logger.trace("Breaking out of pagination loop...")

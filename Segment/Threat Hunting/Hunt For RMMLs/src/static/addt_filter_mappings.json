@@ -1,0 +1,242 @@
+{
+    "assetSrc": [
+        {
+            "id": "1",
+            "name": "Access portal"
+        },
+        {
+            "id": "2",
+            "name": "SSP"
+        },
+        {
+            "id": "3",
+            "name": "Active directory"
+        },
+        {
+            "id": "4",
+            "name": "Custom"
+        },
+        {
+            "id": "5",
+            "name": "System"
+        },
+        {
+            "id": "6",
+            "name": "Ansible"
+        },
+        {
+            "id": "7",
+            "name": "Manual OT/IoT"
+        },
+        {
+            "id": "8",
+            "name": "Workgroup"
+        },
+        {
+            "id": "9",
+            "name": "Azure active directory"
+        },
+        {
+            "id": "10",
+            "name": "Azure"
+        },
+        {
+            "id": "11",
+            "name": "AWS"
+        },
+        {
+            "id": "12",
+            "name": "GCP"
+        },
+        {
+            "id": "14",
+            "name": "Jamf"
+        },
+        {
+            "id": "15",
+            "name": "Manual Linux"
+        },
+        {
+            "id": "16",
+            "name": "IBM cloud"
+        },
+        {
+            "id": "17",
+            "name": "Oracle cloud"
+        },
+        {
+            "id": "18",
+            "name": "VMware cloud"
+        },
+        {
+            "id": "19",
+            "name": "Alibaba cloud"
+        },
+        {
+            "id": "20",
+            "name": "Lumen cloud"
+        },
+        {
+            "id": "21",
+            "name": "OVH cloud"
+        },
+        {
+            "id": "22",
+            "name": "Connect"
+        }
+    ],
+    "reason": [
+        {
+            "id": "1",
+            "name": "Requested"
+        },
+        {
+            "id": "2",
+            "name": "RequestedDstProtected"
+        },
+        {
+            "id": "3",
+            "name": "RequestedSrcAllowWithRule"
+        },
+        {
+            "id": "4",
+            "name": "RequestedSrcAllowWithRuleDstProtected"
+        },
+        {
+            "id": "5",
+            "name": "Established"
+        },
+        {
+            "id": "6",
+            "name": "EstablishedBothWithAllowRules"
+        },
+        {
+            "id": "7",
+            "name": "EstablishedDstAllowWithRule"
+        },
+        {
+            "id": "8",
+            "name": "EstablishedDstAllowWithImplicitIcmpRule"
+        },
+        {
+            "id": "9",
+            "name": "EstablishedBothAllowWithImplicitIcmpRule"
+        },
+        {
+            "id": "10",
+            "name": "EstablishedSrcAllowWithRule"
+        },
+        {
+            "id": "11",
+            "name": "BlockedSrc"
+        },
+        {
+            "id": "12",
+            "name": "BlockedSrcProtected"
+        },
+        {
+            "id": "13",
+            "name": "BlockedSrcProtectedDstOtAsset"
+        },
+        {
+            "id": "14",
+            "name": "BlockedSrcWithRule"
+        },
+        {
+            "id": "15",
+            "name": "Blocked"
+        },
+        {
+            "id": "16",
+            "name": "BlockedDstProtected"
+        },
+        {
+            "id": "17",
+            "name": "BlockedDstWithRule"
+        },
+        {
+            "id": "18",
+            "name": "BlockedAllowSrcBlockDstWithRule"
+        },
+        {
+            "id": "19",
+            "name": "BlockedAllowSrcBlockDstProtected"
+        },
+        {
+            "id": "20",
+            "name": "BlockedSrcThirdParty"
+        },
+        {
+            "id": "21",
+            "name": "BlockedThirdParty"
+        },
+        {
+            "id": "22",
+            "name": "BlockedAllowSrcBlockDstThirdParty"
+        },
+        {
+            "id": "23",
+            "name": "BlockedAllowSrcThirdPartyBlockDstWithRule"
+        },
+        {
+            "id": "24",
+            "name": "BlockedAllowSrcThirdPartyBlockDstProtected"
+        },
+        {
+            "id": "25",
+            "name": "BlockedAllowSrcThirdPartyBlockDst"
+        },
+        {
+            "id": "26",
+            "name": "EstablishedDstThirdParty"
+        },
+        {
+            "id": "27",
+            "name": "EstablishedSrcThirdPartyDstWithRule"
+        },
+        {
+            "id": "28",
+            "name": "EstablishedSrcThirdPartyDstWithImplicitIcmpRule"
+        },
+        {
+            "id": "29",
+            "name": "EstablishedSrcThirdParty"
+        },
+        {
+            "id": "30",
+            "name": "BlockedAllowSrcThirdPartyBlockDstNoMfa"
+        },
+        {
+            "id": "31",
+            "name": "BlockedAllowSrcThirdPartyBlockDstPromptMfa"
+        },
+        {
+            "id": "32",
+            "name": "BlockedAllowSrcBlockDstzNoMfa"
+        },
+        {
+            "id": "33",
+            "name": "BlockedAllowSrcBlockDstPromptMfa"
+        },
+        {
+            "id": "34",
+            "name": "BlockedDstUnmonitoredNoMfa"
+        },
+        {
+            "id": "35",
+            "name": "BlockedDstMonitoredNoMfa"
+        },
+        {
+            "id": "36",
+            "name": "BlockedDstPromptMfa"
+        },
+        {
+            "id": "37",
+            "name": "BlockedSrcNoMfa"
+        },
+        {
+            "id": "38",
+            "name": "BlockedSrcPromptMfa"
+        }
+    ]
+}

@@ -11,6 +11,7 @@ __pycache__
 
 # Ignore log directories
 logs
+.vscode
 
 # Ignore RMML repository
 RMML/

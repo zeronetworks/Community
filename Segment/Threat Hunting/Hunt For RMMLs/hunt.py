@@ -12,10 +12,10 @@
 import argparse
 import os
 import sys
-from typing import Any
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from textwrap import dedent
+from typing import Any
 
 from loguru import logger
 
@@ -27,11 +27,11 @@ from src.zn_hunt_ops_v1 import ZNHuntOps
 def setup_logging(verbose_level: int = 0) -> None:
     """
     Configure loguru logging with console and file handlers.
-    
+
     Sets up comprehensive logging with both console and file output, including
     colorized console output, file rotation, compression, and detailed formatting
     with function location tracking and exception handling.
-    
+
     :param verbose_level: Logging verbosity level (0=INFO, 1=DEBUG, 2=TRACE)
     :type verbose_level: int
     :return: None
@@ -95,15 +95,16 @@ def setup_logging(verbose_level: int = 0) -> None:
 def parse_arguments() -> argparse.Namespace:
     """
     Parse and validate command line arguments.
-    
+
     Creates an argument parser with support for verbose logging, API key
     configuration, and datetime specification.
-    
+
     :return: Parsed command line arguments namespace
     :rtype: argparse.Namespace
     """
     parser = argparse.ArgumentParser(
-        description=dedent("""
+        description=dedent(
+            """
         --------------------------------
         Zero Networks - Hunt for RMMLs:
         --------------------------------
@@ -112,9 +113,11 @@ def parse_arguments() -> argparse.Namespace:
         known Remote Management and Monitoring (RMML) software listed within:
         https://github.com/LivingInSyn/RMML/tree/22207b061b2b3c2599adbb6f725e0d491f116cab/RMMs
         --------------------------------
-        """),
+        """
+        ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=dedent("""
+        epilog=dedent(
+            """
         Examples:
             python hunt.py
             # Use UTC
@@ -127,7 +130,8 @@ def parse_arguments() -> argparse.Namespace:
             
         Environment Variables:
             ZN_API_KEY    Zero Networks API key for authentication
-        """),
+        """
+        ),
     )
 
     # Verbose options
@@ -138,7 +142,6 @@ def parse_arguments() -> argparse.Namespace:
         default=0,
         help="Enable verbose logging (-v for DEBUG, -vv for TRACE)",
     )
-
 
     # Time range
     parser.add_argument(
@@ -172,7 +175,7 @@ def parse_arguments() -> argparse.Namespace:
 def load_api_key() -> str:
     """
     Load Zero Networks API key from environment variable.
-    
+
     :return: API key from ZN_API_KEY environment variable
     :rtype: str
     :raises ValueError: If ZN_API_KEY environment variable is not set or empty
@@ -186,10 +189,10 @@ def load_api_key() -> str:
 def main() -> int:
     """
     Main entry point for the Hunt for RMMLs script.
-    
+
     Orchestrates the entire threat hunting workflow including argument parsing,
     logging setup, input validation, and initialization of hunting operations.
-    
+
     :return: Exit code indicating script success or failure (0=success, 1=error)
     :rtype: int
     """
@@ -235,7 +238,7 @@ def main() -> int:
             return 1
 
         logger.info("Hunt script initialized successfully")
-        
+
         # Clone the target RMML repository. This extracts the YAML files to a dedicated RMML directory
         repo_url: str = args.repo_url
         logger.info(f"Attempting to clone and validate the RMML repository: {repo_url}")
@@ -246,12 +249,13 @@ def main() -> int:
         rmm_data: RMMData = load_yaml_files(rmms_path)
         logger.info(f"Loaded data for {len(rmm_data.rmm_list)} RMMs")
 
-        #Load Zero Networks Hunt Operations class
+        # Load Zero Networks Hunt Operations class
         zn_hunt_ops: ZNHuntOps = ZNHuntOps(api_key=api_key, rmm_data=rmm_data)
-        results: list[dict[str, Any]] = zn_hunt_ops.execute_hunt(from_timestamp=from_timestamp, to_timestamp=to_timestamp)
+        results: list[dict[str, Any]] = zn_hunt_ops.execute_hunt(
+            from_timestamp=from_timestamp, to_timestamp=to_timestamp
+        )
 
-        #TODO format results to pretty print table and to CSV
-
+        # TODO format results to pretty print table and to CSV
 
         logger.info("Hunt completed successfully")
 

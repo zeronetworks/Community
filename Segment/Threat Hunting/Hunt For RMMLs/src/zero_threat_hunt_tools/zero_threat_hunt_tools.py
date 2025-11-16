@@ -16,7 +16,10 @@ from typing import Any, Optional
 from loguru import logger
 
 from src.zero_networks.api import ZeroNetworksAPI
-from src.zero_threat_hunt_tools.zero_threat_hunt_exceptions import ZeroThreatHuntInvalidValues, ZeroThreatHuntInvalidFilter
+from src.zero_threat_hunt_tools.zero_threat_hunt_exceptions import (
+    ZeroThreatHuntInvalidFilter,
+    ZeroThreatHuntInvalidValues,
+)
 
 # pylint: disable=W0102
 # pyright: ignore[reportArgumentType]
@@ -77,9 +80,7 @@ class ZeroThreatHuntTools:
         # Fetch and cache network activity filters from the API
         # These filters define what fields can be queried and their possible values
         self.network_filters: dict[str, Any] = self._get_network_filters()
-        logger.info(
-            f"Loaded {len(self.network_filters)} network filters into ZN Hunt Ops..."
-        )
+        logger.info(f"Loaded {len(self.network_filters)} network filters into ZN Hunt Ops...")
 
         logger.info("ZN Hunt Ops initialized successfully...")
 
@@ -110,7 +111,6 @@ class ZeroThreatHuntTools:
         logger.trace(f"Converted to timestamp: {timestamp_ms}")
         return timestamp_ms
 
-    
     def filter_object_builder(
         self,
         field_name: str,
@@ -151,39 +151,31 @@ class ZeroThreatHuntTools:
         # Normalize include_values to a list if it's a single value
         # This allows the method to accept both single values and lists for convenience
         if not isinstance(include_values, list):
-            logger.trace(
-                f"Converting include_values from {type(include_values)} to list"
-            )
+            logger.trace(f"Converting include_values from {type(include_values)} to list")
             include_values = [include_values]
 
         # Normalize exclude_values to a list if it's a single value
         if not isinstance(exclude_values, list):
-            logger.trace(
-                f"Converting exclude_values from {type(exclude_values)} to list"
-            )
+            logger.trace(f"Converting exclude_values from {type(exclude_values)} to list")
             exclude_values = [exclude_values]
 
         # Validate that at least one filter criteria is provided
         # A filter must have either include or exclude values to be meaningful
         if len(include_values) <= 0 and len(exclude_values) <= 0:
-            logger.error(
-                "Attempted to create filter with empty include and exclude values"
+            logger.error("Attempted to create filter with empty include and exclude values")
+            raise ZeroThreatHuntInvalidFilter(
+                f"Both include_values and exclude_values for filter {field_name} cannot be empty!"
             )
-            raise ZeroThreatHuntInvalidFilter(f"Both include_values and exclude_values for filter {field_name} cannot be empty!")
 
         # Validate that if exclude values are provided, the filter field
         # supports exclude values
         if len(exclude_values) > 0 and self.network_filters[field_name].get("disableExcludeSupport", False):
-            logger.error(
-                f"Filter {field_name} does not support exclude values!"
-            )
+            logger.error(f"Filter {field_name} does not support exclude values!")
             raise ZeroThreatHuntInvalidFilter(f"Filter {field_name} does not support exclude values!")
 
         # Check if filter field only supports single value, and raise error if include values > 1
         if len(include_values) > 1 and self.network_filters[field_name].get("isSingleValue", False):
-            logger.error(
-                f"Filter {field_name} only supports single value!"
-            )
+            logger.error(f"Filter {field_name} only supports single value!")
             raise ZeroThreatHuntInvalidFilter(f"Filter {field_name} only supports single value!")
 
         # Make sure to convert any value in includes or exclude values to str
@@ -232,9 +224,7 @@ class ZeroThreatHuntTools:
         args_list = list[tuple[str | dict[str, list[Any]]]](args)
         logger.trace(f"Converting {len(args_list)} filter object(s) to JSON string")
         json_str = json.dumps(args_list, indent=None, separators=(",", ":"))
-        logger.trace(
-            f"Generated JSON filter string (length: {len(json_str)} characters)"
-        )
+        logger.trace(f"Generated JSON filter string (length: {len(json_str)} characters)")
         return json_str
 
     @staticmethod
@@ -273,9 +263,7 @@ class ZeroThreatHuntTools:
                 #     "dstPort": {"id": "dstPort", "selections": []}
                 # }
         """
-        logger.trace(
-            f"Transforming {len(network_filters)} network filters to dictionary"
-        )
+        logger.trace(f"Transforming {len(network_filters)} network filters to dictionary")
 
         # Create new dictionary to store the transformed network filters
         # This allows O(1) lookup by filter ID instead of O(n) list search
@@ -302,20 +290,16 @@ class ZeroThreatHuntTools:
                     f"with {len(filter_obj['selections'])} selections"
                 )
                 filter_obj["selectionsByName"] = {
-                    selection["name"]: selection["id"]
-                    for selection in filter_obj["selections"]
+                    selection["name"]: selection["id"] for selection in filter_obj["selections"]
                 }
                 filter_obj["selectionsById"] = {
-                    selection["id"]: selection["name"]
-                    for selection in filter_obj["selections"]
+                    selection["id"]: selection["name"] for selection in filter_obj["selections"]
                 }
 
             # Add the transformed filter to the dictionary, keyed by its ID
             network_filters_dict[filter_obj["id"]] = filter_obj
 
-        logger.debug(
-            f"Transformed {len(network_filters_dict)} unique filters to dictionary"
-        )
+        logger.debug(f"Transformed {len(network_filters_dict)} unique filters to dictionary")
         return network_filters_dict
 
     @staticmethod
@@ -371,9 +355,7 @@ class ZeroThreatHuntTools:
 
             # Convert to milliseconds timestamp
             timestamp_ms = ZeroThreatHuntTools.datetime_to_timestamp_ms(dt)
-            logger.trace(
-                f"Converted ISO8601 '{original_str}' to timestamp: {timestamp_ms}"
-            )
+            logger.trace(f"Converted ISO8601 '{original_str}' to timestamp: {timestamp_ms}")
             return timestamp_ms
 
         except ValueError as e:
@@ -437,14 +419,10 @@ class ZeroThreatHuntTools:
             from_timestamp_str = kwargs.get("from_timestamp")
             logger.trace(f"Parsing from_timestamp: {from_timestamp_str}")
             try:
-                params["from"] = ZeroThreatHuntTools._parse_iso8601_to_timestamp_ms(
-                    from_timestamp_str
-                )
+                params["from"] = ZeroThreatHuntTools._parse_iso8601_to_timestamp_ms(from_timestamp_str)
                 logger.debug(f"Set 'from' parameter to timestamp: {params['from']}")
             except ValueError as e:
-                logger.error(
-                    f"Failed to parse from_timestamp '{from_timestamp_str}': {e}"
-                )
+                logger.error(f"Failed to parse from_timestamp '{from_timestamp_str}': {e}")
                 raise
 
         # Parse and convert to_timestamp if provided
@@ -452,9 +430,7 @@ class ZeroThreatHuntTools:
             to_timestamp_str = kwargs.get("to_timestamp")
             logger.trace(f"Parsing to_timestamp: {to_timestamp_str}")
             try:
-                params["to"] = ZeroThreatHuntTools._parse_iso8601_to_timestamp_ms(
-                    to_timestamp_str
-                )
+                params["to"] = ZeroThreatHuntTools._parse_iso8601_to_timestamp_ms(to_timestamp_str)
                 logger.debug(f"Set 'to' parameter to timestamp: {params['to']}")
             except ValueError as e:
                 logger.error(f"Failed to parse to_timestamp '{to_timestamp_str}': {e}")
@@ -531,9 +507,7 @@ class ZeroThreatHuntTools:
 
         return ZeroThreatHuntTools._transform_network_filters_to_dict(filters_list)
 
-    def _parse_kwargs_for_network_filters(
-        self, kwargs: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _parse_kwargs_for_network_filters(self, kwargs: dict[str, Any]) -> dict[str, Any]:
         _filters: dict[str, Any] = {}
         for key, value in kwargs.items():
             if key in self.network_filters:
@@ -541,9 +515,7 @@ class ZeroThreatHuntTools:
                 _filters.update({key: value})
         return _filters
 
-    def _get_activities_from_api_client(
-        self, params: dict[str, Any], _limit: int = 100
-    ) -> list[dict[str, Any]]:
+    def _get_activities_from_api_client(self, params: dict[str, Any], _limit: int = 100) -> list[dict[str, Any]]:
         """
         Retrieve network activities from Zero Networks API with pagination support.
 
@@ -577,9 +549,7 @@ class ZeroThreatHuntTools:
                 }
                 activities = hunter._get_activities_from_api_client(params, _limit=100)
         """
-        logger.debug(
-            f"Retrieving network activities with parameters: {list(params.keys())}"
-        )
+        logger.debug(f"Retrieving network activities with parameters: {list(params.keys())}")
         logger.trace(f"Activity query parameters: {params}")
 
         activities: list[dict[str, Any]] = []
@@ -588,9 +558,7 @@ class ZeroThreatHuntTools:
         # Iterate through paginated results from the API
         # The iter_paginated method automatically handles cursor-based pagination,
         # making multiple API requests as needed to retrieve all matching activities
-        for activity in self.api.iter_paginated(
-            "/activities/network", limit=_limit, params=params
-        ):
+        for activity in self.api.iter_paginated("/activities/network", limit=_limit, params=params):
             activities.append(activity)
             activity_count += 1
 
@@ -636,11 +604,9 @@ class ZeroThreatHuntTools:
         logger.trace(f"Parsed {len(params)} parameters into API query parameters")
 
         # Check kwargs for any additional filter fields provided
-        parsed_filters: dict[str, Any] = self._parse_kwargs_for_network_filters(
-            kwargs=kwargs
-        )
+        parsed_filters: dict[str, Any] = self._parse_kwargs_for_network_filters(kwargs=kwargs)
         logger.trace(f"Parsed {len(parsed_filters)} filters from kwargs")
-        
+
         # If additional filters were passed, create filter objects those as well
         # And add them to filters list
         if parsed_filters and len(parsed_filters) > 0:
@@ -656,7 +622,9 @@ class ZeroThreatHuntTools:
                     exclude_values = []
                 filter_objects.append(
                     self.filter_object_builder(
-                        field_name=field_name, include_values=include_values, exclude_values=exclude_values
+                        field_name=field_name,
+                        include_values=include_values,
+                        exclude_values=exclude_values,
                     )
                 )
             # Convert list of filter objects to json string, which is what API expects
@@ -678,14 +646,10 @@ class ZeroThreatHuntTools:
         logger.debug("Initiating API call to retrieve activities")
         activities: list[dict[str, Any]] = self._get_activities_from_api_client(params=params)
 
-        logger.info(
-            f"Retrieved {len(activities)} activities from API client."
-        )
+        logger.info(f"Retrieved {len(activities)} activities from API client.")
         return activities
 
-    def get_activities_to_domains(
-        self, domains: list[str], **kwargs: Any
-    ) -> list[dict[str, Any]]:
+    def get_activities_to_domains(self, domains: list[str], **kwargs: Any) -> list[dict[str, Any]]:
         """
         Retrieve network activities that connect to the specified domains.
 
@@ -726,9 +690,7 @@ class ZeroThreatHuntTools:
 
         for domain in domains:
             if not isinstance(domain, str):
-                logger.error(
-                    f"Invalid domain type provided: {type(domain)} (value: {domain})"
-                )
+                logger.error(f"Invalid domain type provided: {type(domain)} (value: {domain})")
                 raise ZeroThreatHuntInvalidValues(
                     "Invalid domain provided",
                     invalid_values={"domain": domain, "domain_type": str(type(domain))},
@@ -744,9 +706,7 @@ class ZeroThreatHuntTools:
             **kwargs,
         )
 
-    def get_activities_from_source_processes(
-        self, process_paths: list[str], **kwargs: Any
-    ) -> list[dict[str, Any]]:
+    def get_activities_from_source_processes(self, process_paths: list[str], **kwargs: Any) -> list[dict[str, Any]]:
         """
         Retrieve network activities that originate from the specified source processes.
 
@@ -800,9 +760,7 @@ class ZeroThreatHuntTools:
         # Validation function for process path strings
         for process_path in process_paths:
             if not isinstance(process_path, str):
-                logger.error(
-                    f"Invalid process path type provided: {type(process_path)} (value: {process_path})"
-                )
+                logger.error(f"Invalid process path type provided: {type(process_path)} (value: {process_path})")
                 raise ZeroThreatHuntInvalidValues(
                     "Invalid process path provided",
                     invalid_values={
@@ -821,9 +779,7 @@ class ZeroThreatHuntTools:
             **kwargs,
         )
 
-    def get_activities_to_destination_processes(
-        self, process_paths: list[str], **kwargs: Any
-    ) -> list[dict[str, Any]]:
+    def get_activities_to_destination_processes(self, process_paths: list[str], **kwargs: Any) -> list[dict[str, Any]]:
         """
         Retrieve network activities that connect to the specified destination processes.
 
@@ -878,9 +834,7 @@ class ZeroThreatHuntTools:
         for process_path in process_paths:
             # Validate that a process path is a string.
             if not isinstance(process_path, str):
-                logger.error(
-                    f"Invalid process path type provided: {type(process_path)} (value: {process_path})"
-                )
+                logger.error(f"Invalid process path type provided: {type(process_path)} (value: {process_path})")
                 raise ZeroThreatHuntInvalidValues(
                     "Invalid process path provided",
                     invalid_values={
@@ -899,9 +853,7 @@ class ZeroThreatHuntTools:
             **kwargs,
         )
 
-    def get_activities_to_destination_ports(
-        self, ports: list[int], **kwargs: Any
-    ) -> list[dict[str, Any]]:
+    def get_activities_to_destination_ports(self, ports: list[int], **kwargs: Any) -> list[dict[str, Any]]:
         """
         Retrieve network activities that connect to the specified destination ports.
 
@@ -955,9 +907,7 @@ class ZeroThreatHuntTools:
                 try:
                     port = int(port)
                 except ValueError:
-                    logger.error(
-                        f"Invalid port type provided: {type(port)} (value: {port})"
-                    )
+                    logger.error(f"Invalid port type provided: {type(port)} (value: {port})")
                     raise ZeroThreatHuntInvalidValues(
                         "Invalid port provided",
                         invalid_values={"port": port, "port_type": str(type(port))},
@@ -980,9 +930,7 @@ class ZeroThreatHuntTools:
             **kwargs,
         )
 
-    def get_activities_to_destination_ips(
-        self, ip_addresses: list[str], **kwargs: Any
-    ) -> list[dict[str, Any]]:
+    def get_activities_to_destination_ips(self, ip_addresses: list[str], **kwargs: Any) -> list[dict[str, Any]]:
         """
         Retrieve network activities that connect to the specified destination IP addresses.
 
@@ -1034,9 +982,7 @@ class ZeroThreatHuntTools:
         for ip_address in ip_addresses:
             # Validate that an IP address is a string.
             if not isinstance(ip_address, str):
-                logger.error(
-                    f"Invalid IP address type provided: {type(ip_address)} (value: {ip_address})"
-                )
+                logger.error(f"Invalid IP address type provided: {type(ip_address)} (value: {ip_address})")
                 raise ZeroThreatHuntInvalidValues(
                     "Invalid IP address provided",
                     invalid_values={
