@@ -12,6 +12,7 @@ __pycache__
 # Ignore log directories
 logs
 .vscode
+.cursor
 
 # Ignore RMML repository
 RMML/

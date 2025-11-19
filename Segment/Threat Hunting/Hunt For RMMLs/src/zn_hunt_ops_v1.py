@@ -137,8 +137,9 @@ class ZNHuntOps:
         """
         logger.info(f"Analyzing RMML: {rmml.get('rmm_name')} - {rmml.get('rmm_id')}...")
 
-        count_of_indicating_activities_by_indicator_type: dict[str, int] = self._get_indicating_activities_by_indicator_type(rmml=rmml)
+        count_of_indicating_activities_by_indicator_type: dict[str, int] = self._get_sum_of_each_indicator_type(rmml=rmml)
         top_indicator_type: str = max(count_of_indicating_activities_by_indicator_type.items(), key=lambda x: x[1])[0]
+        top_destinations: dict[str, int] = self._get_unique_destinations_and_count(rmml=rmml)
 
         rmml_analysis_results: dict[str, Any] = {
             "rmm_name": rmml.get("rmm_name"),
@@ -147,12 +148,26 @@ class ZNHuntOps:
             'statistics': {
                 'total_indicating_activities': len(rmml.get("unique_activities_map",[])),
             },
+            'aggregations': {
+                'top_indicator_type': top_indicator_type,
+                'count_of_indicating_activities_by_indicator_type': count_of_indicating_activities_by_indicator_type,
+                'top_destinations': top_destinations,
+            }
         }
         #TODO write function to return top domain, top ports, top processes
         return rmml_analysis_results
 
+    @staticmethod
+    def _get_unique_destinations_and_count(rmml: dict[str, str | list[dict[str, Any]] | list[str]]) -> dict[str,int]:
+        logger.trace(f"Calculating top destinations for {rmml.get('rmm_name')} - {rmml.get('rmm_id')}...")
+        # TODO finish this function
+        for unique_activity_info in rmml.get('unique_activities_map',[]):
+            dst: str = unique_activity_info.get('activity',{}).get(f"dst",{}).get('dstAsset',"")
+            dst_fqdn: str = unique_activity_info.get('activity',{}).get(f"dst",{}).get('fqdn',"")
+
+
     
-    def _get_indicating_activities_by_indicator_type(self, rmml: dict[str, Any]) -> dict[str, Any]:
+    def _get_sum_of_each_indicator_type(self, rmml: dict[str, Any]) -> dict[str, Any]:
         """
         Get the indicating activities by indicator type.
         """
