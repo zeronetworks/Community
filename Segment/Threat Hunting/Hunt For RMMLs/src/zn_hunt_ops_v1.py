@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -34,6 +35,8 @@ class ZNHuntOps:
     ports, and other signatures defined in the RMM data.
     """
 
+    MAX_WORKERS: int = 5  # Maximum number of concurrent workers for hunting operations
+
     ############################################################
     # Helper Functions
     ############################################################
@@ -66,7 +69,7 @@ class ZNHuntOps:
     ############################################################
     # Initialization
     ############################################################
-    def __init__(self, api_key: str, rmm_data: RMMData, zn_base_url: Optional[str] = None):
+    def __init__(self, api_key: str, rmm_data: RMMData, zn_base_url: Optional[str] = None, **kwargs: Optional[dict[str, Any]]):
         """
         Initialize the ZN Hunt Ops coordinator.
 
@@ -84,6 +87,16 @@ class ZNHuntOps:
         :raises ValueError: If network filters cannot be retrieved from the API
         """
         logger.info("Initializing ZN Hunt Ops...")
+
+        if kwargs:
+            logger.info(f"Initializing ZN Hunt Ops with kwargs: {kwargs}...")
+            if 'max_workers' in kwargs:
+                try:
+                    self.MAX_WORKERS = int(kwargs.get('max_workers'))
+                except Exception as e:
+                    logger.error(f"Failed to set max_workers to {kwargs.get('max_workers')}. Using default value of {self.MAX_WORKERS}...")
+        else:
+            logger.info("Initializing ZN Hunt Ops without kwargs...")
 
         self._zero_threat_hunt_tools: ZeroThreatHuntTools = ZeroThreatHuntTools(
             api_key=api_key, zn_base_url=zn_base_url
@@ -420,9 +433,36 @@ class ZNHuntOps:
             logger.debug(f"Converted to_timestamp to milliseconds since epoch: {to_timestamp}")
 
         results: list[dict[str, Any]] = []
-        # TODO add multithreading to speed up the hunt
-        for rmm in self.rmm_data.rmm_simplified_list:
-            results.append(self._hunt_for_rmm(rmm=rmm, from_timestamp=from_timestamp, to_timestamp=to_timestamp))
+        logger.info(f"Starting concurrent hunt for {len(self.rmm_data.rmm_simplified_list)} RMMLs with {self.MAX_WORKERS} workers...")
+        
+        # Use ThreadPoolExecutor for concurrent execution of hunt operations
+        with ThreadPoolExecutor(max_workers=self.MAX_WORKERS) as executor:
+            # Submit all hunt tasks to the executor
+            future_to_rmm = {
+                executor.submit(
+                    self._hunt_for_rmm,
+                    rmm=rmm,
+                    from_timestamp=from_timestamp,
+                    to_timestamp=to_timestamp
+                ): rmm
+                for rmm in self.rmm_data.rmm_simplified_list
+            }
+            
+            # Collect results as they complete
+            for future in as_completed(future_to_rmm):
+                rmm = future_to_rmm[future]
+                try:
+                    result = future.result()
+                    results.append(result)
+                    logger.debug(
+                        f"Completed hunt for RMM: {rmm.get('meta', {}).get('name')} - "
+                        f"{rmm.get('meta', {}).get('id')}"
+                    )
+                except Exception as exc:
+                    logger.error(
+                        f"RMM {rmm.get('meta', {}).get('name')} - {rmm.get('meta', {}).get('id')} "
+                        f"generated an exception: {exc}"
+                    )
 
         logger.info(f"Finished hunting for {len(results)} RMMLs...")
 
