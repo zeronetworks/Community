@@ -21,7 +21,7 @@ from src.zero_threat_hunt_tools.zero_threat_hunt_exceptions import (
     ZeroThreatHuntInvalidValues,
 )
 
-# pylint: disable=W0102
+# pylint: disable=W0102, raise-missing-from
 # pyright: ignore[reportArgumentType]
 
 
@@ -562,7 +562,6 @@ class ZeroThreatHuntTools:
             activities.append(activity)
             activity_count += 1
 
-        logger.info(f"Retrieved {activity_count} network activities")
         logger.debug(f"Returning {len(activities)} activities")
         return activities
 
@@ -646,7 +645,7 @@ class ZeroThreatHuntTools:
         logger.debug("Initiating API call to retrieve activities")
         activities: list[dict[str, Any]] = self._get_activities_from_api_client(params=params)
 
-        logger.info(f"Retrieved {len(activities)} activities from API client.")
+        logger.debug(f"Retrieved {len(activities)} activities from API client.")
         return activities
 
     def get_activities_to_domains(self, domains: list[str], **kwargs: Any) -> list[dict[str, Any]]:
@@ -908,6 +907,7 @@ class ZeroThreatHuntTools:
                     port = int(port)
                 except ValueError:
                     logger.error(f"Invalid port type provided: {type(port)} (value: {port})")
+                    
                     raise ZeroThreatHuntInvalidValues(
                         "Invalid port provided",
                         invalid_values={"port": port, "port_type": str(type(port))},

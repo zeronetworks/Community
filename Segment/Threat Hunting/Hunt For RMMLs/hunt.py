@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# pylint: disable=line-too-long, no-name-in-module
 
 # ====================================================
 # File: hunt.py
@@ -15,7 +16,6 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from textwrap import dedent
-from typing import Any
 
 from loguru import logger
 
@@ -42,20 +42,56 @@ def setup_logging(verbose_level: int = 0) -> None:
 
     # Determine log level based on verbose level
     log_level = "INFO"
-    if verbose_level == 1:
-        log_level = "DEBUG"
-    elif verbose_level >= 2:
-        log_level = "TRACE"
 
     # Console handler with colors
     console_format = (
         "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
-        "<level>{level: <8}</level> | "
-        "<cyan>PID:{process.id}</cyan> | "
-        "<cyan>TID:{thread.id}</cyan> | "
-        "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> | "
+        "<level>{level: <2}</level> | "
         "<level>{message}</level>"
     )
+    file_format = (
+        "{time:YYYY-MM-DD HH:mm:ss.SSS} | "
+        "{level: <2} | "
+        "{message}"
+    )
+
+    if verbose_level == 1:
+        log_level = "DEBUG"
+        console_format = (
+            "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
+            "<level>{level: <8}</level> | "
+            "<cyan>PID:{process.id}</cyan> | "
+            "<cyan>{name}</cyan> | "
+            "<level>{message}</level>"
+        )
+        file_format = (
+            "{time:YYYY-MM-DD HH:mm:ss.SSS} | "
+            "{level: <8} | "
+            "PID:{process.id} | "
+            "{name} | "
+            "{message}"
+        )
+
+    elif verbose_level >= 2:
+        log_level = "TRACE"
+        # Console handler with colors
+        console_format = (
+            "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
+            "<level>{level: <8}</level> | "
+            "<cyan>PID:{process.id}</cyan> | "
+            "<cyan>TID:{thread.id}</cyan> | "
+            "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> | "
+            "<level>{message}</level>"
+        )
+        file_format = (
+            "{time:YYYY-MM-DD HH:mm:ss.SSS} | "
+            "{level: <8} | "
+            "PID:{process.id} | "
+            "TID:{thread.id} | "
+            "{name}:{function}:{line} | "
+            "{message}"
+        )
+
 
     logger.add(
         sys.stderr,
@@ -70,14 +106,6 @@ def setup_logging(verbose_level: int = 0) -> None:
     log_dir = Path("logs")
     log_dir.mkdir(exist_ok=True)
 
-    file_format = (
-        "{time:YYYY-MM-DD HH:mm:ss.SSS} | "
-        "{level: <8} | "
-        "PID:{process.id} | "
-        "TID:{thread.id} | "
-        "{name}:{function}:{line} | "
-        "{message}"
-    )
 
     logger.add(
         log_dir / "hunt.log",
@@ -196,6 +224,7 @@ def main() -> int:
     :return: Exit code indicating script success or failure (0=success, 1=error)
     :rtype: int
     """
+    start_time: datetime = datetime.now()
     try:
         # Parse arguments
         args = parse_arguments()
@@ -251,13 +280,23 @@ def main() -> int:
 
         # Load Zero Networks Hunt Operations class
         zn_hunt_ops: ZNHuntOps = ZNHuntOps(api_key=api_key, rmm_data=rmm_data)
-        results: list[dict[str, Any]] = zn_hunt_ops.execute_hunt(
+        zn_hunt_ops.execute_hunt(
             from_timestamp=from_timestamp, to_timestamp=to_timestamp
         )
 
         # TODO format results to pretty print table and to CSV
+        end_time: datetime = datetime.now()
+        time_delta: timedelta = end_time - start_time
 
-        logger.info("Hunt completed successfully")
+        # Convert timedelta to hours, minutes, seconds
+        total_seconds = int(time_delta.total_seconds())
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
+        seconds = total_seconds % 60
+        
+        logger.info(
+            f"Hunt completed successfully in {hours}h {minutes}m {seconds}s"
+        )
 
         return 0
 
