@@ -9,9 +9,11 @@ from typing import Any, Optional
 
 from loguru import logger
 import pandas as pd
+from tabulate import tabulate
 
 from src.rmmdata import RMMData
 from src.zero_threat_hunt_tools.zero_threat_hunt_tools import ZeroThreatHuntTools
+from src.zero_networks.api import ZeroNetworksNotFoundError
 
 
 # This is needed as some of the attribute keys returned by the API
@@ -41,6 +43,7 @@ class ZNHuntOps:
 
     unique_source_assets_seen: dict[str, dict] = {}
     asset_id_to_asset_name_map: dict[str, str] = {}
+    all_indicating_activities: list[dict[str, Any]] = []
 
     ############################################################
     # Initialization
@@ -222,25 +225,41 @@ class ZNHuntOps:
 
         return filter_holder
 
+    ####################################
+    # Functions to filter RMML results
+    ####################################
+    def _filter_results_to_only_include_rmmls_with_indicators(self, results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        logger.debug(f"Starting with {len(results)} RMMLs that may or may not have indicators...")
+        # Filter to only results that have >1 activities in exectuables, domains, or port activities
+        rmmls_with_indicators: list[dict[str, str | list[dict[str, Any]] | list[str]]] = [
+            result
+            for result in results
+            if (
+                len(result.get("executable_activities_discovered", [])) > 0
+                or len(result.get("domain_activities_discovered", [])) > 0
+                or len(result.get("port_activities_discovered", [])) > 0
+            )
+        ]
+        logger.info(
+            f"Filtered RRMLs to a resultant set of {len(rmmls_with_indicators)} RMMLs which have indicators..."
+        )
+        return rmmls_with_indicators
+
+
     ############################################################
-    # Functions to normalize RMMLs with indicators (part of anaylsis)
+    # Functions to deduplicate and decode 
+    # RMMLs with indicators
     ############################################################
 
-    def _normalize_rmml_with_indicators(
-        self, rmml: dict[str, str | list[dict[str, Any]] | list[str]]
-    ) -> dict[str, str | list[dict[str, Any]] | list[str]]:
-        """
-        Analyze an RMML that has indicators and return a summary of the findings.
-        """
-        logger.info(
-            f"Normalizing results for RMML: {rmml.get('rmm_name')} - {rmml.get('rmm_id')}..."
-        )
-        rmml = self._get_unique_rmml_activities(rmml=rmml)
-        rmml = self._transform_unique_activities_to_human_readable(rmml=rmml)
-        logger.info(
-            f"Normalized indicators for RMML: {rmml.get('rmm_name')} - {rmml.get('rmm_id')}..."
-        )
-        return rmml
+    def _deduplicate_and_decode_rmml_activities(self, rmmls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        logger.info(f"Deduplicating activities and decoding integer values to human readable text for {len(rmmls)} RMMLs...")
+        for rmml in rmmls:
+            logger.info(f"Deduplicating activities for RMML: {rmml.get('rmm_name')} - {rmml.get('rmm_id')}...")
+            rmml = self._get_unique_rmml_activities(rmml=rmml)
+            logger.info(f"Decoding activity fields to string format for RMML: {rmml.get('rmm_name')} - {rmml.get('rmm_id')}...")
+            rmml = self._transform_unique_activities_to_human_readable(rmml=rmml)
+        logger.info(f"Ndeduplicated and decoded {len(rmmls)} RMMLs...")
+        return rmmls
 
     def _get_unique_rmml_activities(
         self, rmml: dict[str, str | list[dict[str, Any]] | list[str]]
@@ -415,44 +434,42 @@ class ZNHuntOps:
         if asset_id in self.asset_id_to_asset_name_map:
             return self.asset_id_to_asset_name_map[asset_id]
         else:
-            asset_name = (
-                self._zero_threat_hunt_tools.api.get(endpoint=f"/assets/{asset_id}")
-                .get("entity", {})
-                .get("name", "N/A")
-            )
-            self.asset_id_to_asset_name_map[asset_id] = asset_name
-            return asset_name
+            try:
+                asset_name = (
+                    self._zero_threat_hunt_tools.api.get(endpoint=f"/assets/{asset_id}")
+                    .get("entity", {})
+                    .get("name", "N/A")
+                )
+                self.asset_id_to_asset_name_map[asset_id] = asset_name
+                return asset_name
+            except ZeroNetworksNotFoundError as e:
+                logger.warning(
+                    f"Unable to resolve asset ID {asset_id} to asset name."
+                    "Safely ignore this warning unless you notice valid asset IDs are not being resolved to asset names!"
+                )
+                return "N/A"
+            
 
     ############################################################
-    # Functions to perform data analysis on RMMLs
+    # Functions to perform granular data analysis on RMMLs
     ############################################################
 
-    def analyze_results(self, results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _get_advanced_stats(self, results: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """
         Analyze the results of the hunt and return a summary of the findings.
         """
         logger.info(f"Analyzing results for {len(results)} RMMLs...")
 
-        # Filter to only results that have >1 activities in exectuables, domains, or port activities
-        rmmls_with_indicators: list[dict[str, str | list[dict[str, Any]] | list[str]]] = [
-            result
-            for result in results
-            if (
-                len(result.get("executable_activities_discovered", [])) > 0
-                or len(result.get("domain_activities_discovered", [])) > 0
-                or len(result.get("port_activities_discovered", [])) > 0
-            )
-        ]
+        
 
-        logger.info(
+        """logger.info(
             f"Filtered RRMLs to a resultant set of {len(rmmls_with_indicators)} RMMLs which have indicators..."
         )
-        for rmml in rmmls_with_indicators:
-            rmml = self._normalize_rmml_with_indicators(rmml=rmml)
+        for rmml in results:
             rmml_analysis_results = self._run_statistical_analysis(rmml=rmml)
             rmml.update({"analysis": rmml_analysis_results})
 
-        return rmmls_with_indicators
+        return results"""
 
     def _run_statistical_analysis(self, rmml: dict[str, Any]) -> dict[str, Any]:
         logger.info(
@@ -727,16 +744,28 @@ class ZNHuntOps:
                 )
         return unique_destinations_map
 
+    
     ####################################
-    #
-    # Format/print/export results
-    #
+    # Functions to perform macro-level data analysis on RMMLs
     ####################################
-    def _export_all_indicating_activities_to_csv(self, rmmls: list[dict[str, Any]]) -> None:
-        logger.info(
-            f"Exporting all indicating activities to CSV for {len(rmmls)} RMMLs..."
-        )
+    
+    def _run_macro_analysis(self, rmmls: list[dict[str, Any]]) -> dict[str, Any]:
+        logger.info("Running macro-level analysis (trend analysis across all RMMLs)")
+        rmml_counts: dict[str, Any] = self._get_activity_counts_by_rmml(rmmls=rmmls)
+        aggregated_top_stats: dict[str, Any] = self._get_activities_top_stats(activities=self.all_indicating_activities)
+        logger.trace("RMML counts: {}", json.dumps(rmml_counts))
+        logger.trace("Aggregated top stats: {}", json.dumps(aggregated_top_stats))
 
+        macro_statistics: dict[str, Any] = {
+            "rmm_counts": rmml_counts,
+            "aggregated_top_stats": aggregated_top_stats,
+        }
+
+        logger.info("Macro-level analysis completed...")
+        return macro_statistics
+
+    @staticmethod
+    def _aggregate_all_activities_into_list(rmmls: list[dict[str, Any]]) -> list[dict[str, Any]]:
         # This list will hold all the indicating activities from all the RMMLs
         all_indicating_activities: list[dict[str, Any]] = []
 
@@ -764,8 +793,132 @@ class ZNHuntOps:
             "activities from all RMMLs into single list for exporting to CSV..."
         )
 
+        return all_indicating_activities
+
+    @staticmethod
+    def _get_activities_top_stats(activities: list[dict[str, Any]]) -> dict[str, Any]:
+        logger.debug("Getting activities top stats...")
+        top_stats: dict[str, Any] = {
+            "top_destination": "",
+            "destination_counts": {},
+            "top_destination_on_port_protocol": "",
+            "destination_on_port_protocol_counts": {},
+            "top_port_protocol": "",
+            "port_protocol_counts": {},
+            "top_source_process": "",
+            "source_process_counts": {},
+            "top_destination_process": "",
+            "destination_process_counts": {},
+            "top_source_asset_name": "",
+            "source_asset_name_counts": {},
+        }
+
+        df: pd.DataFrame = pd.json_normalize(activities)
+
+        df["destination"] = df["dst.fqdn"].fillna(df["dst.ip"]).astype(str)
+        df['protocol_port'] = df['protocol'] + '/' + df['dst.port'].astype(str)
+        df['destination_on_port_protocol'] = df['destination'] + ':' + df['protocol_port']
+        df["source_process_no_pid"] = (
+            df["src.processName"].astype(str).str.replace(r"\s\(\d+\)$", "", regex=True)
+        )
+        df["destination_process_no_pid"] = (
+            df["dst.processName"].astype(str).str.replace(r"\s\(\d+\)$", "", regex=True)
+        )
+
+        destination_counts: dict[str, int] = df["destination"].value_counts().to_dict()
+        destination_counts = dict(sorted(destination_counts.items(), key=lambda x: x[1], reverse=True))
+        top_destination: str = max(destination_counts, key=destination_counts.get)
+        top_stats["top_destination"] = top_destination
+        top_stats["destination_counts"] = destination_counts
+
+        destination_on_port_protocol_counts: dict[str, int] = df["destination_on_port_protocol"].value_counts().to_dict()
+        destination_on_port_protocol_counts = dict(sorted(destination_on_port_protocol_counts.items(), key=lambda x: x[1], reverse=True))
+        top_destination_on_port_protocol: str = max(destination_on_port_protocol_counts, key=destination_on_port_protocol_counts.get)
+        top_stats["top_destination_on_port_protocol"] = top_destination_on_port_protocol
+        top_stats["destination_on_port_protocol_counts"] = destination_on_port_protocol_counts
+
+        port_protocol_counts: dict[str, int] = df["protocol_port"].value_counts().to_dict()
+        port_protocol_counts = dict(sorted(port_protocol_counts.items(), key=lambda x: x[1], reverse=True))
+        top_port_protocol: str = max(port_protocol_counts, key=port_protocol_counts.get)
+        top_stats["top_port_protocol"] = top_port_protocol
+        top_stats["port_protocol_counts"] = port_protocol_counts
+
+        source_process_counts = df.loc[df['source_process_no_pid'].notna() & (df['source_process_no_pid'] != ''), 'source_process_no_pid'].value_counts()
+        source_process_counts = dict(sorted(source_process_counts.items(), key=lambda x: x[1], reverse=True))
+        top_source_process: str = max(source_process_counts, key=source_process_counts.get)
+        top_stats["top_source_process"] = top_source_process
+        top_stats["source_process_counts"] = source_process_counts
+
+        destination_process_counts = df.loc[df['destination_process_no_pid'].notna() & (df['destination_process_no_pid'] != ''), 'destination_process_no_pid'].value_counts()        
+        destination_process_counts = dict(sorted(destination_process_counts.items(), key=lambda x: x[1], reverse=True))
+        top_destination_process: str = max(destination_process_counts, key=destination_process_counts.get)
+        top_stats["top_destination_process"] = top_destination_process
+        top_stats["destination_process_counts"] = destination_process_counts
+
+        source_asset_name_counts: dict[str, int] = df["src.srcAssetName"].value_counts().to_dict()
+        source_asset_name_counts = dict(sorted(source_asset_name_counts.items(), key=lambda x: x[1], reverse=True))
+        top_source_asset_name: str = max(source_asset_name_counts, key=source_asset_name_counts.get)
+        top_stats["top_source_asset_name"] = top_source_asset_name
+        top_stats["source_asset_name_counts"] = source_asset_name_counts
+
+        return top_stats
+
+    @staticmethod
+    def _get_activity_counts_by_rmml(rmmls: list[dict[str, Any]]) -> dict[str, Any]:
+        logger.debug("Getting activity counts by RMML...")
+        rmml_counts: dict[str, str|int|dict[str, int]] = {
+            "unique_rmms_seen": len(rmmls),
+            "most_seen_rmml_name": "",
+            "most_seen_rmml_id": "",
+            "total_activities_all_rmmls": 0,
+            "total_executable_activities_all_rmmls": 0,
+            "total_domain_activities_all_rmmls": 0,
+            "total_port_activities_all_rmmls": 0,
+            "rmml_activities_counts": {}
+        }
+        
+
+        # track the largest count seen so far
+        largest_count: int = 0
+
+        # Iterate through each RMML and various counts of activities to the rmml_counts dictionary
+        for rmml in rmmls:
+            rmml_all_activities_count: int = len(rmml.get("unique_activities_map", []))
+            len_executable_activities: int = len(rmml.get("executable_activities_discovered", []))
+            len_domain_activities: int = len(rmml.get("domain_activities_discovered", []))
+            len_port_activities: int = len(rmml.get("port_activities_discovered", []))
+
+            # Update the largest count seen so far
+            if rmml_all_activities_count > largest_count:
+                largest_count = rmml_all_activities_count
+                rmml_counts["most_seen_rmml_name"] = rmml.get("rmm_name")
+                rmml_counts["most_seen_rmml_id"] = rmml.get("rmm_id")
+
+            rmml_counts["total_activities_all_rmmls"] += rmml_all_activities_count
+            rmml_counts["total_executable_activities_all_rmmls"] += len_executable_activities
+            rmml_counts["total_domain_activities_all_rmmls"] += len_domain_activities
+            rmml_counts["total_port_activities_all_rmmls"] += len_port_activities
+
+            rmml_counts["rmml_activities_counts"][rmml.get("rmm_name")] = {
+                "total_activities": rmml_all_activities_count,
+                "executable_activities": len_executable_activities,
+                "domain_activities": len_domain_activities,
+                "port_activities": len_port_activities,
+            }
+
+        return rmml_counts
+
+    ####################################
+    # Format/print/export results
+    ####################################
+    def _export_all_indicating_activities_to_csv(self, rmmls: list[dict[str, Any]]) -> None:
+        logger.info(
+            f"Exporting all indicating activities to CSV for {len(rmmls)} RMMLs..."
+        )
+            
+
         # Convert the list of activities to a pandas DataFrame
-        df: pd.DataFrame = pd.json_normalize(all_indicating_activities)
+        df: pd.DataFrame = pd.json_normalize(self.all_indicating_activities)
 
         # Prioritize (order) certain columns
         priority_columns: list[str] = [
@@ -798,19 +951,163 @@ class ZNHuntOps:
         filename: str = self._get_unique_filename("all_indicating_activities.csv")
         df.to_csv(filename, index=False,)
         logger.info(
-            f"Exported {len(all_indicating_activities)} indicating activities to CSV file: {filename}..."
+            f"Exported {len(self.all_indicating_activities)} indicating activities to CSV file: {filename}..."
         )
 
-    def _run_reporting_workflow(self, rmmls: list[dict[str, Any]]) -> None:
-        logger.info("Running reporting workflow...")
-        self._export_all_indicating_activities_to_csv(rmmls=rmmls)
-        #TODO add statistics functions at a macro level to analyze which RMMs most common, etc
-        # TODO create string with statistics per RMML - log and save to .txt
-        logger.info("Reporting workflow completed...")
+
+    def _log_macro_level_statistics(self, macro_stats: dict[str, Any]) -> None:
+        
+        """
+        Log macro-level statistics in tabular format.
+        """
+        # Prepare table data
+        table_data = [
+            {
+                "Metric": "Total RMMs Observed",
+                "Value": macro_stats.get('rmm_counts',{}).get("unique_rmms_seen", 0)
+            },
+            {
+                "Metric": "Most Seen RMM",
+                "Value": f"{macro_stats.get('rmm_counts',{}).get("most_seen_rmml_name", "N/A")} - {macro_stats.get('rmm_counts',{}).get("most_seen_rmml_id", "N/A")}"
+            },
+            {
+                "Metric": "Total number of activities matching RMM signatures",
+                "Value": macro_stats.get('rmm_counts',{}).get("total_activities_all_rmmls", 0)
+            },
+            {
+                "Metric": "Total number of executable activities that match RMM signatures",
+                "Value": macro_stats.get('rmm_counts',{}).get("total_executable_activities_all_rmmls", 0)
+            },
+            {
+                "Metric": "Total number of domain activities that match RMM signatures",
+                "Value": macro_stats.get('rmm_counts',{}).get("total_domain_activities_all_rmmls", 0)
+            },
+            {
+                "Metric": "Total number of port activities that match RMM signatures",
+                "Value": macro_stats.get('rmm_counts',{}).get("total_port_activities_all_rmmls", 0)
+            },
+        ]
+        
+        # Create table string
+        table_str = tabulate(table_data, headers="keys", tablefmt="grid", showindex=False)
+        
+        # Log entire table at once
+        logger.info(f"\n{'='*80}\nHigh Level Macro-Level Statistics\n{'='*80}\n{table_str}\n{'='*80}")
+
+        rmm_table_data = []
+        for rmm_name,stats in macro_stats.get("rmm_counts", {}).get("rmml_activities_counts", {}).items():
+            rmm_table_data.append({
+                "RMM Name": rmm_name,
+                "Activities Count": stats.get("total_activities"),
+                "Executable Activities Count": stats.get("executable_activities"),
+                "Domain Activities Count": stats.get("domain_activities"),
+                "Port Activities Count": stats.get("port_activities"),
+            })
+
+        rmm_table_str = tabulate(rmm_table_data, headers="keys", tablefmt="grid", showindex=False)
+        logger.info(f"\n{'='*80}\nRMMs Observed by Activity Count\n{'='*80}\n{rmm_table_str}\n{'='*80}")
+
+        destination_port_protocol_table_data = []
+        for destination,count in dict(list(macro_stats.get('aggregated_top_stats').get("destination_on_port_protocol_counts", {}).items())[:10]):
+            destination_port_protocol_table_data.append({
+                "Destination": destination,
+                "Count": count,
+            })
+
+        destination_port_protocol_table_str = tabulate(destination_port_protocol_table_data, headers="keys", tablefmt="grid", showindex=False)
+        logger.info(
+            f"\n{'='*80}\nTop 10 destinations by protocol/port and activity count\n{'='*80}\n"
+            f"Top Destination by Protocol/Port:\t{macro_stats.get('aggregated_top_stats').get('top_destination_on_port_protocol')}"
+            f"\n{'='*80}"
+            f"\n{destination_port_protocol_table_str}\n{'='*80}"
+        )
+
+        source_process_table_data = []
+        for source_process,count in dict(list(macro_stats.get('aggregated_top_stats').get("source_process_counts", {}).items())[:10]):
+            source_process_table_data.append({
+                "Source Process": source_process,
+                "Count": count,
+            })
+
+        source_process_table_str = tabulate(source_process_table_data, headers="keys", tablefmt="grid", showindex=False)
+        logger.info(
+            f"\n{'='*80}\nTop 10 source processes by activity count\n{'='*80}\n"
+            f"Top Source Process:\t{macro_stats.get('aggregated_top_stats').get('top_source_process')}"
+            f"\n{'='*80}"
+            f"\n{source_process_table_str}\n{'='*80}"
+        )
+
+        destination_process_table_data = []
+        for destination_process,count in dict(list(macro_stats.get('aggregated_top_stats').get("destination_process_counts", {}).items())[:10]):
+            destination_process_table_data.append({
+                "Destination Process": destination_process,
+                "Count": count,
+            })
+
+        destination_process_table_str = tabulate(destination_process_table_data, headers="keys", tablefmt="grid", showindex=False)
+        logger.info(
+            f"\n{'='*80}\nTop 10 destination processes by activity count\n{'='*80}\n"
+            f"Top Destination Process:\t{macro_stats.get('aggregated_top_stats').get('top_destination_process')}"
+            f"\n{'='*80}"
+            f"\n{destination_process_table_str}\n{'='*80}"
+        )
+
+        source_asset_name_table_data = []
+        for source_asset_name,count in dict(list(macro_stats.get('aggregated_top_stats').get("source_asset_name_counts", {}).items())[:10]):
+            source_asset_name_table_data.append({
+                "Source Asset Name": source_asset_name,
+                "Count": count,
+            })
+
+        source_asset_name_table_str = tabulate(source_asset_name_table_data, headers="keys", tablefmt="grid", showindex=False)
+        logger.info(
+            f"\n{'='*80}\nTop 10 source assets by activity count\n{'='*80}\n"
+            f"Top Source Asset Name:\t{macro_stats.get('aggregated_top_stats').get('top_source_asset_name')}"
+            f"\n{'='*80}"
+            f"\n{source_asset_name_table_str}\n{'='*80}"
+        )
+
+        return None
 
     ####################################
-    # Functions to execute the hunt
+    # Functions to drive each section of hunt workflow
     ####################################
+
+    def _start_multithreaded_hunt(self, from_timestamp: int | str, to_timestamp: int | str) -> list[dict[str, Any]]:
+        results: list[dict[str, Any]] = []
+        logger.info(
+            f"Starting concurrent hunt for {len(self.rmm_data.rmm_simplified_list)}"
+            f"RMMLs with {self.max_workers} workers..."
+        )
+         # Use ThreadPoolExecutor for concurrent execution of hunt operations
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            # Submit all hunt tasks to the executor
+            future_to_rmm = {
+                executor.submit(
+                    self._hunt_for_rmm, rmm=rmm, from_timestamp=from_timestamp, to_timestamp=to_timestamp
+                ): rmm
+                for rmm in self.rmm_data.rmm_simplified_list
+            }
+
+            # Collect results as they complete
+            for future in as_completed(future_to_rmm):
+                rmm = future_to_rmm[future]
+                try:
+                    result = future.result()
+                    results.append(result)
+                    logger.debug(
+                        f"Completed hunt for RMM: {rmm.get('meta', {}).get('name')} - "
+                        f"{rmm.get('meta', {}).get('id')}"
+                    )
+                # pylint: disable=broad-exception-caught
+                except Exception as exc:
+                    logger.error(
+                        f"RMM {rmm.get('meta', {}).get('name')} - {rmm.get('meta', {}).get('id')} "
+                        f"generated an exception: {exc}"
+                    )
+
+        logger.info(f"Finished hunting for activities from {len(results)} RMMLs...")
+        return results
 
     def _hunt_for_rmm(self, rmm: dict[str, Any], from_timestamp: int | str, to_timestamp: int | str) -> dict[str, Any]:
         logger.info(
@@ -905,7 +1202,7 @@ class ZNHuntOps:
                     f"by {rmm.get('meta',{}).get('name')} - {rmm.get('meta',{}).get('id')}..."
                 )
             else:
-                logger.warning(
+                logger.debug(
                     "No ports to search for other than 80 and 443 for "
                     +f"{rmm.get('meta',{}).get('name')} - {rmm.get('meta',{}).get('id')}. "
                     +"Skipping search as these are common ports..."
@@ -930,13 +1227,32 @@ class ZNHuntOps:
         )
         return results
 
+    def _prepare_data_for_analysis(self, results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        logger.info("Preparing data for analysis...")
+        filter_rmmls_with_indicators: list[dict[str, Any]] = self._filter_results_to_only_include_rmmls_with_indicators(results=results)
+        normalized_rmmls_with_indicators: list[dict[str, Any]] = self._deduplicate_and_decode_rmml_activities(rmmls=filter_rmmls_with_indicators)
+        self.all_indicating_activities = self._aggregate_all_activities_into_list(rmmls=normalized_rmmls_with_indicators)
+        return normalized_rmmls_with_indicators
+
     ############################################################
     # Main functions to execute the hunt
     ############################################################
 
-    def execute_hunt(self, from_timestamp: str, to_timestamp: Optional[str] = None):
-
-        logger.info("Starting RRMs hunt...")
+    def execute_hunt(self, from_timestamp: str, to_timestamp: Optional[str] = None, **kwargs: Optional[dict[str, Any]]):
+        #TODO refactor and re-organize execution sequence to
+        # 1. Hunt activities
+        # 2. Filter results to only include RMMLs with indicators
+        # 3. Normalize results
+        # 4. Export results to CSV
+        # 5. Execute macro-level analysis
+        # 6. Log macro-level statistics
+        # 6. Execute advanced-level analysis
+        # 7. Log advanced-level statistics
+        # 8. Return results
+        
+        # 1. Hunt activities
+        logger.info("Starting RMMs hunt...")
+        
         # Get the start and end timestamps
         if not to_timestamp:
             to_timestamp = str(self._zero_threat_hunt_tools.datetime_to_timestamp_ms(datetime.now()))
@@ -944,42 +1260,26 @@ class ZNHuntOps:
                 f"Converted to_timestamp to milliseconds since epoch: {to_timestamp}"
             )
 
-        results: list[dict[str, Any]] = []
-        logger.info(
-            f"Starting concurrent hunt for {len(self.rmm_data.rmm_simplified_list)}"
-            f"RMMLs with {self.max_workers} workers..."
-        )
+        # 1. Hunt for activities
+        hunt_results: list[dict[str, Any]] = self._start_multithreaded_hunt(from_timestamp=from_timestamp, to_timestamp=to_timestamp)
+       
+        # 2. Prepare data for analysis
+        prepared_data: list[dict[str, Any]] = self._prepare_data_for_analysis(results=hunt_results)
 
-        # Use ThreadPoolExecutor for concurrent execution of hunt operations
-        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            # Submit all hunt tasks to the executor
-            future_to_rmm = {
-                executor.submit(
-                    self._hunt_for_rmm, rmm=rmm, from_timestamp=from_timestamp, to_timestamp=to_timestamp
-                ): rmm
-                for rmm in self.rmm_data.rmm_simplified_list
-            }
+        # 3. Export results to CSV
+        self._export_all_indicating_activities_to_csv(rmmls=prepared_data)
 
-            # Collect results as they complete
-            for future in as_completed(future_to_rmm):
-                rmm = future_to_rmm[future]
-                try:
-                    result = future.result()
-                    results.append(result)
-                    logger.debug(
-                        f"Completed hunt for RMM: {rmm.get('meta', {}).get('name')} - "
-                        f"{rmm.get('meta', {}).get('id')}"
-                    )
-                # pylint: disable=broad-exception-caught
-                except Exception as exc:
-                    logger.error(
-                        f"RMM {rmm.get('meta', {}).get('name')} - {rmm.get('meta', {}).get('id')} "
-                        f"generated an exception: {exc}"
-                    )
-
-        logger.info(f"Finished hunting for activities from {len(results)} RMMLs...")
-
-        rmmls_with_analysis: list[dict[str, Any]] = self.analyze_results(results=results)
-        self._run_reporting_workflow(rmmls=rmmls_with_analysis)
-
-        return results
+        # 4. Run analytics workflows
+        # If kwargs have no_basic_stats = True, this conditional will
+        # skip the macro-level analysis 
+        if not kwargs.get("no_basic_stats", False):
+            macro_stats: dict[str, Any] = self._run_macro_analysis(rmmls=prepared_data)
+            self._log_macro_level_statistics(macro_stats=macro_stats)
+        
+        # If kwargs have advanced_stats = True, this conditional will
+        # run the advanced-level analysis
+        if kwargs.get("advanced_stats", False):
+            logger.info("Running advanced-level analysis...")
+            advanced_stats: dict[str, Any] = self._get_advanced_stats(results=prepared_data)
+        logger.info("Analysis and reporting workflows completed...")
+        return prepared_data

@@ -16,6 +16,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from textwrap import dedent
+from typing import Any
 
 from loguru import logger
 
@@ -42,6 +43,8 @@ def setup_logging(verbose_level: int = 0) -> None:
 
     # Determine log level based on verbose level
     log_level = "INFO"
+    enable_backtrace: bool = False
+    enable_diagnose: bool = False
 
     # Console handler with colors
     console_format = (
@@ -57,6 +60,8 @@ def setup_logging(verbose_level: int = 0) -> None:
 
     if verbose_level == 1:
         log_level = "DEBUG"
+        enable_backtrace: bool = True
+        enable_diagnose: bool = True
         console_format = (
             "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
             "<level>{level: <8}</level> | "
@@ -74,6 +79,8 @@ def setup_logging(verbose_level: int = 0) -> None:
 
     elif verbose_level >= 2:
         log_level = "TRACE"
+        enable_backtrace: bool = True
+        enable_diagnose: bool = True
         # Console handler with colors
         console_format = (
             "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
@@ -98,8 +105,8 @@ def setup_logging(verbose_level: int = 0) -> None:
         format=console_format,
         level=log_level,
         colorize=True,
-        backtrace=True,
-        diagnose=True,
+        backtrace=enable_backtrace,
+        diagnose=enable_diagnose,
     )
 
     # File handler with rotation
@@ -197,6 +204,31 @@ def parse_arguments() -> argparse.Namespace:
         help="URL of the RMML repository to clone. Defaults to https://github.com/LivingInSyn/RMML.git",
     )
 
+    # Statistics and export options
+    parser.add_argument(
+        "--no-basic-stats",
+        dest="no_basic_stats",
+        action="store_true",
+        default=False,
+        help="Disable displaying basic macro level statistics on trends seen across all observed RMMLs",
+    )
+
+    parser.add_argument(
+        "--advanced-stats",
+        dest="advanced_stats",
+        action="store_true",
+        default=False,
+        help="Display advanced statistics per observed RMML",
+    )
+
+    parser.add_argument(
+        "--no-csv",
+        dest="no_csv",
+        action="store_true",
+        default=False,
+        help="Do not export observed activities to CSV",
+    )
+
     return parser.parse_args()
 
 
@@ -280,8 +312,16 @@ def main() -> int:
 
         # Load Zero Networks Hunt Operations class
         zn_hunt_ops: ZNHuntOps = ZNHuntOps(api_key=api_key, rmm_data=rmm_data)
+        
+        # Create kwargs from command line arguments
+        kwargs: dict[str, Any] = {
+            "no_basic_stats": args.no_basic_stats,
+            "advanced_stats": args.advanced_stats,
+            "no_csv": args.no_csv,
+        }
+
         zn_hunt_ops.execute_hunt(
-            from_timestamp=from_timestamp, to_timestamp=to_timestamp
+            from_timestamp=from_timestamp, to_timestamp=to_timestamp, **kwargs
         )
 
         # TODO format results to pretty print table and to CSV
@@ -309,4 +349,9 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        exit_code: int = main()
+        sys.exit(exit_code)
+    except Exception as e:
+        logger.exception(f"An unexpected and unrecoverable error occurred")
+        sys.exit(1)
