@@ -204,23 +204,7 @@ def parse_arguments() -> argparse.Namespace:
         help="URL of the RMML repository to clone. Defaults to https://github.com/LivingInSyn/RMML.git",
     )
 
-    # Statistics and export options
-    parser.add_argument(
-        "--no-basic-stats",
-        dest="no_basic_stats",
-        action="store_true",
-        default=False,
-        help="Disable displaying basic macro level statistics on trends seen across all observed RMMLs",
-    )
-
-    parser.add_argument(
-        "--advanced-stats",
-        dest="advanced_stats",
-        action="store_true",
-        default=False,
-        help="Display advanced statistics per observed RMML",
-    )
-
+    # Export options
     parser.add_argument(
         "--no-csv",
         dest="no_csv",
@@ -315,8 +299,6 @@ def main() -> int:
         
         # Create kwargs from command line arguments
         kwargs: dict[str, Any] = {
-            "no_basic_stats": args.no_basic_stats,
-            "advanced_stats": args.advanced_stats,
             "no_csv": args.no_csv,
         }
 
