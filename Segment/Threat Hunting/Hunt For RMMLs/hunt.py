@@ -254,8 +254,12 @@ def main() -> int:
 
         # Set from_timestamp: use provided value or default to one week ago in ISO8601 format
         if args.from_timestamp:
-            from_timestamp = args.from_timestamp
-            logger.info(f"Using provided from_timestamp: {from_timestamp}")
+            try:
+                from_timestamp = ZNHuntOps.validate_iso8601_timestamp(args.from_timestamp)
+                logger.info(f"Using provided from_timestamp: {from_timestamp}")
+            except ValueError as e:
+                logger.error(f"Invalid --from timestamp format: {e}")
+                return 1
         else:
             # Use default: one week ago, converted to ISO8601 format with UTC timezone
             one_week_ago = datetime.now(timezone.utc) - timedelta(weeks=1)
@@ -264,8 +268,12 @@ def main() -> int:
 
         # Set to_timestamp: use provided value or default to current time in ISO8601 format
         if args.to_timestamp:
-            to_timestamp = args.to_timestamp
-            logger.info(f"Using provided to_timestamp: {to_timestamp}")
+            try:
+                to_timestamp = ZNHuntOps.validate_iso8601_timestamp(args.to_timestamp)
+                logger.info(f"Using provided to_timestamp: {to_timestamp}")
+            except ValueError as e:
+                logger.error(f"Invalid --to timestamp format: {e}")
+                return 1
         else:
             # Use default: current time, converted to ISO8601 format with UTC timezone
             now = datetime.now(timezone.utc)
@@ -306,7 +314,6 @@ def main() -> int:
             from_timestamp=from_timestamp, to_timestamp=to_timestamp, **kwargs
         )
 
-        # TODO format results to pretty print table and to CSV
         end_time: datetime = datetime.now()
         time_delta: timedelta = end_time - start_time
 

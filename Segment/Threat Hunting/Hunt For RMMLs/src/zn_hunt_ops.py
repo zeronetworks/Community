@@ -3,6 +3,7 @@
 
 import json
 import os
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -100,6 +101,73 @@ class ZNHuntOps:
     ############################################################
     # File Helper Functions
     ############################################################
+
+    @staticmethod
+    def validate_iso8601_timestamp(timestamp: str) -> str:
+        """
+        Validate that a timestamp string is in ISO8601 format.
+
+        Attempts to parse the timestamp string using ISO8601 format parsing.
+        Supports various ISO8601 formats including:
+        - 'YYYY-MM-DDTHH:MM:SSZ'
+        - 'YYYY-MM-DDTHH:MM:SS+HH:MM'
+        - 'YYYY-MM-DDTHH:MM:SS-HH:MM'
+        - 'YYYY-MM-DDTHH:MM:SS.ffffffZ'
+        - 'YYYY-MM-DDTHH:MM:SS.ffffff+HH:MM'
+
+        Raises a ValueError if the timestamp cannot be parsed as a valid ISO8601 datetime.
+
+        :param timestamp: Timestamp string to validate
+        :type timestamp: str
+        :returns: The validated timestamp string if valid
+        :rtype: str
+        :raises ValueError: If the timestamp is not in valid ISO8601 format
+        """
+        if not isinstance(timestamp, str) or len(timestamp.strip()) == 0:
+            raise ValueError(f"Timestamp must be a non-empty string, got: {type(timestamp)}")
+
+        timestamp = timestamp.strip()
+
+        # Try parsing with fromisoformat (Python 3.7+)
+        # This handles most ISO8601 formats but is strict
+        try:
+            # Handle 'Z' suffix (UTC indicator)
+            normalized_timestamp = timestamp.replace('Z', '+00:00')
+            parsed_datetime = datetime.fromisoformat(normalized_timestamp)
+            if not isinstance(parsed_datetime, datetime):
+                raise ValueError(f"Failed to parse timestamp '{timestamp}' as datetime")
+            return timestamp
+        except ValueError as exc:
+            # If fromisoformat fails, try a more flexible regex-based validation
+            # ISO8601 pattern: YYYY-MM-DDTHH:MM:SS[.ffffff][Z|±HH:MM[:SS]]
+            iso8601_pattern = re.compile(
+                r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2}(:\d{2}(\.\d+)?)?)?$'
+            )
+            if not iso8601_pattern.match(timestamp):
+                raise ValueError(
+                    f"Timestamp '{timestamp}' is not in valid ISO8601 format. "
+                    f"Expected format: 'YYYY-MM-DDTHH:MM:SS[.ffffff][Z|±HH:MM]' "
+                    f"(e.g., '2024-01-01T00:00:00Z' or '2024-01-01T00:00:00+00:00')"
+                ) from exc
+            # If pattern matches, try one more time with manual parsing
+            try:
+                # Try to create a datetime object manually
+                # Extract date and time components
+                if 'T' not in timestamp:
+                    raise ValueError("ISO8601 format requires 'T' separator between date and time") from exc
+                date_part, time_part = timestamp.split('T', 1)
+                # Remove timezone info for basic validation
+                time_part_clean = re.sub(r'[Z+-].*$', '', time_part)
+                # Try parsing the basic format
+                datetime.strptime(f"{date_part}T{time_part_clean}", "%Y-%m-%dT%H:%M:%S")
+                return timestamp
+            except (ValueError, AttributeError) as parse_exc:
+                raise ValueError(
+                    f"Timestamp '{timestamp}' is not in valid ISO8601 format. "
+                    f"Expected format: 'YYYY-MM-DDTHH:MM:SS[.ffffff][Z|±HH:MM]' "
+                    f"(e.g., '2024-01-01T00:00:00Z' or '2024-01-01T00:00:00+00:00'). "
+                    f"Error: {parse_exc}"
+                ) from parse_exc
 
     @staticmethod
     def _load_additional_filter_mappings_if_exists(
