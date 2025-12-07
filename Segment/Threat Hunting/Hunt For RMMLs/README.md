@@ -147,7 +147,7 @@ The script generates logs in two locations:
 ├── logs/                  # Log files directory
 ├── RMMs/                  # Cloned RMM YAML files
 └── src/
-    ├── zn_hunt_ops_v1.py  # Main hunting operations class
+    ├── zn_hunt_ops.py  # Main hunting operations class
     ├── rmmdata.py         # RMM data loading and processing
     ├── git_ops.py         # Git repository operations
     ├── zero_networks/     # Zero Networks API client

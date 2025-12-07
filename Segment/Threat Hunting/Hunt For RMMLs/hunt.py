@@ -22,7 +22,7 @@ from loguru import logger
 
 from src.git_ops import clone_and_validate
 from src.rmmdata import RMMData, load_yaml_files
-from src.zn_hunt_ops_v1 import ZNHuntOps
+from src.zn_hunt_ops import ZNHuntOps
 
 
 def setup_logging(verbose_level: int = 0) -> None:
