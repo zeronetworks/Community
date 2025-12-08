@@ -847,7 +847,7 @@ class ZNHuntOps:
         :rtype: dict[str, Any]
         """
         logger.info(
-            f"Starting hunt for RMM: {rmm.get('meta',{}).get('name')} - {rmm.get('meta',{}).get('id')}"
+            f"Starting hunt for {rmm.get('meta',{}).get('name')} - {rmm.get('meta',{}).get('id')}"
         )
 
         # Dictionary to hold results
