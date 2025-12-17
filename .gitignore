@@ -5,6 +5,8 @@
 *.code-workspace
 .cursor/*
 .vscode/*
+**/.cursor/*
+**/.vscode/*
 
 # Ignore certain python files/directories
 pyproject.toml
