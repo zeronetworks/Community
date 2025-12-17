@@ -1,5 +1,29 @@
 # pyright: reportArgumentType=false, reportCallIssue=false, reportAttributeAccessIssue=false
-# pylint: disable=no-name-in-module
+# pylint: disable=no-name-in-module,too-many-lines
+
+"""
+Zero Networks Threat Hunting Operations Module.
+
+This module provides the core functionality for performing threat hunting operations
+on Zero Networks tenant activities, specifically focused on detecting Remote Management
+and Monitoring (RMM) software indicators.
+
+The module contains the ZNHuntOps class, which orchestrates the entire threat hunting
+workflow including:
+
+- Building filters from RMM software signatures (domains, processes, ports)
+- Querying Zero Networks API for matching network activities
+- Deduplicating and normalizing discovered activities
+- Transforming integer ID values to human-readable strings
+- Aggregating and exporting results to CSV format
+
+The module also includes utility functions for timestamp validation, file operations,
+and data transformation to support the hunting operations.
+
+:author: Thomas Obarowski
+:email: thomas.obarowski@zeronetworks.com
+:license: MIT License
+"""
 
 import json
 import os
@@ -8,13 +32,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from loguru import logger
 import pandas as pd
+from loguru import logger
 
 from src.rmmdata import RMMData
-from src.zero_threat_hunt_tools.zero_threat_hunt_tools import ZeroThreatHuntTools
 from src.zero_networks.api import ZeroNetworksNotFoundError
-
+from src.zero_threat_hunt_tools.zero_threat_hunt_tools import ZeroThreatHuntTools
 
 # This is needed as some of the attribute keys returned by the API
 # do not match their respective attribute names returned from the
@@ -78,7 +101,7 @@ class ZNHuntOps:
                 except ValueError:
                     logger.error(
                         f"Failed to set max_workers to {kwargs.get('max_workers')}."
-                        +f"Using default value of {self.max_workers}..."
+                        + f"Using default value of {self.max_workers}..."
                     )
         else:
             logger.info("Initializing ZN Hunt Ops without kwargs...")
@@ -132,7 +155,7 @@ class ZNHuntOps:
         # This handles most ISO8601 formats but is strict
         try:
             # Handle 'Z' suffix (UTC indicator)
-            normalized_timestamp = timestamp.replace('Z', '+00:00')
+            normalized_timestamp = timestamp.replace("Z", "+00:00")
             parsed_datetime = datetime.fromisoformat(normalized_timestamp)
             if not isinstance(parsed_datetime, datetime):
                 raise ValueError(f"Failed to parse timestamp '{timestamp}' as datetime")
@@ -141,7 +164,7 @@ class ZNHuntOps:
             # If fromisoformat fails, try a more flexible regex-based validation
             # ISO8601 pattern: YYYY-MM-DDTHH:MM:SS[.ffffff][Z|±HH:MM[:SS]]
             iso8601_pattern = re.compile(
-                r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2}(:\d{2}(\.\d+)?)?)?$'
+                r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2}(:\d{2}(\.\d+)?)?)?$"
             )
             if not iso8601_pattern.match(timestamp):
                 raise ValueError(
@@ -153,11 +176,11 @@ class ZNHuntOps:
             try:
                 # Try to create a datetime object manually
                 # Extract date and time components
-                if 'T' not in timestamp:
+                if "T" not in timestamp:
                     raise ValueError("ISO8601 format requires 'T' separator between date and time") from exc
-                date_part, time_part = timestamp.split('T', 1)
+                date_part, time_part = timestamp.split("T", 1)
                 # Remove timezone info for basic validation
-                time_part_clean = re.sub(r'[Z+-].*$', '', time_part)
+                time_part_clean = re.sub(r"[Z+-].*$", "", time_part)
                 # Try parsing the basic format
                 datetime.strptime(f"{date_part}T{time_part_clean}", "%Y-%m-%dT%H:%M:%S")
                 return timestamp
@@ -203,14 +226,10 @@ class ZNHuntOps:
                             "selectionsById": {selection["id"]: selection["name"] for selection in value},
                         }
                         network_filters.update({key: base_dict})
-                logger.info(
-                    f"Loaded {len(additional_filter_mappings)} additional filter mappings from {path}..."
-                )
+                logger.info(f"Loaded {len(additional_filter_mappings)} additional filter mappings from {path}...")
             return network_filters
         else:
-            logger.warning(
-                f"Additional filter mappings file does not exist at {path}. Skipping..."
-            )
+            logger.warning(f"Additional filter mappings file does not exist at {path}. Skipping...")
         return {}
 
     @staticmethod
@@ -334,7 +353,9 @@ class ZNHuntOps:
     ####################################
     # Functions to filter RMML results
     ####################################
-    def _filter_results_to_only_include_rmmls_with_indicators(self, results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _filter_results_to_only_include_rmmls_with_indicators(
+        self, results: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
         """
         Filter hunt results to only include RMMLs that have discovered indicators.
 
@@ -358,14 +379,11 @@ class ZNHuntOps:
                 or len(result.get("port_activities_discovered", [])) > 0
             )
         ]
-        logger.info(
-            f"Filtered RRMLs to a resultant set of {len(rmmls_with_indicators)} RMMLs which have indicators..."
-        )
+        logger.info(f"Filtered RRMLs to a resultant set of {len(rmmls_with_indicators)} RMMLs which have indicators...")
         return rmmls_with_indicators
 
-
     ############################################################
-    # Functions to deduplicate and decode 
+    # Functions to deduplicate and decode
     # RMMLs with indicators
     ############################################################
 
@@ -383,11 +401,15 @@ class ZNHuntOps:
         :returns: List of RMML dictionaries with deduplicated and decoded activities
         :rtype: list[dict[str, Any]]
         """
-        logger.info(f"Deduplicating activities and decoding integer values to human readable text for {len(rmmls)} RMMLs...")
+        logger.info(
+            f"Deduplicating activities and decoding integer values to human readable text for {len(rmmls)} RMMLs..."
+        )
         for rmml in rmmls:
             logger.info(f"Deduplicating activities for RMML: {rmml.get('rmm_name')} - {rmml.get('rmm_id')}...")
             rmml = self._get_unique_rmml_activities(rmml=rmml)
-            logger.info(f"Decoding activity fields to string format for RMML: {rmml.get('rmm_name')} - {rmml.get('rmm_id')}...")
+            logger.info(
+                f"Decoding activity fields to string format for RMML: {rmml.get('rmm_name')} - {rmml.get('rmm_id')}..."
+            )
             rmml = self._transform_unique_activities_to_human_readable(rmml=rmml)
         logger.info(f"Ndeduplicated and decoded {len(rmmls)} RMMLs...")
         return rmmls
@@ -407,9 +429,7 @@ class ZNHuntOps:
         :returns: RMML dictionary with unique_activities_map field added
         :rtype: dict[str, str | list[dict[str, Any]] | list[str]]
         """
-        logger.debug(
-            f"Finding unique indicator activities for RMML: {rmml.get('rmm_name')} - {rmml.get('rmm_id')}..."
-        )
+        logger.debug(f"Finding unique indicator activities for RMML: {rmml.get('rmm_name')} - {rmml.get('rmm_id')}...")
         unique_activities_map: dict[str, dict[str, dict[str, bool] | dict[str, Any]]] = {}
         if len(rmml.get("executable_activities_discovered", [])) > 0:
             for activity in rmml.get("executable_activities_discovered", []):
@@ -513,7 +533,7 @@ class ZNHuntOps:
                 if activity.get("activity", {}).get("timestamp", None) and isinstance(
                     activity.get("activity", {}).get("timestamp"), int
                 ):
-                    # Add a new key/value -> "iso_timestamp" to the activity, 
+                    # Add a new key/value -> "iso_timestamp" to the activity,
                     # set to the timestamp converted to ISO8601 format (UTC timezone)
                     activity.get("activity", {}).update(
                         {
@@ -527,18 +547,16 @@ class ZNHuntOps:
                     {"srcAssetName": self._resolve_asset_id_to_asset_name(asset_id=asset_id)}
                 )
 
-                # The function called here will recsurively 
+                # The function called here will recsurively
                 # enumerate all key/value pairs in the activity,
-                # and transform the key/values that are integer 
-                # IDs (like protocolType=2) to human readable 
+                # and transform the key/values that are integer
+                # IDs (like protocolType=2) to human readable
                 # values (like "TCP")
                 activity = self._recursively_transform_all_id_values_to_human_readable(
                     data=activity.get("activity", {})
                 )
         else:
-            logger.warning(
-                f"No unique activities map found for RMML: {rmml.get('rmm_name')} - {rmml.get('rmm_id')}..."
-            )
+            logger.warning(f"No unique activities map found for RMML: {rmml.get('rmm_name')} - {rmml.get('rmm_id')}...")
 
         return rmml
 
@@ -666,11 +684,11 @@ class ZNHuntOps:
                 return asset_name
             except ZeroNetworksNotFoundError:
                 logger.warning(
-                    f"Unable to resolve asset ID {asset_id} to asset name."
-                    "Safely ignore this warning unless you notice valid asset IDs are not being resolved to asset names!"
+                    f"Unable to resolve asset ID {asset_id} to asset name. "
+                    "Safely ignore this warning unless you notice valid asset "
+                    "IDs are not being resolved to asset names!"
                 )
                 return "N/A"
-            
 
     @staticmethod
     def _aggregate_all_activities_into_list(rmmls: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -732,10 +750,7 @@ class ZNHuntOps:
         :returns: None
         :rtype: None
         """
-        logger.info(
-            f"Exporting all indicating activities to CSV for {len(rmmls)} RMMLs..."
-        )
-            
+        logger.info(f"Exporting all indicating activities to CSV for {len(rmmls)} RMMLs...")
 
         # Convert the list of activities to a pandas DataFrame
         df: pd.DataFrame = pd.json_normalize(self.all_indicating_activities)
@@ -761,7 +776,7 @@ class ZNHuntOps:
             "dst.assetType",
             "dst.networkProtectionState",
             "dst.processName",
-            "trafficType"
+            "trafficType",
         ]
 
         # Recreate the DataFrame with the priority columns first, then the other columns
@@ -769,10 +784,11 @@ class ZNHuntOps:
         df: pd.DataFrame = df[priority_columns + other_columns]
 
         filename: str = self._get_unique_filename("all_indicating_activities.csv")
-        df.to_csv(filename, index=False,)
-        logger.info(
-            f"Exported {len(self.all_indicating_activities)} indicating activities to CSV file: {filename}..."
+        df.to_csv(
+            filename,
+            index=False,
         )
+        logger.info(f"Exported {len(self.all_indicating_activities)} indicating activities to CSV file: {filename}...")
 
     ####################################
     # Functions to drive each section of hunt workflow
@@ -798,7 +814,7 @@ class ZNHuntOps:
             f"Starting concurrent hunt for {len(self.rmm_data.rmm_simplified_list)}"
             f"RMMLs with {self.max_workers} workers..."
         )
-         # Use ThreadPoolExecutor for concurrent execution of hunt operations
+        # Use ThreadPoolExecutor for concurrent execution of hunt operations
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             # Submit all hunt tasks to the executor
             future_to_rmm = {
@@ -846,9 +862,7 @@ class ZNHuntOps:
         :returns: Dictionary containing RMM metadata and discovered activities by indicator type
         :rtype: dict[str, Any]
         """
-        logger.info(
-            f"Starting hunt for {rmm.get('meta',{}).get('name')} - {rmm.get('meta',{}).get('id')}"
-        )
+        logger.info(f"Starting hunt for {rmm.get('meta',{}).get('name')} - {rmm.get('meta',{}).get('id')}")
 
         # Dictionary to hold results
         results: dict[str, Any] = {
@@ -874,9 +888,7 @@ class ZNHuntOps:
 
         # Search for activities that are sourced FROM a listed executable
         if filter_holder.get("srcProcessPath"):
-            logger.debug(
-                f"Searching for activities from source processes: {filter_holder.get('srcProcessPath')}"
-            )
+            logger.debug(f"Searching for activities from source processes: {filter_holder.get('srcProcessPath')}")
             src_process_path_activities = self._zero_threat_hunt_tools.get_activities_from_source_processes(
                 process_paths=filter_holder.get("srcProcessPath", {}).get("includeValues"),
                 from_timestamp=from_timestamp,
@@ -889,9 +901,7 @@ class ZNHuntOps:
 
         # Search for activities that are sourced FROM a listed executable
         if filter_holder.get("dstProcessPath"):
-            logger.debug(
-                f"Searching for activities to destination processes: {filter_holder.get('dstProcessPath')}"
-            )
+            logger.debug(f"Searching for activities to destination processes: {filter_holder.get('dstProcessPath')}")
             dst_process_path_activities = self._zero_threat_hunt_tools.get_activities_to_destination_processes(
                 process_paths=filter_holder.get("dstProcessPath", {}).get("includeValues"),
                 from_timestamp=from_timestamp,
@@ -903,9 +913,7 @@ class ZNHuntOps:
             )
 
         if filter_holder.get("dstAsset"):
-            logger.debug(
-                f"Searching for activities to domains: {filter_holder.get('dstAsset')}"
-            )
+            logger.debug(f"Searching for activities to domains: {filter_holder.get('dstAsset')}")
             dst_asset_activities = self._zero_threat_hunt_tools.get_activities_to_domains(
                 domains=filter_holder.get("dstAsset", {}).get("includeValues"),
                 from_timestamp=from_timestamp,
@@ -940,8 +948,8 @@ class ZNHuntOps:
             else:
                 logger.debug(
                     "No ports to search for other than 80 and 443 for "
-                    +f"{rmm.get('meta',{}).get('name')} - {rmm.get('meta',{}).get('id')}. "
-                    +"Skipping search as these are common ports..."
+                    + f"{rmm.get('meta',{}).get('name')} - {rmm.get('meta',{}).get('id')}. "
+                    + "Skipping search as these are common ports..."
                 )
                 dst_port_activities: list[dict[str, Any]] = []
 
@@ -958,9 +966,7 @@ class ZNHuntOps:
             results["has_indicators"] = True
             results["port_activities_discovered"].extend(dst_port_activities)
 
-        logger.info(
-            f"Finished hunting for {rmm.get('meta',{}).get('name')} - {rmm.get('meta',{}).get('id')}..."
-        )
+        logger.info(f"Finished hunting for {rmm.get('meta',{}).get('name')} - {rmm.get('meta',{}).get('id')}...")
         return results
 
     def _prepare_data_for_analysis(self, results: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -977,16 +983,24 @@ class ZNHuntOps:
         :rtype: list[dict[str, Any]]
         """
         logger.info("Preparing data for analysis...")
-        filter_rmmls_with_indicators: list[dict[str, Any]] = self._filter_results_to_only_include_rmmls_with_indicators(results=results)
-        normalized_rmmls_with_indicators: list[dict[str, Any]] = self._deduplicate_and_decode_rmml_activities(rmmls=filter_rmmls_with_indicators)
-        self.all_indicating_activities = self._aggregate_all_activities_into_list(rmmls=normalized_rmmls_with_indicators)
+        filter_rmmls_with_indicators: list[dict[str, Any]] = self._filter_results_to_only_include_rmmls_with_indicators(
+            results=results
+        )
+        normalized_rmmls_with_indicators: list[dict[str, Any]] = self._deduplicate_and_decode_rmml_activities(
+            rmmls=filter_rmmls_with_indicators
+        )
+        self.all_indicating_activities = self._aggregate_all_activities_into_list(
+            rmmls=normalized_rmmls_with_indicators
+        )
         return normalized_rmmls_with_indicators
 
     ############################################################
     # Main functions to execute the hunt
     ############################################################
 
-    def execute_hunt(self, from_timestamp: str, to_timestamp: Optional[str] = None, **_kwargs: Optional[dict[str, Any]]):
+    def execute_hunt(
+        self, from_timestamp: str, to_timestamp: Optional[str] = None, **_kwargs: Optional[dict[str, Any]]
+    ):
         """
         Execute the complete threat hunting workflow for RMMLs.
 
@@ -1005,17 +1019,17 @@ class ZNHuntOps:
         """
         # 1. Hunt activities
         logger.info("Starting RMMs hunt...")
-        
+
         # Get the start and end timestamps
         if not to_timestamp:
             to_timestamp = str(self._zero_threat_hunt_tools.datetime_to_timestamp_ms(datetime.now()))
-            logger.debug(
-                f"Converted to_timestamp to milliseconds since epoch: {to_timestamp}"
-            )
+            logger.debug(f"Converted to_timestamp to milliseconds since epoch: {to_timestamp}")
 
         # 1. Hunt for activities
-        hunt_results: list[dict[str, Any]] = self._start_multithreaded_hunt(from_timestamp=from_timestamp, to_timestamp=to_timestamp)
-       
+        hunt_results: list[dict[str, Any]] = self._start_multithreaded_hunt(
+            from_timestamp=from_timestamp, to_timestamp=to_timestamp
+        )
+
         # 2. Prepare data for analysis
         prepared_data: list[dict[str, Any]] = self._prepare_data_for_analysis(results=hunt_results)
 
