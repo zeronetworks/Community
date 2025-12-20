@@ -1,0 +1,3 @@
+# TODO - Add function to validate if get asset details from API - check if asset is pinned to deployment alredy
+# TODO - Add function to pin assets to deployment
+# TODO - Add function to unpin assets from deployment - validate they are pinned first
