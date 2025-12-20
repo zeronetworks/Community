@@ -1,4 +1,3 @@
-#requires -Modules ZeroNetworks
 #requires -Version 7.0
 
 [CmdletBinding(DefaultParameterSetName = "ByAssetId")]
@@ -8,6 +7,11 @@ param(
     [Parameter(ParameterSetName = "ListDeploymentClusters", Mandatory = $true)]
     [Parameter(ParameterSetName = "ByCsvPath", Mandatory = $true)]
     [string]$ApiKey,
+
+    [Parameter(ParameterSetName = "ByAssetId", Mandatory = $false)]
+    [Parameter(ParameterSetName = "ListDeploymentClusters", Mandatory = $false)]
+    [Parameter(ParameterSetName = "ByCsvPath", Mandatory = $false)]
+    [string]$PortalUrl = "https://portal.zeronetworks.com",
     
     # ParameterSet 1: Pin by Asset ID and Deployment Cluster ID
     [Parameter(ParameterSetName = "ByAssetId", Mandatory = $true)]
@@ -112,14 +116,25 @@ function Get-CsvData {
     return $csvData
 }
 
+function Initialize-ApiContext {
+    $script:Headers = @{
+        Accept        = "application/json"
+        Authorization = $ApiKey
+    }
+    $script:ApiBaseUrl = "$PortalUrl/api/v1"
+}
+
 switch ($PSCmdlet.ParameterSetName) {
     "ByAssetId" {
+        Initialize-ApiContext
         ""
     }
     "ByCsvPath" {
+        Initialize-ApiContext
         $csvData = Get-CsvData
     }
     "ListDeploymentClusters" {
+        Initialize-ApiContext
         ""
     }
     "ExportCsvTemplate" {
