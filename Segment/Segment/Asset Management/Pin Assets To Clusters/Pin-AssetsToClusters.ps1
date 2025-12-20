@@ -38,7 +38,6 @@ param(
     [switch]$ExportCsvTemplate
 )
 
-
 function Export-CsvTemplate {
     $template = [PSCustomObject]@{
         AssetName = $null
@@ -46,9 +45,9 @@ function Export-CsvTemplate {
         DeploymentClusterId = $null
     }
     $template | Export-Csv -Path ".\pin-assets-to-clusters-template.csv" -NoTypeInformation
-    Write-Output "CSV Template exported to .\pin-assets-to-clusters-template.csv"
-    Write-Output "Please fill in AT LEAST the AssetId and DeploymentClusterId columsn, and then run the script again with the -CsvPath parameter to pin the assets to the clusters."
-    Write-Output "Example: .\Pin-AssetsToClusters.ps1 -CsvPath '.\pin-assets-to-clusters.csv' -ApiKey 'your-api-key'"
+    Write-Host "CSV Template exported to .\pin-assets-to-clusters-template.csv"
+    Write-Host "Please fill in AT LEAST the AssetId and DeploymentClusterId columsn, and then run the script again with the -CsvPath parameter to pin the assets to the clusters."
+    Write-Host "Example: .\Pin-AssetsToClusters.ps1 -CsvPath '.\pin-assets-to-clusters.csv' -ApiKey 'your-api-key'"
     Exit 0
 }
 
@@ -116,12 +115,112 @@ function Get-CsvData {
     return $csvData
 }
 
+function Get-DeploymentClusters {
+    Write-Host "Getting deployment clusters!"
+    $response = Invoke-ApiRequest -Method "GET" -ApiEndpoint "environments/cluster"
+    if (-not $response.items) {
+        Write-Error "Deployment clusters response is malformed and does not contain 'items' property"
+        exit 1
+    }
+    if ($response.items.Count -eq 0) {
+        Write-Error "No deployment clusters found!"
+        exit 1
+    }
+    if ($response.items -isnot [System.Array]) {
+        return @($response.items)
+    }
+    else {
+        return $response.items
+    }
+}
+
+function Write-DeploymentClusters {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$DeploymentClusters
+    )
+    foreach ($cluster in $DeploymentClusters){
+        Write-Host $("="*($Host.UI.RawUI.WindowSize.Width))
+        Write-Host "Deployment cluster: $($cluster.name)"
+        Write-Host "Cluster ID: $($cluster.id)"
+        Write-Host "Number of assets in cluster: $($cluster.numOfAssets)"
+        Write-Host "HA Strategy: $(if ($cluster.strategy -eq 2) { "Active/Active" } else { "Active/Passive" })"
+        Write-Host "Segment server deployments assigned to this cluster:"
+        if ($cluster.assignedDeployments.Count -eq 0) {
+            Write-Host "$("`t"*1)No segment server deploments are assigned to this cluster!"
+        }
+        else {
+            foreach ($deployment in $cluster.assignedDeployments){
+                Write-Host "--------------------------------"
+                Write-Host "$("`t"*1)Name: $($deployment.name)"
+                Write-Host "$("`t"*1)Deployment ID: $($deployment.id)"
+                Write-Host "$("`t"*1)Deployment IP Address: $($deployment.internalIpAddress)"
+                Write-Host "$("`t"*1)Is Preferred Deployment: $(if ($deployment.id -eq $cluster.preferredDeployment.id) { "Yes" } else { "No" })"
+                Write-Host "--------------------------------"
+            }
+        }
+        Write-Host $("="*($Host.UI.RawUI.WindowSize.Width))
+    }    
+}
+
+
 function Initialize-ApiContext {
     $script:Headers = @{
         Accept        = "application/json"
         Authorization = $ApiKey
     }
     $script:ApiBaseUrl = "$PortalUrl/api/v1"
+}
+
+function Invoke-ApiRequest {
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('GET', 'POST', 'PUT', 'PATCH', 'DELETE')]
+        [string]$Method,
+        
+        [Parameter(Mandatory = $true)]
+        [string]$ApiEndpoint,
+        
+        [Parameter(Mandatory = $false)]
+        [object]$Body = $null
+    )
+    
+    try {
+        Write-Host "Sending $Method request to $script:ApiBaseUrl/$ApiEndpoint"
+        $requestParams = @{
+            Method  = $Method
+            Uri     = "$script:ApiBaseUrl/$ApiEndpoint"
+            Headers = $script:Headers
+        }
+        
+        if ($null -ne $Body) {
+            $requestParams['Body'] = if ($Body -is [string]) {
+                $Body
+            }
+            else {
+                $Body | ConvertTo-Json -Depth 10
+            }
+            $requestParams['ContentType'] = "application/json"
+        }
+        
+        $response = Invoke-RestMethod @requestParams
+        return $response
+    }
+    catch {
+        $statusCode = $null
+        if ($_.Exception.Response) {
+            $statusCode = [int]$_.Exception.Response.StatusCode
+        }
+        
+        if ($null -ne $statusCode -and $statusCode -ge 400 -and $statusCode -lt 500) {
+            Write-Error "API request failed: The API key is invalid or you do not have permission to access this resource."
+            exit 1
+        }
+        else {
+            Write-Error "API request failed: $_"
+            exit 1
+        }
+    }
 }
 
 switch ($PSCmdlet.ParameterSetName) {
@@ -135,6 +234,8 @@ switch ($PSCmdlet.ParameterSetName) {
     }
     "ListDeploymentClusters" {
         Initialize-ApiContext
+        $DeploymentClusters = Get-DeploymentClusters
+        Write-DeploymentClusters -DeploymentClusters $DeploymentClusters
         ""
     }
     "ExportCsvTemplate" {
