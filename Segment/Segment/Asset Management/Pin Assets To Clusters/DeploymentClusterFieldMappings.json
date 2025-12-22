@@ -1,0 +1,95 @@
+{
+    "strategy": {
+      "byId": {
+        "0": "CLUSTER_STRATEGY_UNSPECIFIED",
+        "1": "Active / Passive",
+        "2": "Active / Active"
+      },
+      "byName": {
+        "CLUSTER_STRATEGY_UNSPECIFIED": 0,
+        "Active / Passive": 1,
+        "Active / Active": 2,
+        "ACTIVE_PASSIVE": 1,
+        "ACTIVE_ACTIVE": 2
+      }
+    },
+    "assignedDeployments.status": {
+      "byId": {
+        "0": "DEPLOYMENT_STATUS_UNSPECIFIED",
+        "1": "Offline",
+        "2": "Online",
+        "3": "Network disconnected"
+      },
+      "byName": {
+        "DEPLOYMENT_STATUS_UNSPECIFIED": 0,
+        "Offline": 1,
+        "Online": 2,
+        "Network disconnected": 3,
+        "DISCONNECTED": 1,
+        "ONLINE": 2,
+        "NETWORK_DISCONNECTED": 3
+      }
+    },
+    "assignedDeployments.state": {
+      "byId": {
+        "0": "DEPLOYMENT_STATE_UNSPECIFIED",
+        "1": "Primary",
+        "2": "Secondary"
+      },
+      "byName": {
+        "DEPLOYMENT_STATE_UNSPECIFIED": 0,
+        "Primary": 1,
+        "Secondary": 2,
+        "DEPLOYMENT_STATE_PRIMARY": 1,
+        "DEPLOYMENT_STATE_SECONDARY": 2
+      }
+    },
+    "assignedDeployments.servicesInfo.serviceId": {
+      "byId": {
+        "0": "SERVICE_ID_UNSPECIFIED",
+        "1": "ad",
+        "2": "winrm",
+        "3": "ansible-manager"
+      },
+      "byName": {
+        "SERVICE_ID_UNSPECIFIED": 0,
+        "ad": 1,
+        "winrm": 2,
+        "ansible-manager": 3,
+        "SERVICE_ID_AD": 1,
+        "SERVICE_ID_WINRM": 2,
+        "SERVICE_ID_ANSIBLE_MANAGER": 3
+      }
+    },
+    "assignedDeployments.servicesInfo.status": {
+      "byId": {
+        "0": "DEPLOYMENT_STATUS_UNSPECIFIED",
+        "1": "Offline",
+        "2": "Online",
+        "3": "Network disconnected"
+      },
+      "byName": {
+        "DEPLOYMENT_STATUS_UNSPECIFIED": 0,
+        "Offline": 1,
+        "Online": 2,
+        "Network disconnected": 3,
+        "DISCONNECTED": 1,
+        "ONLINE": 2,
+        "NETWORK_DISCONNECTED": 3
+      }
+    },
+    "assignedDeployments.servicesInfo.state": {
+      "byId": {
+        "0": "DEPLOYMENT_STATE_UNSPECIFIED",
+        "1": "Primary",
+        "2": "Secondary"
+      },
+      "byName": {
+        "DEPLOYMENT_STATE_UNSPECIFIED": 0,
+        "Primary": 1,
+        "Secondary": 2,
+        "DEPLOYMENT_STATE_PRIMARY": 1,
+        "DEPLOYMENT_STATE_SECONDARY": 2
+      }
+    }
+  }
