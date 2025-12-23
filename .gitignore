@@ -1,19 +1,27 @@
 # Thanks MacOS
 .DS_Store
 
-# Ignore certain workspace files/directories
-*.code-workspace
+# Ignore certain directories
 .cursor/*
 .vscode/*
+.pytest_cache/*
+.venv/*
+.__pycache__/*
+__pycache__/*
+**/.venv/*
 **/.cursor/*
 **/.vscode/*
-
-# Ignore certain python files/directories
-pyproject.toml
-.venv
-*.pyc
+**/.pytest_cache/*
+**/.__pycache__/*
 **/__pycache__/*
-
-# Ignore log directories
 **/logs/*
 
+# Ignore certain file types
+*.log
+*.pyc
+*.code-workspace
+
+# Ignore certain files
+pyproject.toml
+.env
+test-action.ps1
