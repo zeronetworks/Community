@@ -1,13 +1,4 @@
-<#PSScriptInfo
-
-SEE .EXAMPLES SECTION FOR USAGE
-
-.VERSION 1.0
-
-.AUTHOR Thomas Obarowski (https://www.linkedin.com/in/tjobarow/)
-
-.TAGS Automation Scripts
-
+<#
 .SYNOPSIS
     Manages asset-to-deployment-cluster assignments in Zero Networks Segment.
 
@@ -61,8 +52,14 @@ SEE .EXAMPLES SECTION FOR USAGE
 .EXAMPLE
     .\Pin-AssetsToClusters.ps1 -ApiKey "your-api-key" -CsvPath ".\assets.csv" -DryRun
     Previews what changes would be made without actually applying them.
-
 #>
+
+<#PSScriptInfo
+.VERSION 1.0
+.AUTHOR Thomas Obarowski (https://www.linkedin.com/in/tjobarow/)
+.TAGS Automation Scripts
+#>
+
 #requires -Version 7.0
 
 [CmdletBinding(DefaultParameterSetName = "ByAssetId")]
