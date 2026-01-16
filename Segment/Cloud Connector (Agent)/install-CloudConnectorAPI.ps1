@@ -1,20 +1,34 @@
 #update 4.0
 [CmdletBinding()]
 param(
-    # Install/Uninstall
     [Parameter(Mandatory = $False)]
     [ValidateSet("install", "uninstall")]
     [String]$CloudConnectorFunction = "install",
 
-    # Token to use to install the Cloud Connector
     [Parameter(Mandatory = $False)]
     [String]$CloudConnectorToken = "<INSERT_CC_TOKEN>",
 
-    # Cloud Connector Source
-    [ValidateSet("AD", "WORKGROUP", "AZURE", "AZURE_AD", "AWS", "GCP", "IBM", "ORACLE", "VMWARE", "ALIBABA", "OVH", "LUMEN", "DOMAIN-JOINED-MANUALLY-SYNC")]
+    [ValidateSet(
+        "AD",
+        "WORKGROUP",
+        "AZURE",
+        "AZURE_AD",
+        "AWS",
+        "GCP",
+        "IBM",
+        "ORACLE",
+        "VMWARE",
+        "ALIBABA",
+        "OVH",
+        "LUMEN"
+    )]
     [Parameter(Mandatory = $False)]
-    [String]$CloudConnectorSource = "AD"
+    [String]$CloudConnectorSource = "AD",
+
+    [Parameter(Mandatory = $false)]
+    [switch]$DomainJoinedManuallySync
 )
+
 
 # Extract Aud from JWT to find cloud connector URL.
 # Your JWT token
@@ -74,12 +88,17 @@ if ($CloudConnectorToken -eq "<INSERT_CC_TOKEN>") {
 # Define installer arguments
 switch ($CloudConnectorFunction) {
     "install" {
-        $installerArgs = "-$CloudConnectorFunction -token $CloudConnectorToken -source $CloudConnectorSource"
+        $installerArgs = "-install -token $CloudConnectorToken -source $CloudConnectorSource"
+
+        if ($DomainJoinedManuallySync.IsPresent) {
+            $installerArgs += " -domain-joined-manually-sync"
+        }
     }
-    "uninstall" { 
-        $installerArgs = "-$CloudConnectorFunction -token $CloudConnectorToken"
+    "uninstall" {
+        $installerArgs = "-uninstall -token $CloudConnectorToken"
     }
 }
+
 
 # Set up headers for API request
 $znHeaders = @{
