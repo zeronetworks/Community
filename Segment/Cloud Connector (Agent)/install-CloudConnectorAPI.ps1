@@ -1,3 +1,73 @@
+<#
+.SYNOPSIS
+Installs or uninstalls the Zero Networks Cloud Connector on Windows systems.
+
+.DESCRIPTION
+This script automates the installation and removal of the Zero Networks Cloud Connector.
+It dynamically determines the correct installer endpoint by decoding the provided JWT
+token, retrieves the installer package, executes it with the appropriate arguments,
+and logs all major actions.
+
+The script supports multiple Cloud Connector source types and includes optional
+flag-based behavior for domain-joined manual synchronization. It is compatible with
+Windows PowerShell 5.1 and PowerShell 6+.
+
+.PARAMETER CloudConnectorFunction
+Specifies whether to install or uninstall the Cloud Connector.
+
+Valid values:
+
+* install   (default)
+* uninstall
+
+.PARAMETER CloudConnectorToken
+JWT token used to authenticate with Zero Networks and authorize the install or uninstall.
+This token is decoded locally to extract the API audience.
+
+.PARAMETER CloudConnectorSource
+Specifies the environment or identity source for the Cloud Connector.
+
+Valid values:
+AD, WORKGROUP, AZURE, AZURE_AD, AWS, GCP, IBM, ORACLE, VMWARE,
+ALIBABA, OVH, LUMEN, DOMAIN-JOINED-MANUALLY-SYNC
+
+Default: AD
+
+.PARAMETER DomainJoinedManuallySync
+Optional switch parameter. When specified, the installer is executed with the
+-domain-joined-manually-sync flag. If omitted, the flag is not passed.
+
+This parameter is intended for use with:
+-CloudConnectorSource DOMAIN-JOINED-MANUALLY-SYNC
+
+.EXAMPLE
+Standard Active Directory install:
+
+.\CloudConnector.ps1 `  -CloudConnectorFunction install`
+-CloudConnectorToken "<JWT_TOKEN>" `
+-CloudConnectorSource AD
+
+.EXAMPLE
+Domain-joined manually sync install:
+
+.\CloudConnector.ps1 `  -CloudConnectorFunction install`
+-CloudConnectorToken "<JWT_TOKEN>" `  -CloudConnectorSource DOMAIN-JOINED-MANUALLY-SYNC`
+-DomainJoinedManuallySync
+
+.EXAMPLE
+Uninstall Cloud Connector:
+
+.\CloudConnector.ps1 `  -CloudConnectorFunction uninstall`
+-CloudConnectorToken "<JWT_TOKEN>"
+
+.NOTES
+Logs are written to:
+%TEMP%\CloudConnector.log
+
+Cloud Connector setup logs (if present):
+%LOCALAPPDATA%\ZeroNetworks\logs\setup.log
+#>
+
 #update 4.0
 [CmdletBinding()]
 param(
