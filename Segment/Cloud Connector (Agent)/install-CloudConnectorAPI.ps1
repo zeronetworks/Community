@@ -11,7 +11,7 @@ param(
     [String]$CloudConnectorToken = "<INSERT_CC_TOKEN>",
 
     # Cloud Connector Source
-    [ValidateSet("AD", "WORKGROUP", "AZURE", "AZURE_AD", "AWS", "GCP", "IBM", "ORACLE", "VMWARE", "ALIBABA", "OVH", "LUMEN")]
+    [ValidateSet("AD", "WORKGROUP", "AZURE", "AZURE_AD", "AWS", "GCP", "IBM", "ORACLE", "VMWARE", "ALIBABA", "OVH", "LUMEN", "DOMAIN-JOINED-MANUALLY-SYNC")]
     [Parameter(Mandatory = $False)]
     [String]$CloudConnectorSource = "AD"
 )
