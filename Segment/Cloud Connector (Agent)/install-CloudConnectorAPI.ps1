@@ -37,29 +37,6 @@ Default: AD
 Optional switch parameter. When specified, the installer is executed with the
 -domain-joined-manually-sync flag. If omitted, the flag is not passed.
 
-This parameter is intended for use with:
--CloudConnectorSource DOMAIN-JOINED-MANUALLY-SYNC
-
-.EXAMPLE
-Standard Active Directory install:
-
-.\CloudConnector.ps1 `  -CloudConnectorFunction install`
--CloudConnectorToken "<JWT_TOKEN>" `
--CloudConnectorSource AD
-
-.EXAMPLE
-Domain-joined manually sync install:
-
-.\CloudConnector.ps1 `  -CloudConnectorFunction install`
--CloudConnectorToken "<JWT_TOKEN>" `  -CloudConnectorSource DOMAIN-JOINED-MANUALLY-SYNC`
--DomainJoinedManuallySync
-
-.EXAMPLE
-Uninstall Cloud Connector:
-
-.\CloudConnector.ps1 `  -CloudConnectorFunction uninstall`
--CloudConnectorToken "<JWT_TOKEN>"
-
 .NOTES
 Logs are written to:
 %TEMP%\CloudConnector.log
