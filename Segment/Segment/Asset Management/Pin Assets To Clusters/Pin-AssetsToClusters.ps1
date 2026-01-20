@@ -16,17 +16,20 @@
 .PARAMETER AssetId
     Asset ID to pin or unpin. Required for ByAssetId parameter set.
 
+.PARAMETER OUPath
+    Organizational Unit (OU) path to pin or unpin all assets within. Required for ByOuPath parameter set.
+
 .PARAMETER DeploymentClusterId
-    Deployment cluster ID to pin/unpin assets to. Required for ByAssetId parameter set.
+    Deployment cluster ID to pin/unpin assets to. Required for ByAssetId and ByOuPath parameter sets.
 
 .PARAMETER Unpin
-    Switch to unpin assets instead of pinning them. Available for ByAssetId and ByCsvPath parameter sets.
+    Switch to unpin assets instead of pinning them. Available for ByAssetId, ByOuPath, and ByCsvPath parameter sets.
 
 .PARAMETER SkipSegmentServerValidation
-    Skip validation that deployment clusters have online segment servers. Available for ByAssetId and ByCsvPath parameter sets.
+    Skip validation that deployment clusters have online segment servers. Available for ByAssetId, ByOuPath, and ByCsvPath parameter sets.
 
 .PARAMETER DryRun
-    Preview changes without applying them. Available for ByAssetId and ByCsvPath parameter sets.
+    Preview changes without applying them. Available for ByAssetId, ByOuPath, and ByCsvPath parameter sets.
 
 .PARAMETER ListDeploymentClusters
     Switch to list all deployment clusters with detailed information.
@@ -52,6 +55,10 @@
 .EXAMPLE
     .\Pin-AssetsToClusters.ps1 -ApiKey "your-api-key" -CsvPath ".\assets.csv" -DryRun
     Previews what changes would be made without actually applying them.
+
+.EXAMPLE
+    .\Pin-AssetsToClusters.ps1 -ApiKey "your-api-key" -OUPath "OU=Computers,DC=domain,DC=com" -DeploymentClusterId "C:d:00fd409f"
+    Pins all assets within the specified OU path to a deployment cluster.
 #>
 
 <#PSScriptInfo
@@ -66,11 +73,13 @@
 param(
     # Shared parameter for sets that require authentication
     [Parameter(ParameterSetName = "ByAssetId", Mandatory = $true)]
+    [Parameter(ParameterSetName = "ByOuPath", Mandatory = $true)]
     [Parameter(ParameterSetName = "ListDeploymentClusters", Mandatory = $true)]
     [Parameter(ParameterSetName = "ByCsvPath", Mandatory = $true)]
     [string]$ApiKey,
 
     [Parameter(ParameterSetName = "ByAssetId", Mandatory = $false)]
+    [Parameter(ParameterSetName = "ByOuPath", Mandatory = $false)]
     [Parameter(ParameterSetName = "ListDeploymentClusters", Mandatory = $false)]
     [Parameter(ParameterSetName = "ByCsvPath", Mandatory = $false)]
     [string]$PortalUrl = "https://portal.zeronetworks.com",
@@ -79,21 +88,29 @@ param(
     [Parameter(ParameterSetName = "ByAssetId", Mandatory = $true)]
     [string]$AssetId,
     
+    # ParameterSet: Pin by OU Path and Deployment Cluster ID
+    [Parameter(ParameterSetName = "ByOuPath", Mandatory = $true)]
+    [string]$OUPath,
+    
     [Parameter(ParameterSetName = "ByAssetId", Mandatory = $true)]
+    [Parameter(ParameterSetName = "ByOuPath", Mandatory = $true)]
     [string]$DeploymentClusterId,
     
-    # Shared switch parameter for unpinning (available in ByAssetId and ByCsvPath sets)
+    # Shared switch parameter for unpinning (available in ByAssetId, ByOuPath, and ByCsvPath sets)
     [Parameter(ParameterSetName = "ByAssetId")]
+    [Parameter(ParameterSetName = "ByOuPath")]
     [Parameter(ParameterSetName = "ByCsvPath")]
     [switch]$Unpin,
     
     # Shared switch parameter to skip segment server validation (available in all sets with ApiKey)
     [Parameter(ParameterSetName = "ByAssetId", Mandatory = $false)]
+    [Parameter(ParameterSetName = "ByOuPath", Mandatory = $false)]
     [Parameter(ParameterSetName = "ByCsvPath", Mandatory = $false)]
     [switch]$SkipSegmentServerValidation,
     
     # Shared switch parameter for dry run mode (available in all sets with ApiKey)
     [Parameter(ParameterSetName = "ByAssetId", Mandatory = $false)]
+    [Parameter(ParameterSetName = "ByOuPath", Mandatory = $false)]
     [Parameter(ParameterSetName = "ByCsvPath", Mandatory = $false)]
     [switch]$DryRun,
     
@@ -313,6 +330,60 @@ function Get-AssetDetails {
             throw $_
             
         }
+    }
+}
+
+<#
+    .SYNOPSIS
+        Retrieves all assets within a specified Organizational Unit (OU) path from the Zero Networks API.
+    .PARAMETER OUPath
+        The OU path to retrieve assets for.
+    .OUTPUTS
+        Returns an array of asset entity objects that match the OU path.
+    .NOTES
+        Throws an exception if no assets are found or if the API response is malformed.
+    #>
+function Get-AssetsByOUPath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$OUPath
+    )
+    Write-Host "Getting assets for OU path: $OUPath"
+    try {
+        # Query assets API with OU path filter
+       $FilterArray = @(
+        @{
+            id = "name"
+            includesValues = @(
+                $OUPath
+            )
+        }
+       )
+       $FilterJson = $FilterArray | ConvertTo-Json -Compress -AsArray
+       $response = Invoke-ApiRequest -Method "GET" -ApiEndpoint "assets?_limit=1&_filter=$FilterJson"
+        
+        # Validate response structure
+        if ($null -eq $response.items) {
+            throw "Assets response is malformed and does not contain 'items' property"
+        }
+        
+        # Ensure items is an array (handle single item responses)
+        if ($response.items -isnot [System.Array]) {
+            $assets = @($response.items)
+        }
+        else {
+            $assets = $response.items
+        }
+        
+        if ($assets.Count -eq 0) {
+            throw "No assets found for OU path: $OUPath"
+        }
+        
+        Write-Host "Found $($assets.Count) assets for OU path: $OUPath"
+        return $assets
+    }
+    catch {
+        throw "Failed to retrieve assets for OU path $OUPath : $_"
     }
 }
 
@@ -878,6 +949,53 @@ switch ($PSCmdlet.ParameterSetName) {
         Set-AssetsToDeploymentCluster -AssetIdsArray @($AssetId) -DeploymentClusterId $DeploymentClusterId -Unpin:$Unpin -DryRun:$DryRun
         
         Write-Host "$($DryRun ? "[DRY RUN] " : '') Finished workflow to $($Unpin ? "unpin" : "pin") asset $AssetId to deployment cluster $DeploymentClusterId"
+    }
+    "ByOuPath" {
+        Write-Host "$($DryRun ? "[DRY RUN] " : '') Starting workflow to $($Unpin ? "unpin" : "pin") assets in OU path $OUPath to deployment cluster $DeploymentClusterId"
+        Initialize-ApiContext
+        
+
+        # Validate deployment cluster exists and has online segment servers
+        Invoke-ValidateDeploymentClusterId -DeploymentClusterId $DeploymentClusterId -SkipSegmentServerValidation:$SkipSegmentServerValidation
+
+        # Get assets by OU path
+        $assets = Get-AssetsByOUPath -OUPath $OUPath
+        
+        # Extract asset IDs from assets array
+        $assetIds = $assets | ForEach-Object { $_.id }
+        
+        # Validate each asset can be pinned/unpinned
+        foreach ($assetId in $assetIds) {
+            Test-AssetCanBePinned -AssetId $assetId -AssetMustBePinned:$Unpin
+        }
+        Write-Host "Validated that all assets can be $($Unpin ? "unpinned" : "pinned") to deployment cluster"
+        
+        $totalAssets = $assetIds.Count
+        Write-Host "$($Unpin ? "Unpinning" : "Pinning") $totalAssets assets to deployment cluster $($script:DeploymentClusterHashtable[$DeploymentClusterId].name)"
+        
+        # Batch processing for large asset lists (>50 assets)
+        if ($totalAssets -gt 50) {
+            $batchSize = 50
+            $batchNumber = 1
+            $totalBatches = [math]::Ceiling($totalAssets / $batchSize)
+            
+            for ($i = 0; $i -lt $totalAssets; $i += $batchSize) {
+                # Create batch using array slicing
+                $batch = $assetIds[$i..([math]::Min($i + $batchSize - 1, $totalAssets - 1))]
+                Write-Host "Processing batch $batchNumber of $totalBatches ($($batch.Count) assets)..."
+                Set-AssetsToDeploymentCluster -AssetIdsArray $batch -DeploymentClusterId $DeploymentClusterId -Unpin:$Unpin -DryRun:$DryRun
+                if (-not $DryRun) {
+                    Write-Host "Successfully $($Unpin ? "unpinned" : "pinned") $($batch.Count) assets to deployment cluster $($script:DeploymentClusterHashtable[$DeploymentClusterId].name)"
+                }
+                $batchNumber++
+            }
+        }
+        else {
+            # Process all assets at once for smaller lists
+            Set-AssetsToDeploymentCluster -AssetIdsArray $assetIds -DeploymentClusterId $DeploymentClusterId -Unpin:$Unpin -DryRun:$DryRun
+        }
+        
+        Write-Host "$($DryRun ? "[DRY RUN] " : '') Finished workflow to $($Unpin ? "unpin" : "pin") assets in OU path $OUPath to deployment cluster $DeploymentClusterId"
     }
     "ByCsvPath" {
         Write-Host "$($DryRun ? "[DRY RUN] " : '') Starting workflow to $($Unpin ? "unpin" : "pin") assets from CSV file $CsvPath"
