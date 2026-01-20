@@ -3,6 +3,6 @@ charset-normalizer==3.4.4
 idna==3.11
 loguru==0.7.3
 requests==2.32.5
-urllib3==2.6.0
+urllib3==2.6.3
 python-dotenv>=1.0.0
 pytest>=8.0.0
