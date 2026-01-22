@@ -102,7 +102,7 @@ param(
     [string]$OUPath,
     
     [Parameter(ParameterSetName = "ByOuPath", Mandatory = $false)]
-    [bool]$DisableNestedOuResolution = $false,
+    [switch]$DisableNestedOuResolution = $false,
     
     [Parameter(ParameterSetName = "ByAssetId", Mandatory = $true)]
     [Parameter(ParameterSetName = "ByOuPath", Mandatory = $true)]
@@ -155,8 +155,8 @@ $ErrorActionPreference = "Stop"
 
 # Set DebugPreference based on EnableDebug switch parameter
 if ($EnableDebug) {
-    Write-Host "Debug output enabled"
     $DebugPreference = "Continue"
+    Write-Debug "Debug output enabled"
 }
 else {
     $DebugPreference = "SilentlyContinue"
@@ -265,6 +265,20 @@ asset related functions in the script
 #>
 
 
+<#
+    .SYNOPSIS
+        Validates multiple assets to determine if they can be pinned or unpinned to deployment clusters.
+    .PARAMETER Assets
+        ArrayList of asset objects to validate.
+    .PARAMETER AssetMustBePinned
+        If specified, validates that assets are already pinned (for unpinning operations).
+    .PARAMETER StopOnAssetValidationError
+        If specified, throws an error and terminates the script if any asset fails validation.
+    .OUTPUTS
+        Returns an ArrayList of asset objects that passed validation.
+    .NOTES
+        Filters out segment servers automatically. If StopOnAssetValidationError is set and any asset fails validation, the script will exit with an error.
+    #>
 function Test-ValidateProvidedAssetsCanBePinned {
     param(
         [Parameter(Mandatory = $true)]
@@ -430,13 +444,13 @@ function Get-AssetDetails {
 
 <#
     .SYNOPSIS
-        Retrieves all assets within a specified Organizational Unit (OU) path from the Zero Networks API.
+        Retrieves Organizational Unit (OU) entity information from the Zero Networks API.
     .PARAMETER OUPath
-        The OU path to retrieve assets for.
+        The OU path to retrieve information for (e.g., "OU=Computers,DC=domain,DC=com").
     .OUTPUTS
-        Returns an array of asset entity objects that match the OU path.
+        Returns the OU entity object from the API response.
     .NOTES
-        Throws an exception if no assets are found or if the API response is malformed.
+        Throws an exception if the OU is not found or if the API response is malformed.
     #>
 function Get-OUInfoFromApi {
     param(
@@ -445,25 +459,29 @@ function Get-OUInfoFromApi {
     )
     Write-Host "Finding OU entity information for: $OUPath"
     try {
-        # Query assets API with OU path filter
-       $FilterArray = @(
-        @{
-            id = "name"
-            includeValues = @(
-                $OUPath
-            )
-        }
-       )
-       $FilterJson = $FilterArray | ConvertTo-Json -Compress -AsArray -Depth 10
+        # Build filter array for API query - filters OUs by name matching the provided OU path
+        # The API expects filters in a specific JSON format: array of filter objects with 'id' and 'includeValues'
+        $FilterArray = @(
+            @{
+                id = "name"
+                includeValues = @(
+                    $OUPath
+                )
+            }
+        )
+        # Convert filter array to JSON string format required by the API
+        # -AsArray ensures it's formatted as a JSON array, -Depth 10 handles nested objects
+        $FilterJson = $FilterArray | ConvertTo-Json -Compress -AsArray -Depth 10
        
-       $QueryParams = @{
+        # Build query parameters for the API request
+        $QueryParams = @{
             _limit = 100
             with_count = $true
             _filters = $FilterJson
-       }
+        }
        
-       # TODO: Update limit to 100
-       $response = Invoke-PaginatedApiRequest -Method "GET" -ApiEndpoint "/groups/ou" -QueryParams $QueryParams
+        # Query the OU groups endpoint with pagination support
+        $response = Invoke-PaginatedApiRequest -Method "GET" -ApiEndpoint "/groups/ou" -QueryParams $QueryParams
 
         Write-Debug "OU response body: $($response | ConvertTo-Json -Compress -Depth 10)"
         
@@ -492,7 +510,20 @@ function Get-OUInfoFromApi {
     }
 }
 
-
+<#
+    .SYNOPSIS
+        Retrieves all assets within a specified Organizational Unit (OU) from the Zero Networks API.
+    .PARAMETER EntityId
+        The OU entity ID to retrieve assets for.
+    .PARAMETER OUPath
+        The OU path (optional, used for display purposes only).
+    .PARAMETER DisableNestedOuResolution
+        If specified, disables nested OU resolution and only returns direct members.
+    .OUTPUTS
+        Returns an array of asset entity objects that belong to the OU.
+    .NOTES
+        Filters out identities and only returns assets. Throws an exception if no assets are found or if the API response is malformed.
+    #>
 function Get-AssetsFromOU {
     param(
         [Parameter(Mandatory = $true)]
@@ -503,6 +534,7 @@ function Get-AssetsFromOU {
         [switch]$DisableNestedOuResolution
     )
     Write-Host "Getting assets for OU Path: $OUPath (Entity ID: $EntityId)"
+    Write-Debug "Will retrieve nested OU member? $($DisableNestedOuResolution ? "No" : "Yes")"
     try {
 
         $QueryParams = @{
@@ -515,15 +547,14 @@ function Get-AssetsFromOU {
 
         Write-Debug "Assets from OU response body: $($response | ConvertTo-Json -Compress -Depth 10)"
 
-        # The successors endpoint will return both identities and assets. We only want assets.
-        # It seems all assets will have an assetType property, but identities will not.
-        $Assets = $response.items | Where-Object { $null -ne $_.assetType }
-        Write-Debug "Filtered $($Assets.Count) assets from API response"
-        
         # Validate response structure
-        if ($null -eq $Assets) {
+        if ($null -eq $response.items) {
             throw "API response is malformed and does not contain 'items' property"
         }
+
+        # The successors endpoint will return both identities and assets. We only want assets.
+        # It seems all assets will have an assetType property, but identities will not.
+        $Assets = $response.items | Where-Object { $null -ne $_.assetType }        
 
         # If response.items is empty (count = 0)
         if ($Assets.Count -eq 0) {
@@ -538,7 +569,22 @@ function Get-AssetsFromOU {
     }
 }
 
-
+<#
+    .SYNOPSIS
+        Pins or unpins assets to a deployment cluster in batches for efficient processing.
+    .PARAMETER AssetsPassedValidation
+        ArrayList of asset objects that have passed validation and are ready to be pinned/unpinned.
+    .PARAMETER DeploymentClusterId
+        The deployment cluster ID to pin/unpin assets to.
+    .PARAMETER Unpin
+        If specified, unpins assets from the deployment cluster. Otherwise, pins them.
+    .PARAMETER DryRun
+        If specified, previews the operation without making API calls.
+    .OUTPUTS
+        None. Writes progress messages to the console.
+    .NOTES
+        Automatically batches assets into groups of 50 for large asset lists to optimize API performance.
+    #>
 function Invoke-BatchBasedClusterPinning {
     param(
         [Parameter(Mandatory = $true)]
@@ -559,14 +605,19 @@ function Invoke-BatchBasedClusterPinning {
     Write-Host "$($Unpin ? "Unpinning" : "Pinning") $totalAssets assets to deployment cluster: $($script:DeploymentClusterHashtable[$DeploymentClusterId].name)"
     
     # Batch processing for large asset lists (>50 assets)
+    # The API performs better with smaller batches, so we split large lists into batches of 50
     if ($totalAssets -gt 50) {
         $batchSize = 50
         $batchNumber = 1
+        # Calculate total number of batches needed (round up)
         $totalBatches = [math]::Ceiling($totalAssets / $batchSize)
         
+        # Process assets in batches
         for ($i = 0; $i -lt $totalAssets; $i += $batchSize) {
-            # Create batch using array slicing
-            $batch = [System.Collections.ArrayList]@($AssetsPassedValidation[$i..([math]::Min($i + $batchSize - 1, $totalAssets - 1))])
+            # Create batch using array slicing: get items from index $i to the minimum of ($i + batchSize - 1) or (totalAssets - 1)
+            # This ensures we don't go beyond the array bounds on the last batch
+            $endIndex = [math]::Min($i + $batchSize - 1, $totalAssets - 1)
+            $batch = [System.Collections.ArrayList]@($AssetsPassedValidation[$i..$endIndex])
             Write-Host "Processing batch $batchNumber of $totalBatches ($($batch.Count) assets)..."
             Set-AssetsToDeploymentCluster -Assets $batch -DeploymentClusterId $DeploymentClusterId -Unpin:$Unpin -DryRun:$DryRun
             if (-not $DryRun) {
@@ -576,7 +627,7 @@ function Invoke-BatchBasedClusterPinning {
         }
     }
     else {
-        # Process all assets at once for smaller lists
+        # Process all assets at once for smaller lists (50 or fewer assets)
         Set-AssetsToDeploymentCluster -Assets $AssetsPassedValidation -DeploymentClusterId $DeploymentClusterId -Unpin:$Unpin -DryRun:$DryRun
     }
 
@@ -610,14 +661,17 @@ function Set-AssetsToDeploymentCluster {
         [switch]$DryRun
     )
 
-    # Extract asset IDs from assets
+    # Extract asset IDs from asset objects - the API requires an array of asset ID strings
     $assetIds = @($Assets | ForEach-Object { $_.id })
 
-    # Build request body - always include assetIds, deploymentsClusterId only for pinning
+    # Build request body for the API
+    # For pinning: include both assetIds and deploymentsClusterId
+    # For unpinning: only include assetIds (omitting deploymentsClusterId unpins the assets)
     $body = @{
         assetIds = $assetIds
     }
     if (-not $Unpin) {
+        # Only add deploymentsClusterId when pinning (not when unpinning)
         $body.deploymentsClusterId = $DeploymentClusterId
     }
     
@@ -755,6 +809,16 @@ function New-DeploymentClusterHashtable {
     
 }
 
+<#
+    .SYNOPSIS
+        Creates a script-wide hashtable of segment servers indexed by asset ID.
+    .PARAMETER DeploymentClusters
+        Array of deployment cluster objects containing segment server information.
+    .OUTPUTS
+        None. Creates a script-wide hashtable stored in $script:SegmentServerHashtable.
+    .NOTES
+        The hashtable is stored in $script:SegmentServerHashtable for script-wide access. Used to quickly identify if an asset is a segment server.
+    #>
 function New-SegmentServerHashtable {
     param(
         [Parameter(Mandatory = $true)]
@@ -1082,7 +1146,22 @@ function Test-ApiResponseStatusCode {
     throw $errorRecord
 }
 
-
+<#
+    .SYNOPSIS
+        Wraps the existing Invoke-ApiRequest function to handle pagination.
+    .PARAMETER Method
+        HTTP method to use (GET, POST, PUT, PATCH, DELETE).
+    .PARAMETER ApiEndpoint
+        API endpoint path (e.g., "assets/123" or "/groups/ou").
+    .PARAMETER QueryParams
+        Optional query parameters object to include in the request.
+    .PARAMETER Body
+        Optional request body object. Will be converted to JSON if not already a string.
+    .OUTPUTS
+        Returns the complete API response object with all paginated items combined.
+    .NOTES
+        Automatically handles both cursor-based and offset-based pagination. All pages are fetched and items are combined into a single response.
+    #>
 function Invoke-PaginatedApiRequest {
     param(
         [Parameter(Mandatory = $true)]
@@ -1100,37 +1179,44 @@ function Invoke-PaginatedApiRequest {
 
     )
 
+    # Make initial API request
     $response = Invoke-ApiRequest -Method $Method -ApiEndpoint $ApiEndpoint -Body $Body -QueryParams $QueryParams
 
-    # Handle cursor paginatiosn if the endpoint supports it
+    # Handle cursor pagination if the endpoint supports it
     $NextCursor = $response.nextCursor
     while ($NextCursor -and ($NextCursor.Length -gt 0)) {
+        # Update query parameters with the cursor for the next page
         $QueryParams['_cursor'] = $NextCursor
         Write-Debug "Fetching page with cursor $($QueryParams['_cursor'])"
         $nextPageResponse = Invoke-ApiRequest -Method $Method -ApiEndpoint $ApiEndpoint -Body $Body -QueryParams $QueryParams
         Write-Debug "Retrieved an additional page from API endpoint $($ApiEndpoint)"
         Write-Debug "Response size: $($nextPageResponse.items.Count)"
+        # Append items from this page to the main response
         if ($nextPageResponse.items.Count -gt 0) {
             $response.items += $nextPageResponse.items
         }
         Write-Debug "Items retrieved so far: $($response.items.Count)"
         Write-Debug "Next Cursor $($nextPageResponse.nextCursor)"
+        # Get the cursor for the next page (if any)
         $NextCursor = $nextPageResponse.nextCursor
     }
 
-    # Else try offset based pagination if the endpoint supports it
-    $TotalItemsCount =$response.count
+    # Handle offset-based pagination if the endpoint supports it
+    $TotalItemsCount = $response.count
     $QueryParams['_offset'] = $response.nextOffset
+    # Continue fetching pages until we have all items
     while ($response.items.Count -lt $TotalItemsCount) {
         Write-Debug "Fetching next page with offset $($QueryParams['_offset'])"
         $nextPageResponse = Invoke-ApiRequest -Method $Method -ApiEndpoint $ApiEndpoint -Body $Body -QueryParams $QueryParams
         Write-Debug "Retrieved an additional page from API endpoint $($ApiEndpoint)"
         Write-Debug "Response size: $($nextPageResponse.items.Count)"
+        # Append items from this page to the main response
         if ($nextPageResponse.items.Count -gt 0) {
             $response.items += $nextPageResponse.items
         }
         Write-Debug "Items retrieved so far: $($response.items.Count)"
         Write-Debug "Next Offset $($nextPageResponse.nextOffset)"
+        # Update offset for the next page
         $QueryParams['_offset'] = $nextPageResponse.nextOffset
     }
     
@@ -1178,24 +1264,30 @@ function Invoke-ApiRequest {
             Headers = $script:Headers
         }
         
+        # Build query string from query parameters if provided
+        # Convert the hashtable/dictionary to URL-encoded query string format (key1=value1&key2=value2)
+        # No URL encoding is actually done, because when I use built in methods to do it, it breaks the API requests
         $QueryString = ""
         if ($null -ne $QueryParams) {
+            # Iterate through each key-value pair and format as "key=value", then join with '&'
             $QueryString = ($QueryParams.GetEnumerator() | ForEach-Object { 
                 "$($_.Key)=$($_.Value.ToString())" 
             }) -join '&'
+            # Append query string to the URI
             $requestParams['Uri'] = $requestParams['Uri'] + "?" + $QueryString
         }
 
-
-        # Add request body if provided (convert objects to JSON)
+        # Add request body if provided (convert objects to JSON if needed)
         if ($null -ne $Body) {
-            #Pay attention to this line, the conditionals need to return the value to assign
+            # If body is already a string, use it as-is; otherwise convert the object to JSON
+            # Note: The conditional expression returns the value, which is then assigned to $requestParams['Body']
             $requestParams['Body'] = if ($Body -is [string]) {
                 $Body
             }
             else {
                 $Body | ConvertTo-Json -Depth 10 -Compress
             }
+            # Set content type to JSON for API requests with a body
             $requestParams['ContentType'] = "application/json"
         }
         
@@ -1260,7 +1352,7 @@ switch ($PSCmdlet.ParameterSetName) {
         Wrapping the return value in an array ensures that the value is always returned as an array, regardless of the number of objects returned.
         #>
         # Get members of OU
-        [System.Collections.ArrayList]$Assets = [System.Collections.ArrayList]@(Get-AssetsFromOU -EntityId $OUInformation.id -DisableNestedOuResolution:$DisableNestedOuResolution) 
+        [System.Collections.ArrayList]$Assets = [System.Collections.ArrayList]@(Get-AssetsFromOU -OUPath $OUPath -EntityId $OUInformation.id -DisableNestedOuResolution:$DisableNestedOuResolution) 
         
         # Validate each asset can be pinned/unpinned
         [System.Collections.ArrayList]$AssetsPassedValidation = [System.Collections.ArrayList]@(Test-ValidateProvidedAssetsCanBePinned -Assets $Assets -AssetMustBePinned:$Unpin -StopOnAssetValidationError:$StopOnAssetValidationError)
