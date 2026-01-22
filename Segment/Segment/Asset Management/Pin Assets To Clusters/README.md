@@ -1,6 +1,6 @@
 # Pin Assets To Clusters
 
-A PowerShell script for pinning (assigning) or unpinning (unassigning) assets to a particular deployment cluster in Zero Networks (Network/Identity/RPC Segment). This script allows you to pin/unpin individual assets, or in bulk via CSV.
+A PowerShell script for pinning (assigning) or unpinning (unassigning) assets to a particular deployment cluster in Zero Networks. This script allows you to pin/unpin individual assets, or in bulk via CSV or AD OU path.
 
 ## Requirements
 
