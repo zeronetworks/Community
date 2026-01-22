@@ -34,6 +34,9 @@
 .PARAMETER DryRun
     Preview changes without applying them. Available for ByAssetId, ByOuPath, and ByCsvPath parameter sets.
 
+.PARAMETER StopOnAssetValidationError
+    Stop processing and throw an error when asset validation fails. Available for ByOuPath and ByCsvPath parameter sets.
+
 .PARAMETER ListDeploymentClusters
     Switch to list all deployment clusters with detailed information.
 
@@ -122,6 +125,11 @@ param(
     [Parameter(ParameterSetName = "ByOuPath", Mandatory = $false)]
     [Parameter(ParameterSetName = "ByCsvPath", Mandatory = $false)]
     [switch]$DryRun,
+    
+    # Switch parameter to stop on asset validation error (available in ByOuPath and ByCsvPath sets)
+    [Parameter(ParameterSetName = "ByOuPath", Mandatory = $false)]
+    [Parameter(ParameterSetName = "ByCsvPath", Mandatory = $false)]
+    [switch]$StopOnAssetValidationError,
     
     # ParameterSet 2: List Deployment Clusters
     [Parameter(ParameterSetName = "ListDeploymentClusters", Mandatory = $true)]
@@ -247,10 +255,66 @@ $script:DeploymentClusterFieldMappings = @{
     }
 }
 
+# Initalize a few data structures that are used throughout the script
+$script:SegmentServerHashtable = $null
+$script:DeploymentClusterHashtable = $null
+
 <#
 This section of the script contains all of the
 asset related functions in the script
 #>
+
+
+function Test-ValidateProvidedAssetsCanBePinned {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Collections.ArrayList]$Assets,
+        [Parameter(Mandatory = $false)]
+        [switch]$AssetMustBePinned,
+        [Parameter(Mandatory = $false)]
+        [switch]$StopOnAssetValidationError
+    )
+    # Validate each asset can be pinned/unpinned. Keep a track of any assets that pass or fail validation.
+    # If the -StopOnAssetValidationError switch is provided, throw an error if any asset fails validation,
+    # which will cause the script to exit with a non-zero exit code.
+    [System.Collections.ArrayList]$AssetsPassedValidation = @()
+    [System.Collections.ArrayList]$AssetsFailedValidation = @()
+    foreach ($asset in $Assets) {
+        if ($script:SegmentServerHashtable.ContainsKey($asset.id)) {
+            Write-Warning "Asset $($asset.name) ($($asset.id)) is a segment server. Segment servers cannot be pinned to a deployment cluster. Ignoring this asset!"
+            continue
+        }
+
+        try {
+            Test-AssetCanBePinned -AssetId $asset.id -AssetMustBePinned:$AssetMustBePinned
+            $AssetsPassedValidation.Add($asset) | Out-Null
+        }
+        catch {
+            $errorMessage = "Failed to validate asset $($asset.name) ($($asset.id)): $_"
+            Write-Warning "$errorMessage. Continuing..."
+            $asset | Add-Member -MemberType NoteProperty -Name "ErrorMessage" -Value $_
+            $AssetsFailedValidation.Add($asset) | Out-Null
+            continue
+        }
+    }
+
+    if ($AssetsFailedValidation.Count -gt 0) {
+        Write-Warning "Failed to validate $($AssetsFailedValidation.Count)/$($Assets.Count) assets. Check list below for details."
+        $AssetsFailedValidation | Format-Table -Property name, id, ErrorMessage | Out-String | Write-Warning
+        if ($StopOnAssetValidationError) {
+            throw "At least one asset failed validation! Terminating script due to -StopOnAssetValidationError being set"
+        }
+    }
+
+    if ($AssetsPassedValidation.Count -eq 0) {
+        Write-Host "No assets to pin/unpin. Exiting..."
+        exit 0
+    }
+
+    Write-Host "Validated that $($AssetsPassedValidation.Count) assets can be $($Unpin ? "unpinned" : "pinned") to deployment cluster"
+    return $AssetsPassedValidation
+
+}
 
 <#
     .SYNOPSIS
@@ -291,35 +355,40 @@ function Test-AssetCanBePinned {
     $AssetIsPinnedDeploymentClusterSource = @(0,1,2,3,4)
     
     # Validation order is important - check prerequisites first, then state
-    # 1st: Check if asset is monitored by a Segment Server (assetStatus = 2)
+    # 1st: Check if asset is a segment server
+    if ($script:SegmentServerHashtable.ContainsKey($AssetDetails.id)) {
+        throw "Asset $($AssetDetails.name) ($($AssetDetails.id)) is a segment server. Segment servers cannot be pinned to a deployment cluster."
+    }
+
+    # 2nd: Check if asset is monitored by a Segment Server (assetStatus = 2)
     if ($AssetDetails.assetStatus -ne 2) {
         throw "Asset $($AssetDetails.name) ($($AssetDetails.id)) is not monitored by a Segment Server (e.g uses Cloud Connector, Lightweight Agent). Only hosts monitored by a Segment Server can be pinned to a deployment cluster."
     }
     
-    # 2nd: Check if asset is healthy (healthStatus = 1)
+    # 3rd: Check if asset is healthy (healthStatus = 1)
     if ($AssetDetails.healthState.healthStatus -ne 1) {
         throw "Asset $($AssetDetails.name) ($($AssetDetails.id)) is not healthy! Please check the asset health in the portaland try again."
     }
     
-    # 3rd: Check if asset is applicable for pinning (deploymentsClusterSource != 6)
+    # 4th: Check if asset is applicable for pinning (deploymentsClusterSource != 6)
     if ($AssetDetails.deploymentsClusterSource -eq 6) {
         throw "Asset $($AssetDetails.name) ($($AssetDetails.id)) applicable to be pinned to a deployment cluster"
     }
     
-    # 4th: For unpinning, verify asset is already pinned
+    # 5th: For unpinning, verify asset is already pinned
     if ($AssetMustBePinned) {
         if (-not ($AssetIsPinnedDeploymentClusterSource -contains $AssetDetails.deploymentsClusterSource)) {
             throw "Asset $($AssetDetails.name) ($($AssetDetails.id)) is not pinned to a deployment cluster! It must be pinned to a deployment cluster to be unpinned."
         }
     }
-    # 5th: For pinning, verify asset is not already pinned
+    # 6th: For pinning, verify asset is not already pinned
     else {
         if ($AssetIsPinnedDeploymentClusterSource -contains $AssetDetails.deploymentsClusterSource) {
             throw "Asset $($AssetDetails.name) ($($AssetDetails.id)) is already pinned to Deployment Cluster ID: $($AssetDetails.deploymentsCluster.id) - Deployment Cluster Name: $($AssetDetails.deploymentsCluster.name) - Segment Server ID: $($AssetDetails.assignedDeployment.id) - Segment Server Name: $($AssetDetails.assignedDeployment.name)"
         }
     }
     
-    Write-Host "Validated that asset $($AssetDetails.name) ($($AssetDetails.id)) can be pinned to deployment cluster: $($script:DeploymentClusterHashtable[$DeploymentClusterId].name)"
+    Write-Host "Validated that asset $($AssetDetails.name) ($($AssetDetails.id)) can be $($Unpin ? "unpinned" : "pinned") to deployment cluster: $($script:DeploymentClusterHashtable[$DeploymentClusterId].name)"
 }
 
 <#
@@ -337,14 +406,14 @@ function Get-AssetDetails {
         [Parameter(Mandatory = $true)]
         [string]$AssetId
     )
-    Write-Host "Getting asset details for asset ID: $AssetId"
+    Write-Debug "Getting asset details for asset ID: $AssetId"
     try {
         $response = Invoke-ApiRequest -Method "GET" -ApiEndpoint "assets/$AssetId"
         if ($null -eq $response.entity) {
             throw "Asset details response is malformed and does not contain 'entity' property"
             
         }
-        Write-Host "Found asset details for $($response.entity.name) - $AssetId"
+        Write-Debug "Found asset details for $($response.entity.name) - $AssetId"
         return $response.entity
     }
     catch {
@@ -385,7 +454,7 @@ function Get-OUInfoFromApi {
             )
         }
        )
-       $FilterJson = $FilterArray | ConvertTo-Json -Compress -AsArray
+       $FilterJson = $FilterArray | ConvertTo-Json -Compress -AsArray -Depth 10
        
        $QueryParams = @{
             _limit = 100
@@ -396,7 +465,7 @@ function Get-OUInfoFromApi {
        # TODO: Update limit to 100
        $response = Invoke-PaginatedApiRequest -Method "GET" -ApiEndpoint "/groups/ou" -QueryParams $QueryParams
 
-        Write-Debug "OU response body: $($response | ConvertTo-Json -Compress)"
+        Write-Debug "OU response body: $($response | ConvertTo-Json -Compress -Depth 10)"
         
         # Validate response structure
         if ($null -eq $response.items) {
@@ -416,7 +485,7 @@ function Get-OUInfoFromApi {
         }
 
         # If it makes it here, none of the returned OUs match the provided OU path
-        throw "API did not return any OUs that match the provided OU path ($OUPath).`nAPI returned OUs: $($response.items.name -join ', ')"
+        throw "API did not return any OUs that match the provided OU path ($OUPath).`nAPI returned OUs: $($response.items.name -join ' /// ')"
     }
     catch {
         throw "Failed to retrieve information for $OUPath : $_"
@@ -444,31 +513,79 @@ function Get-AssetsFromOU {
         # Query groups API with Entity ID filter
         $response = Invoke-PaginatedApiRequest -Method "GET" -ApiEndpoint "groups/ou/$EntityId/successors" -QueryParams $QueryParams
 
-        Write-Debug "Assets from OU response body: $($response | ConvertTo-Json -Compress)"
+        Write-Debug "Assets from OU response body: $($response | ConvertTo-Json -Compress -Depth 10)"
+
+        # The successors endpoint will return both identities and assets. We only want assets.
+        # It seems all assets will have an assetType property, but identities will not.
+        $Assets = $response.items | Where-Object { $null -ne $_.assetType }
+        Write-Debug "Filtered $($Assets.Count) assets from API response"
         
         # Validate response structure
-        if ($null -eq $response.items) {
+        if ($null -eq $Assets) {
             throw "API response is malformed and does not contain 'items' property"
         }
 
         # If response.items is empty (count = 0)
-        if ($response.items.Count -eq 0) {
+        if ($Assets.Count -eq 0) {
             throw "No assets found in OU: $OUPath"
         }
         
-        Write-Host "Retrieved $($response.items.Count) assets from OU: $OUPath"
-        return $response.items
+        Write-Host "Retrieved $($Assets.Count) assets from OU: $OUPath"
+        return $Assets
     }
     catch {
         throw "Failed to get assets from OU: $OUPath : $_"
     }
 }
 
+
+function Invoke-BatchBasedClusterPinning {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Collections.ArrayList]$AssetsPassedValidation,
+        [Parameter(Mandatory = $true)]
+        [string]$DeploymentClusterId,
+        [Parameter(Mandatory = $false)]
+        [switch]$Unpin,
+        [Parameter(Mandatory = $false)]
+        [switch]$DryRun
+    )
+    if ($AssetsPassedValidation.Count -eq 0) {
+        Write-Host "No assets to pin/unpin. Exiting..."
+        exit 0
+    }
+
+    $totalAssets = $AssetsPassedValidation.Count
+    Write-Host "$($Unpin ? "Unpinning" : "Pinning") $totalAssets assets to deployment cluster: $($script:DeploymentClusterHashtable[$DeploymentClusterId].name)"
+    
+    # Batch processing for large asset lists (>50 assets)
+    if ($totalAssets -gt 50) {
+        $batchSize = 50
+        $batchNumber = 1
+        $totalBatches = [math]::Ceiling($totalAssets / $batchSize)
+        
+        for ($i = 0; $i -lt $totalAssets; $i += $batchSize) {
+            # Create batch using array slicing
+            $batch = [System.Collections.ArrayList]@($AssetsPassedValidation[$i..([math]::Min($i + $batchSize - 1, $totalAssets - 1))])
+            Write-Host "Processing batch $batchNumber of $totalBatches ($($batch.Count) assets)..."
+            Set-AssetsToDeploymentCluster -Assets $batch -DeploymentClusterId $DeploymentClusterId -Unpin:$Unpin -DryRun:$DryRun
+            if (-not $DryRun) {
+                Write-Host "Successfully $($Unpin ? "unpinned" : "pinned") $($batch.Count) assets to deployment cluster $($script:DeploymentClusterHashtable[$DeploymentClusterId].name)"
+            }
+            $batchNumber++
+        }
+    }
+    else {
+        # Process all assets at once for smaller lists
+        Set-AssetsToDeploymentCluster -Assets $AssetsPassedValidation -DeploymentClusterId $DeploymentClusterId -Unpin:$Unpin -DryRun:$DryRun
+    }
+
+}
 <#
     .SYNOPSIS
         Pins or unpins assets to a deployment cluster via the Zero Networks API.
-    .PARAMETER AssetIdsArray
-        Array of asset IDs to pin or unpin.
+    .PARAMETER Assets
+        ArrayList of asset objects to pin or unpin.
     .PARAMETER DeploymentClusterId
         The deployment cluster ID to pin/unpin assets to.
     .PARAMETER Unpin
@@ -483,7 +600,7 @@ function Get-AssetsFromOU {
 function Set-AssetsToDeploymentCluster {
     param(
         [Parameter(Mandatory = $true)]
-        [array]$AssetIdsArray,
+        [System.Collections.ArrayList]$Assets,
         [Parameter(Mandatory = $true)]
         [string]$DeploymentClusterId,
         [Parameter(Mandatory = $false)]
@@ -492,23 +609,28 @@ function Set-AssetsToDeploymentCluster {
         [Parameter(Mandatory = $false)]
         [switch]$DryRun
     )
+
+    # Extract asset IDs from assets
+    $assetIds = @($Assets | ForEach-Object { $_.id })
+
     # Build request body - always include assetIds, deploymentsClusterId only for pinning
     $body = @{
-        assetIds = $AssetIdsArray
+        assetIds = $assetIds
     }
     if (-not $Unpin) {
         $body.deploymentsClusterId = $DeploymentClusterId
     }
     
-    Write-Host "$($Unpin ? "Unpinning" : "Pinning") $($AssetIdsArray.Count) assets to deployment cluster: $($script:DeploymentClusterHashtable[$DeploymentClusterId].name)"
+    Write-Debug "$($Unpin ? "Unpinning" : "Pinning") $($Assets.Count) assets to deployment cluster: $($script:DeploymentClusterHashtable[$DeploymentClusterId].name)"
     
     if ($DryRun) {
-        Write-Host "[DRY RUN] Would $($Unpin ? "unpin" : "pin") $($AssetIdsArray.Count) assets to deployment cluster: $($script:DeploymentClusterHashtable[$DeploymentClusterId].name)"
-        Write-Host "[DRY RUN] Request body: $($body | ConvertTo-Json -Compress)"
+        Write-Host "[DRY RUN] Would $($Unpin ? "unpin" : "pin") $($Assets.Count) assets to deployment cluster: $($script:DeploymentClusterHashtable[$DeploymentClusterId].name)"
+        Write-Host "[DRY RUN] Asset IDs that would be $($Unpin ? "unpinned" : "pinned"): $($Assets | Format-Table | Out-String)"
+        Write-Host "[DRY RUN] Request body: $($body | ConvertTo-Json -Compress -Depth 10)"
     }
     else {
-        $response = Invoke-ApiRequest -Method "PUT" -ApiEndpoint "/assets/actions/deployments-cluster" -Body $body
-        Write-Host "Successfully $($Unpin ? "unpinned" : "pinned") $($AssetIdsArray.Count) assets to deployment cluster: $($script:DeploymentClusterHashtable[$DeploymentClusterId].name)"
+        Invoke-ApiRequest -Method "PUT" -ApiEndpoint "/assets/actions/deployments-cluster" -Body $body | Out-Null
+        Write-Host "Successfully $($Unpin ? "unpinned" : "pinned") $($Assets.Count) assets to deployment cluster: $($script:DeploymentClusterHashtable[$DeploymentClusterId].name)"
     }
 }
 
@@ -539,9 +661,9 @@ function Invoke-ValidateDeploymentClusterId {
     )
     Write-Host "Validating deployment cluster ID: $DeploymentClusterId"
     
-    # Initialize deployment cluster hashtable if not already done
+    # Initialize deployment cluster hashtable, and segment server hashtable if not already done
     if ($null -eq $script:DeploymentClusterHashtable) {
-        Get-DeploymentClusters
+        Get-DeploymentClusters | Out-Null
     }
     
     # Verify deployment cluster exists
@@ -603,6 +725,9 @@ function Get-DeploymentClusters {
     # Create hashtable for fast lookup by cluster ID
     New-DeploymentClusterHashtable -DeploymentClusters $DeploymentClusters
 
+    # Create hashtable for fast lookup by segment server ID
+    New-SegmentServerHashtable -DeploymentClusters $DeploymentClusters
+
     return $DeploymentClusters
 }
 
@@ -626,8 +751,23 @@ function New-DeploymentClusterHashtable {
     foreach ($cluster in $DeploymentClusters){
         $DeploymentClusterHashtable[$cluster.id] = $cluster
     }
-    Write-Host "Created script-wide hashtable of deployment clusters"
+    Write-Debug "Created script-wide hashtable of deployment clusters"
     
+}
+
+function New-SegmentServerHashtable {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Array]$DeploymentClusters
+    )
+    # Create hashtable indexed by server ID for O(1) lookup performance
+    $script:SegmentServerHashtable = @{}
+    foreach ($cluster in $DeploymentClusters){
+        foreach ($deployment in $cluster.assignedDeployments){
+            $SegmentServerHashtable[$deployment.assetId] = $deployment
+        }
+    }
+    Write-Debug "Created script-wide hashtable of segment servers"
 }
 
 <#
@@ -764,7 +904,7 @@ function Export-CsvTemplate {
     }
     $template | Export-Csv -Path ".\pin-assets-to-clusters-template.csv" -NoTypeInformation
     Write-Host "CSV Template exported to .\pin-assets-to-clusters-template.csv"
-    Write-Host "Please fill in AT LEAST the AssetId and DeploymentClusterId columsn, and then run the script again with the -CsvPath parameter to pin the assets to the clusters."
+    Write-Host "Please fill in AT LEAST the AssetId, AssetName and DeploymentClusterId columns, and then run the script again with the -CsvPath parameter to pin the assets to the clusters."
     Write-Host "Example: .\Pin-AssetsToClusters.ps1 -CsvPath '.\pin-assets-to-clusters-template.csv' -ApiKey 'your-api-key'"
 }
 
@@ -803,7 +943,7 @@ function Get-CsvData {
     }
     
     # Validate required columns exist
-    $requiredColumns = @('AssetId', 'DeploymentClusterId')
+    $requiredColumns = @('AssetId', 'AssetName', 'DeploymentClusterId')
     $firstRow = $csvData[0]
     $actualColumns = $firstRow.PSObject.Properties.Name
     $missingColumns = @()
@@ -1049,11 +1189,12 @@ function Invoke-ApiRequest {
 
         # Add request body if provided (convert objects to JSON)
         if ($null -ne $Body) {
+            #Pay attention to this line, the conditionals need to return the value to assign
             $requestParams['Body'] = if ($Body -is [string]) {
                 $Body
             }
             else {
-                $requestParams['Body'] = ($Body | ConvertTo-Json -Depth 10 -Compress)
+                $Body | ConvertTo-Json -Depth 10 -Compress
             }
             $requestParams['ContentType'] = "application/json"
         }
@@ -1063,7 +1204,7 @@ function Invoke-ApiRequest {
         $response = Invoke-RestMethod @requestParams -SkipHttpErrorCheck -StatusCodeVariable statusCode
 
         # Validate status code (throws exception for non-2XX codes)
-        Test-ApiResponseStatusCode -StatusCode $statusCode -Response $response
+        Test-ApiResponseStatusCode -StatusCode $statusCode -Response $response | Out-Null
 
         return $response
     }
@@ -1083,7 +1224,7 @@ workflow to execute based on the parameter set matched.
 #>
 switch ($PSCmdlet.ParameterSetName) {
     "ByAssetId" {
-        Write-Host "$($DryRun ? "[DRY RUN] " : '') Starting workflow to $($Unpin ? "unpin" : "pin") asset $AssetId to deployment cluster $DeploymentClusterId"
+        Write-Host "$($DryRun ? "[DRY RUN] " : '')Starting workflow to $($Unpin ? "unpin" : "pin") asset $AssetId to deployment cluster $DeploymentClusterId"
         Initialize-ApiContext
         
         # Validate deployment cluster exists and has online segment servers
@@ -1092,13 +1233,19 @@ switch ($PSCmdlet.ParameterSetName) {
         # Validate asset can be pinned/unpinned
         Test-AssetCanBePinned -AssetId $AssetId -AssetMustBePinned:$Unpin
         
-        # Execute pin/unpin operation
-        Set-AssetsToDeploymentCluster -AssetIdsArray @($AssetId) -DeploymentClusterId $DeploymentClusterId -Unpin:$Unpin -DryRun:$DryRun
+        # Create asset object for the function
+        $asset = [PSCustomObject]@{
+            id = $AssetId
+        }
+        $Assets = [System.Collections.ArrayList]@($asset)
         
-        Write-Host "$($DryRun ? "[DRY RUN] " : '') Finished workflow to $($Unpin ? "unpin" : "pin") asset $AssetId to deployment cluster $DeploymentClusterId"
+        # Execute pin/unpin operation
+        Set-AssetsToDeploymentCluster -Assets $Assets -DeploymentClusterId $DeploymentClusterId -Unpin:$Unpin -DryRun:$DryRun
+        
+        Write-Host "$($DryRun ? "[DRY RUN] " : '')Finished workflow to $($Unpin ? "unpin" : "pin") asset $AssetId to deployment cluster $DeploymentClusterId"
     }
     "ByOuPath" {
-        Write-Host "$($DryRun ? "[DRY RUN] " : '') Starting workflow to $($Unpin ? "unpin" : "pin") assets in OU path $OUPath to deployment cluster $DeploymentClusterId"
+        Write-Host "$($DryRun ? "[DRY RUN] " : '')Starting workflow to $($Unpin ? "unpin" : "pin") assets in OU path $OUPath to deployment cluster $DeploymentClusterId"
         Initialize-ApiContext
         
         # Validate deployment cluster exists and has online segment servers
@@ -1107,50 +1254,24 @@ switch ($PSCmdlet.ParameterSetName) {
         # Get OU Information from API
         $OUInformation = Get-OUInfoFromApi -OUPath $OUPath
 
+        <#
+        Wrapping certain function calls in the [System.Collections.ArrayList]@() is a workaround to avoid a conversion error if only ONE asset is returned.
+        Powershell, if only one object is returned, will remove the array wrapper and return the object directly, which causes a conversion error.
+        Wrapping the return value in an array ensures that the value is always returned as an array, regardless of the number of objects returned.
+        #>
         # Get members of OU
-        $Assets = Get-AssetsFromOU -EntityId $OUInformation.id -DisableNestedOuResolution:$DisableNestedOuResolution
-        
-        # Extract asset IDs from assets array
-        $assetIds = $assets | ForEach-Object { $_.id }
+        [System.Collections.ArrayList]$Assets = [System.Collections.ArrayList]@(Get-AssetsFromOU -EntityId $OUInformation.id -DisableNestedOuResolution:$DisableNestedOuResolution) 
         
         # Validate each asset can be pinned/unpinned
-        $assetIds | ForEach-Object -Parallel  -ThrottleLimit 50 {
+        [System.Collections.ArrayList]$AssetsPassedValidation = [System.Collections.ArrayList]@(Test-ValidateProvidedAssetsCanBePinned -Assets $Assets -AssetMustBePinned:$Unpin -StopOnAssetValidationError:$StopOnAssetValidationError)
 
-        }
-        foreach ($assetId in $assetIds) {
-            Test-AssetCanBePinned -AssetId $assetId -AssetMustBePinned:$Unpin
-        }
-        Write-Host "Validated that all assets can be $($Unpin ? "unpinned" : "pinned") to deployment cluster"
+        # Finally, call function to perform the batch based cluster pinning/unpinning operation
+        Invoke-BatchBasedClusterPinning -AssetsPassedValidation $AssetsPassedValidation -DeploymentClusterId $DeploymentClusterId -Unpin:$Unpin -DryRun:$DryRun
         
-        $totalAssets = $assetIds.Count
-        Write-Host "$($Unpin ? "Unpinning" : "Pinning") $totalAssets assets to deployment cluster $($script:DeploymentClusterHashtable[$DeploymentClusterId].name)"
-        
-        # Batch processing for large asset lists (>50 assets)
-        if ($totalAssets -gt 50) {
-            $batchSize = 50
-            $batchNumber = 1
-            $totalBatches = [math]::Ceiling($totalAssets / $batchSize)
-            
-            for ($i = 0; $i -lt $totalAssets; $i += $batchSize) {
-                # Create batch using array slicing
-                $batch = $assetIds[$i..([math]::Min($i + $batchSize - 1, $totalAssets - 1))]
-                Write-Host "Processing batch $batchNumber of $totalBatches ($($batch.Count) assets)..."
-                Set-AssetsToDeploymentCluster -AssetIdsArray $batch -DeploymentClusterId $DeploymentClusterId -Unpin:$Unpin -DryRun:$DryRun
-                if (-not $DryRun) {
-                    Write-Host "Successfully $($Unpin ? "unpinned" : "pinned") $($batch.Count) assets to deployment cluster $($script:DeploymentClusterHashtable[$DeploymentClusterId].name)"
-                }
-                $batchNumber++
-            }
-        }
-        else {
-            # Process all assets at once for smaller lists
-            Set-AssetsToDeploymentCluster -AssetIdsArray $assetIds -DeploymentClusterId $DeploymentClusterId -Unpin:$Unpin -DryRun:$DryRun
-        }
-        
-        Write-Host "$($DryRun ? "[DRY RUN] " : '') Finished workflow to $($Unpin ? "unpin" : "pin") assets in OU path $OUPath to deployment cluster $DeploymentClusterId"
+        Write-Host "$($DryRun ? "[DRY RUN] " : '')Finished workflow to $($Unpin ? "unpin" : "pin") assets in OU path $OUPath to deployment cluster $DeploymentClusterId"
     }
     "ByCsvPath" {
-        Write-Host "$($DryRun ? "[DRY RUN] " : '') Starting workflow to $($Unpin ? "unpin" : "pin") assets from CSV file $CsvPath"
+        Write-Host "$($DryRun ? "[DRY RUN] " : '')Starting workflow to $($Unpin ? "unpin" : "pin") assets from CSV file $CsvPath"
         Initialize-ApiContext
         
         # Read and validate CSV data
@@ -1164,50 +1285,29 @@ switch ($PSCmdlet.ParameterSetName) {
             Invoke-ValidateDeploymentClusterId -DeploymentClusterId $clusterId -SkipSegmentServerValidation:$SkipSegmentServerValidation
         }
 
-        # Validate each asset can be pinned/unpinned
+        # Since the CSV data template does not have 1:1 field names as assets returned from API
+        # We need to create a new arraylist of assets, with field names normalized to match the API response
+        # (Allows for code re-use)
+        [System.Collections.ArrayList]$Assets = @()
         foreach ($row in $csvData) {
-            Test-AssetCanBePinned -AssetId $row.AssetId -AssetMustBePinned:$Unpin
+            $Assets.Add([pscustomobject]@{
+                id = $row.AssetId
+                name = $row.AssetName
+                DeploymentClusterId = $row.DeploymentClusterId
+            }) | Out-Null
         }
-        Write-Host "Validated that all assets can be $($Unpin ? "unpinned" : "pinned") to deployment clusters"
 
-        # Group assets by deployment cluster ID for efficient processing
-        $AssetClusterMappingHashtable = @{}
-        foreach ($clusterId in $UniqueClusterIds) {
-            $AssetClusterMappingHashtable[$clusterId] = @( $csvData | Where-Object { $_.DeploymentClusterId -eq $clusterId } )
-        }
-        Write-Host "Created asset cluster mapping hashtable"
+        # Validate each asset can be pinned/unpinned
+        [System.Collections.ArrayList]$AssetsPassedValidation = [System.Collections.ArrayList]@(Test-ValidateProvidedAssetsCanBePinned -Assets $Assets -AssetMustBePinned:$Unpin -StopOnAssetValidationError:$StopOnAssetValidationError)
         
         # Process each cluster's assets
-        foreach ($clusterId in $AssetClusterMappingHashtable.Keys) {
-            # Extract AssetIds from CSV row objects
-            $assetIds = $AssetClusterMappingHashtable[$clusterId] | ForEach-Object { $_.AssetId }
-            $totalAssets = $assetIds.Count
-            
-            Write-Host "$($Unpin ? "Unpinning" : "Pinning") $totalAssets assets to deployment cluster $($script:DeploymentClusterHashtable[$clusterId].name)"
-            
-            # Batch processing for large asset lists (>50 assets)
-            if ($totalAssets -gt 50) {
-                $batchSize = 50
-                $batchNumber = 1
-                $totalBatches = [math]::Ceiling($totalAssets / $batchSize)
-                
-                for ($i = 0; $i -lt $totalAssets; $i += $batchSize) {
-                    # Create batch using array slicing
-                    $batch = $assetIds[$i..([math]::Min($i + $batchSize - 1, $totalAssets - 1))]
-                    Write-Host "Processing batch $batchNumber of $totalBatches ($($batch.Count) assets)..."
-                    Set-AssetsToDeploymentCluster -AssetIdsArray $batch -DeploymentClusterId $clusterId -Unpin:$Unpin -DryRun:$DryRun
-                    if (-not $DryRun) {
-                        Write-Host "Successfully $($Unpin ? "unpinned" : "pinned") $($batch.Count) assets to deployment cluster $($script:DeploymentClusterHashtable[$clusterId].name)"
-                    }
-                    $batchNumber++
-                }
-            }
-            else {
-                # Process all assets at once for smaller lists
-                Set-AssetsToDeploymentCluster -AssetIdsArray $assetIds -DeploymentClusterId $clusterId -Unpin:$Unpin -DryRun:$DryRun
-            }
+        foreach ($clusterId in $UniqueClusterIds) {
+            $AssetsToProcess = [System.Collections.ArrayList]@($AssetsPassedValidation | Where-Object { $_.DeploymentClusterId -eq $clusterId })
+            Write-Host "Processing $($Unpin ? "unpinning" : "pinning") operation against $($clusterId) for $($AssetsToProcess.Count) assets"
+            Invoke-BatchBasedClusterPinning -AssetsPassedValidation $AssetsToProcess -DeploymentClusterId $clusterId -Unpin:$Unpin -DryRun:$DryRun
         }
-        Write-Host "$($DryRun ? "[DRY RUN] " : '') Finished workflow to $($Unpin ? "unpin" : "pin") assets from CSV file $CsvPath"
+        
+        Write-Host "$($DryRun ? "[DRY RUN] " : '')Finished workflow to $($Unpin ? "unpin" : "pin") assets from CSV file $CsvPath"
     }
     "ListDeploymentClusters" {
         Initialize-ApiContext
