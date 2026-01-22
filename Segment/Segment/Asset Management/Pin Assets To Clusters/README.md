@@ -9,13 +9,16 @@ A PowerShell script for pinning (assigning) or unpinning (unassigning) assets to
 
 ## Features
 
-- Pin or unpin individual assets to deployment clusters
-- Bulk operations via CSV file
+- Pin or unpin assets to deployment clusters via asset ID, CSV file, or Active Directory OU path
+- Bulk operations via CSV file or AD OU path
 - Automatic batching for large asset lists (50 assets per batch)
 - Dry run mode to preview changes without applying them (`-DryRun`)
 - Comprehensive validation before making changes
+- Stop on validation error option (`-StopOnAssetValidationError`) for strict validation enforcement
+- Nested OU resolution control (`-DisableNestedOuResolution`) for OU-based operations
 - List all deployment clusters with detailed information (`-ListDeploymentClusters`)
 - Export CSV template for bulk operations (`-ExportCsvTemplate`)
+- Debug output mode (`-EnableDebug`) for troubleshooting
 
 ## Prerequisites for pinning an asset to a cluster
 You can only pin assets that meet the following criterion:
@@ -25,13 +28,24 @@ You can only pin assets that meet the following criterion:
 - **Obviously, an asset cannot already be pinned** (The script checks for this)
 
 
-## Parameter Sets
+## Script use cases
 
-The script supports four parameter sets:
+The script supports five different use cases:
 
-### 1. ByAssetId (Default)
-Pin or unpin a single asset to a deployment cluster.
+### 1. Pinning/Unpinning Asset by Asset ID & Deployment ID (Default)
+Pin or unpin a single asset to a deployment cluster. You can use the `-ListDeploymentClusters` use case to get the Deployment Cluster ID.
 
+```powershell
+.\Pin-AssetsToClusters.ps1 `
+    -ApiKey "your-api-key" `
+    -AssetId "your-asset-id" `
+    -DeploymentClusterId "your-deployment-cluster-id" `
+    -PortalUrl "https://yourportal-admin.zeronetworks.com"
+```
+
+See the [Quick start](#quick-start) section for more examples.
+
+#### Supported Parameters
 **Required Parameters:**
 - `-ApiKey` - Your Zero Networks API key
 - `-AssetId` - The asset ID to pin/unpin
@@ -42,10 +56,39 @@ Pin or unpin a single asset to a deployment cluster.
 - `-Unpin` - Switch to unpin instead of pin
 - `-SkipSegmentServerValidation` - Skip validation that segment servers are online
 - `-DryRun` - Preview changes without applying them
+- `-EnableDebug` - Enable debug output
 
-### 2. ByCsvPath
-Pin or unpin multiple assets from a CSV file.
+### 2. Active Directory OU Bulk Operations
+Pin or unpin all assets within a specified Active Directory Organizational Unit (OU) path to a deployment cluster.
 
+```powershell
+.\Pin-AssetsToClusters.ps1 `
+    -ApiKey "your-api-key" `
+    -OUPath "OU=Your,DC=Company,DC=com" `
+    -DeploymentClusterId "your-deployment-cluster-id" `
+    -PortalUrl "https://yourportal-admin.zeronetworks.com"
+```
+
+See the [Quick start](#quick-start) section for more examples.
+
+#### Supported Parameters
+**Required Parameters:**
+- `-ApiKey` - Your Zero Networks API key
+- `-OUPath` - The OU path (e.g., "OU=Computers,DC=domain,DC=com")
+- `-DeploymentClusterId` - The deployment cluster ID
+
+**Optional Parameters:**
+- `-PortalUrl` - Portal URL (default: `https://portal.zeronetworks.com`)
+- `-DisableNestedOuResolution` - Disable nested OU resolution (default: `false`). When set to `true`, only direct members of the OU are processed, not nested OUs.
+- `-Unpin` - Switch to unpin instead of pin
+- `-SkipSegmentServerValidation` - Skip validation that segment servers are online
+- `-DryRun` - Preview changes without applying them
+- `-StopOnAssetValidationError` - Stop processing and throw an error when asset validation fails. If not specified, the script continues processing and only operates on assets that passed validation.
+- `-EnableDebug` - Enable debug output
+
+### 3. CSV Bulk Operations
+Pin or unpin multiple assets from a CSV file. Use `-ExportCsvTemplate` and `-ListDeploymentClusters` to help you build your CSV.
+#### Supported Parameters
 **Required Parameters:**
 - `-ApiKey` - Your Zero Networks API key
 - `-CsvPath` - Path to the CSV file
@@ -55,22 +98,28 @@ Pin or unpin multiple assets from a CSV file.
 - `-Unpin` - Switch to unpin instead of pin
 - `-SkipSegmentServerValidation` - Skip validation that segment servers are online
 - `-DryRun` - Preview changes without applying them
+- `-StopOnAssetValidationError` - Stop processing and throw an error when asset validation fails. If not specified, the script continues processing and only operates on assets that passed validation.
+- `-EnableDebug` - Enable debug output
 
-### 3. ListDeploymentClusters
+### 4. List your deployment clusters
 List all deployment clusters with detailed information.
-
+#### Supported Parameters
 **Required Parameters:**
 - `-ApiKey` - Your Zero Networks API key
 - `-ListDeploymentClusters` - Switch to enable listing mode
 
 **Optional Parameters:**
 - `-PortalUrl` - Portal URL (default: `https://portal.zeronetworks.com`)
+- `-EnableDebug` - Enable debug output
 
-### 4. ExportCsvTemplate
+### 5. Export CSV Template to use with CSV Bulk Operations
 Export a CSV template file for bulk operations.
-
+#### Supported Parameters
 **Required Parameters:**
 - `-ExportCsvTemplate` - Switch to enable template export
+
+**Optional Parameters:**
+- `-EnableDebug` - Enable debug output
 
 ## Quick Start
 ### Single asset pinning
@@ -145,12 +194,44 @@ Run the script in single asset mode, specifying a particular asset and cluster I
 ```powershell
 .\Pin-AssetsToClusters.ps1 `
     -ApiKey "your-api-key" `
-    -AssetId "a:a:qvI6tVtn" `
-    -DeploymentClusterId "C:d:00fd409f" `
-    -PortalUrl "https://your-portal.zeronetworks.com"
+    -AssetId "a:a:123456tn" `
+    -DeploymentClusterId "C:d:1234569f" `
+    -PortalUrl "https://yourportal-admin.zeronetworks.com"
 ```
 
-### Bulk Operations
+### Pinning Assets by OU Path (Bulk Ops)
+#### 1. Get the OU path
+- Determine the Active Directory Organizational Unit (OU) path for the assets you want to pin/unpin
+- The OU path format should be: `OU=Computers,DC=domain,DC=com`
+- You can find OU paths using Active Directory tools or PowerShell
+
+#### 2. List deployment clusters
+Follow the steps [2. Run script with -ListDeploymentClusters parameter to get Cluster ID](#2-run-script-with--listdeploymentclusters-parameter-to-get-cluster-id) and [3. Extract cluster ID(s) from output](#3-extract-cluster-ids-from-output) from the [Single asset pinning](#single-asset-pinning) section above to obtain the Cluster ID.
+
+#### 3. Pin assets in the OU to the cluster
+Run the script with the OU path and cluster ID. By default, the script will process assets in nested OUs as well.
+
+```powershell
+.\Pin-AssetsToClusters.ps1 `
+    -ApiKey "your-api-key" `
+    -OUPath "OU=Computers,DC=domain,DC=com" `
+    -DeploymentClusterId "C:d:1234569f" `
+    -PortalUrl "https://yourportal-admin.zeronetworks.com"
+```
+
+To process only direct members of the OU (excluding nested OUs), use the `-DisableNestedOuResolution` parameter:
+
+```powershell
+.\Pin-AssetsToClusters.ps1 `
+    -ApiKey "your-api-key" `
+    -OUPath "OU=Computers,DC=domain,DC=com" `
+    -DeploymentClusterId "C:d:1234569f" `
+    -DisableNestedOuResolution $true
+```
+
+**Note:** The script automatically filters out segment servers and any non-computer entity, processing only valid assets from the OU.
+
+### Pinning assets from a CSV (Bulk Ops)
 #### 1. Export applicable assets to CSV within the portal
 - From within the Zero Networks portal, go to *Entities -> Assets -> Monitored* and add the filter **Monitored By --> Segment Server** and **Health Status --> Healthy** (Prerequisites).
 - Filter the list additionally until it only displays assets you wish to pin/unpin.
@@ -163,13 +244,15 @@ To facilitate ease of use, the script, when ran with the `-ExportCsvTemplate` pa
 Follow the steps [2. Run script with -ListDeploymentClusters parameter to get Cluster ID](#2-run-script-with--listdeploymentclusters-parameter-to-get-cluster-id) and [3. Extract cluster ID(s) from output](#3-extract-cluster-ids-from-output) from the [Single asset pinning](#single-asset-pinning) section above to obtain a list of relevant Cluster IDs.
 
 #### 4. Populate CSV template
-Copy the asset IDs (and asset names, if desired) into the CSV template previously generated. Copy and paste the cluster ID (for which you wish to pin that asset to)in the *DeploymentClusterId* column of the CSV for each asset.
+Copy the asset IDs and asset names into the CSV template previously generated. Copy and paste the cluster ID (for which you wish to pin that asset to) in the *DeploymentClusterId* column of the CSV for each asset.
+
+**Required CSV Columns:** AssetName, AssetId, DeploymentClusterId
 
 Your CSV should look similar to:
 ```csv
 AssetName,AssetId,DeploymentClusterId
-Server-01,a:a:qvI6tVtn,C:d:00fd409f
-Server-02,a:a:abc123,C:d:00fd409f
+Server-01,a:a:123456tn,C:d:1234569f
+Server-02,a:a:abc123,C:d:1234569f
 Server-03,a:a:def456,C:d:00fd409g
 ```
 
@@ -182,7 +265,7 @@ Finally, run the script, passing it the path to your CSV.
 .\Pin-AssetsToClusters.ps1 `
     -ApiKey "your-api-key" `
     -CsvPath ".\pin-assets-to-clusters-template.csv" `
-    -PortalUrl "https://your-portal.zeronetworks.com"
+    -PortalUrl "https://yourportal-admin.zeronetworks.com"
 ```
 
 ## Usage Examples
@@ -192,9 +275,9 @@ Finally, run the script, passing it the path to your CSV.
 ```powershell
 .\Pin-AssetsToClusters.ps1 `
     -ApiKey "your-api-key" `
-    -AssetId "a:a:qvI6tVtn" `
-    -DeploymentClusterId "C:d:00fd409f" `
-    -PortalUrl "https://your-portal.zeronetworks.com"
+    -AssetId "a:a:123456tn" `
+    -DeploymentClusterId "C:d:1234569f" `
+    -PortalUrl "https://yourportal-admin.zeronetworks.com"
 ```
 
 ### Unpin a Single Asset
@@ -202,8 +285,8 @@ Finally, run the script, passing it the path to your CSV.
 ```powershell
 .\Pin-AssetsToClusters.ps1 `
     -ApiKey "your-api-key" `
-    -AssetId "a:a:qvI6tVtn" `
-    -DeploymentClusterId "C:d:00fd409f" `
+    -AssetId "a:a:123456tn" `
+    -DeploymentClusterId "C:d:1234569f" `
     -Unpin
 ```
 
@@ -213,7 +296,7 @@ Finally, run the script, passing it the path to your CSV.
 .\Pin-AssetsToClusters.ps1 `
     -ApiKey "your-api-key" `
     -CsvPath ".\pin-assets-to-clusters-template.csv" `
-    -PortalUrl "https://your-portal.zeronetworks.com"
+    -PortalUrl "https://yourportal-admin.zeronetworks.com"
 ```
 
 ### Unpin Assets from CSV File
@@ -223,6 +306,47 @@ Finally, run the script, passing it the path to your CSV.
     -ApiKey "your-api-key" `
     -CsvPath ".\pin-assets-to-clusters-template.csv" `
     -Unpin
+```
+
+### Pin Assets by OU Path
+
+```powershell
+.\Pin-AssetsToClusters.ps1 `
+    -ApiKey "your-api-key" `
+    -OUPath "OU=Computers,DC=domain,DC=com" `
+    -DeploymentClusterId "C:d:1234569f" `
+    -PortalUrl "https://yourportal-admin.zeronetworks.com"
+```
+
+### Unpin Assets by OU Path
+
+```powershell
+.\Pin-AssetsToClusters.ps1 `
+    -ApiKey "your-api-key" `
+    -OUPath "OU=Computers,DC=domain,DC=com" `
+    -DeploymentClusterId "C:d:1234569f" `
+    -Unpin
+```
+
+### Pin Assets by OU Path (Disable Nested OU Resolution)
+
+```powershell
+.\Pin-AssetsToClusters.ps1 `
+    -ApiKey "your-api-key" `
+    -OUPath "OU=Computers,DC=domain,DC=com" `
+    -DeploymentClusterId "C:d:1234569f" `
+    -DisableNestedOuResolution $true
+```
+
+### Stop on Asset Validation Error
+
+When using `-StopOnAssetValidationError`, the script will stop and throw an error if any asset fails validation, rather than continuing with only the validated assets:
+
+```powershell
+.\Pin-AssetsToClusters.ps1 `
+    -ApiKey "your-api-key" `
+    -CsvPath ".\pin-assets-to-clusters-template.csv" `
+    -StopOnAssetValidationError
 ```
 
 ### Dry Run (Preview Changes)
@@ -250,18 +374,18 @@ Finally, run the script, passing it the path to your CSV.
 
 ## CSV File Format
 
-The CSV file must contain at least the following columns:
+The CSV file must contain the following columns:
 
 - **AssetId** (required) - The asset ID to pin/unpin
+- **AssetName** (required) - Asset name for reference and validation
 - **DeploymentClusterId** (required) - The deployment cluster ID
-- **AssetName** (optional) - Asset name for reference
 
 Example CSV:
 
 ```csv
 AssetName,AssetId,DeploymentClusterId
-Server-01,a:a:qvI6tVtn,C:d:00fd409f
-Server-02,a:a:abc123,C:d:00fd409f
+Server-01,a:a:123456tn,C:d:1234569f
+Server-02,a:a:abc123,C:d:1234569f
 Server-03,a:a:def456,C:d:00fd409g
 ```
 
@@ -270,6 +394,7 @@ Server-03,a:a:def456,C:d:00fd409g
 The script performs comprehensive validation before making any changes:
 
 ### Asset Validation
+- Asset must not be a segment server (segment servers cannot be pinned to deployment clusters)
 - Asset must be monitored by a Segment Server (not Cloud Connector or Lightweight Agent)
 - Asset must be healthy
 - Asset must be applicable to be pinned to a deployment cluster (An asset's deploymentSource attribute cannot be set to "Not Applicable")
@@ -281,6 +406,20 @@ The script performs comprehensive validation before making any changes:
 - Deployment cluster must have at least one segment server assigned (unless `-SkipSegmentServerValidation` is used)
 - At least one segment server must be online (unless `-SkipSegmentServerValidation` is used)
 
+### Validation Error Handling
+
+When processing multiple assets (via CSV or OU path), the script handles validation errors in two ways:
+
+**Default Behavior (Continue on Error):**
+- Assets that fail validation are logged as warnings
+- The script continues processing and only operates on assets that passed validation
+- A summary of failed validations is displayed at the end
+
+**Stop on Error (`-StopOnAssetValidationError`):**
+- If any asset fails validation, the script immediately stops and throws an error
+- No assets are processed if validation fails for any asset
+- Useful when you want to ensure all assets are valid before making any changes
+
 
 ## Dry Run Mode
 
@@ -291,26 +430,6 @@ Use the `-DryRun` switch to preview what changes would be made without actually 
 - The request body that would be sent is displayed
 - No API calls are made to modify asset assignments
 
-## Error Handling
-
-The script includes comprehensive error handling:
-
-- **404 errors**: Asset or deployment cluster not found
-- **400/401/403/405 errors**: Bad request, unauthorized, forbidden, or method not allowed
-- **500/501/503 errors**: Server errors with detailed messages
-- **Validation errors**: Clear messages when assets or clusters don't meet requirements
-
-All errors include the status code, reason phrase, and response body when available.
-
-## Output
-
-The script provides detailed console output including:
-
-- Progress messages for each operation
-- Validation results
-- Batch processing information (for large operations)
-- Success confirmations
-- Error messages with context
 
 ## Notes
 
@@ -329,4 +448,13 @@ Ensure at least one segment server in the deployment cluster is online. Use `-Sk
 
 ### "Asset is already pinned to a deployment cluster"
 The asset is already pinned to a cluster. Use `-Unpin` first if you want to change the assignment.
+
+### "Asset is a segment server"
+Segment servers cannot be pinned to deployment clusters. The script automatically filters out segment servers when processing OUs or CSV files, but will show a warning for each one encountered.
+
+### "Failed to validate X assets"
+When processing multiple assets, some may fail validation. By default, the script continues processing and only operates on validated assets. Use `-StopOnAssetValidationError` if you want the script to stop when any asset fails validation.
+
+### "Could not find OU: [OU Path]"
+The OU path provided does not exist in Active Directory or cannot be found by the API. Verify the OU path format is correct (e.g., "OU=Computers,DC=domain,DC=com") and that the OU exists in your directory, and that the domain where the OU resides is being brought into Zero Networks.
 
