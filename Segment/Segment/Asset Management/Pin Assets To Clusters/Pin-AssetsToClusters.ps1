@@ -1114,6 +1114,9 @@ switch ($PSCmdlet.ParameterSetName) {
         $assetIds = $assets | ForEach-Object { $_.id }
         
         # Validate each asset can be pinned/unpinned
+        $assetIds | ForEach-Object -Parallel  -ThrottleLimit 50 {
+
+        }
         foreach ($assetId in $assetIds) {
             Test-AssetCanBePinned -AssetId $assetId -AssetMustBePinned:$Unpin
         }
