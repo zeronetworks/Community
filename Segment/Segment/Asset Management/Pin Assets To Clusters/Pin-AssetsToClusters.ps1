@@ -19,6 +19,9 @@
 .PARAMETER OUPath
     Organizational Unit (OU) path to pin or unpin all assets within. Required for ByOuPath parameter set.
 
+.PARAMETER DisableNestedOuResolution
+    Disables nested OU resolution when pinning/unpinning assets by OU path. Defaults to false.
+
 .PARAMETER DeploymentClusterId
     Deployment cluster ID to pin/unpin assets to. Required for ByAssetId and ByOuPath parameter sets.
 
@@ -39,6 +42,9 @@
 
 .PARAMETER ExportCsvTemplate
     Switch to export a CSV template file for bulk operations.
+
+.PARAMETER EnableDebug
+    Enables debug output. When provided, sets $DebugPreference to Continue. When not provided, sets $DebugPreference to SilentlyContinue.
 
 .NOTES
     Requires PowerShell 7.0 or higher.
@@ -92,6 +98,9 @@ param(
     [Parameter(ParameterSetName = "ByOuPath", Mandatory = $true)]
     [string]$OUPath,
     
+    [Parameter(ParameterSetName = "ByOuPath", Mandatory = $false)]
+    [bool]$DisableNestedOuResolution = $false,
+    
     [Parameter(ParameterSetName = "ByAssetId", Mandatory = $true)]
     [Parameter(ParameterSetName = "ByOuPath", Mandatory = $true)]
     [string]$DeploymentClusterId,
@@ -124,9 +133,26 @@ param(
     
     # ParameterSet 4: Export CSV Template
     [Parameter(ParameterSetName = "ExportCsvTemplate", Mandatory = $true)]
-    [switch]$ExportCsvTemplate
+    [switch]$ExportCsvTemplate,
+    
+    # Shared switch parameter for debug output (available in all parameter sets)
+    [Parameter(ParameterSetName = "ByAssetId", Mandatory = $false)]
+    [Parameter(ParameterSetName = "ByOuPath", Mandatory = $false)]
+    [Parameter(ParameterSetName = "ListDeploymentClusters", Mandatory = $false)]
+    [Parameter(ParameterSetName = "ByCsvPath", Mandatory = $false)]
+    [Parameter(ParameterSetName = "ExportCsvTemplate", Mandatory = $false)]
+    [switch]$EnableDebug
 )
 $ErrorActionPreference = "Stop"
+
+# Set DebugPreference based on EnableDebug switch parameter
+if ($EnableDebug) {
+    Write-Host "Debug output enabled"
+    $DebugPreference = "Continue"
+}
+else {
+    $DebugPreference = "SilentlyContinue"
+}
 
 # Script-wide deployment cluster field mappings hashtable
 # Maps numeric status codes to human-readable values for strategy, status, state, and service IDs
@@ -343,47 +369,98 @@ function Get-AssetDetails {
     .NOTES
         Throws an exception if no assets are found or if the API response is malformed.
     #>
-function Get-AssetsByOUPath {
+function Get-OUInfoFromApi {
     param(
         [Parameter(Mandatory = $true)]
         [string]$OUPath
     )
-    Write-Host "Getting assets for OU path: $OUPath"
+    Write-Host "Finding OU entity information for: $OUPath"
     try {
         # Query assets API with OU path filter
        $FilterArray = @(
         @{
             id = "name"
-            includesValues = @(
+            includeValues = @(
                 $OUPath
             )
         }
        )
        $FilterJson = $FilterArray | ConvertTo-Json -Compress -AsArray
-       $response = Invoke-ApiRequest -Method "GET" -ApiEndpoint "assets?_limit=1&_filter=$FilterJson"
+       
+       $QueryParams = @{
+            _limit = 100
+            with_count = $true
+            _filters = $FilterJson
+       }
+       
+       # TODO: Update limit to 100
+       $response = Invoke-PaginatedApiRequest -Method "GET" -ApiEndpoint "/groups/ou" -QueryParams $QueryParams
+
+        Write-Debug "OU response body: $($response | ConvertTo-Json -Compress)"
         
         # Validate response structure
         if ($null -eq $response.items) {
-            throw "Assets response is malformed and does not contain 'items' property"
+            throw "API response is malformed and does not contain 'items' property"
+        }
+
+        # If response.items is empty (count = 0)
+        if ($response.items.Count -eq 0) {
+            throw "Could not find OU: $OUPath"
         }
         
-        # Ensure items is an array (handle single item responses)
-        if ($response.items -isnot [System.Array]) {
-            $assets = @($response.items)
+        foreach ($item in $response.items) {
+            if ($item.name -eq $OUPath) {
+                Write-Host "Found matched OU entity ($($item.id)) for provided OU path: $OUPath"
+                return $item
+            }
         }
-        else {
-            $assets = $response.items
-        }
-        
-        if ($assets.Count -eq 0) {
-            throw "No assets found for OU path: $OUPath"
-        }
-        
-        Write-Host "Found $($assets.Count) assets for OU path: $OUPath"
-        return $assets
+
+        # If it makes it here, none of the returned OUs match the provided OU path
+        throw "API did not return any OUs that match the provided OU path ($OUPath).`nAPI returned OUs: $($response.items.name -join ', ')"
     }
     catch {
-        throw "Failed to retrieve assets for OU path $OUPath : $_"
+        throw "Failed to retrieve information for $OUPath : $_"
+    }
+}
+
+
+function Get-AssetsFromOU {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$EntityId,
+        [Parameter(Mandatory = $false)]
+        [string]$OUPath,
+        [Parameter(Mandatory = $false)]
+        [switch]$DisableNestedOuResolution
+    )
+    Write-Host "Getting assets for OU Path: $OUPath (Entity ID: $EntityId)"
+    try {
+
+        $QueryParams = @{
+            _limit = 100
+            includeNestedMembers = $DisableNestedOuResolution ? "false" : "true"
+        }
+
+        # Query groups API with Entity ID filter
+        $response = Invoke-PaginatedApiRequest -Method "GET" -ApiEndpoint "groups/ou/$EntityId/successors" -QueryParams $QueryParams
+
+        Write-Debug "Assets from OU response body: $($response | ConvertTo-Json -Compress)"
+        
+        # Validate response structure
+        if ($null -eq $response.items) {
+            throw "API response is malformed and does not contain 'items' property"
+        }
+
+        # If response.items is empty (count = 0)
+        if ($response.items.Count -eq 0) {
+            throw "No assets found in OU: $OUPath"
+        }
+        
+        Write-Host "Retrieved $($response.items.Count) assets from OU: $OUPath"
+        return $response.items
+    }
+    catch {
+        throw "Failed to get assets from OU: $OUPath : $_"
     }
 }
 
@@ -865,6 +942,64 @@ function Test-ApiResponseStatusCode {
     throw $errorRecord
 }
 
+
+function Invoke-PaginatedApiRequest {
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('GET', 'POST', 'PUT', 'PATCH', 'DELETE')]
+        [string]$Method,
+        
+        [Parameter(Mandatory = $true)]
+        [string]$ApiEndpoint,
+        
+        [Parameter(Mandatory = $false)]
+        [object]$QueryParams = $null,
+
+        [Parameter(Mandatory = $false)]
+        [object]$Body = $null
+
+    )
+
+    $response = Invoke-ApiRequest -Method $Method -ApiEndpoint $ApiEndpoint -Body $Body -QueryParams $QueryParams
+
+    # Handle cursor paginatiosn if the endpoint supports it
+    $NextCursor = $response.nextCursor
+    while ($NextCursor -and ($NextCursor.Length -gt 0)) {
+        $QueryParams['_cursor'] = $NextCursor
+        Write-Debug "Fetching page with cursor $($QueryParams['_cursor'])"
+        $nextPageResponse = Invoke-ApiRequest -Method $Method -ApiEndpoint $ApiEndpoint -Body $Body -QueryParams $QueryParams
+        Write-Debug "Retrieved an additional page from API endpoint $($ApiEndpoint)"
+        Write-Debug "Response size: $($nextPageResponse.items.Count)"
+        if ($nextPageResponse.items.Count -gt 0) {
+            $response.items += $nextPageResponse.items
+        }
+        Write-Debug "Items retrieved so far: $($response.items.Count)"
+        Write-Debug "Next Cursor $($nextPageResponse.nextCursor)"
+        $NextCursor = $nextPageResponse.nextCursor
+    }
+
+    # Else try offset based pagination if the endpoint supports it
+    $TotalItemsCount =$response.count
+    $QueryParams['_offset'] = $response.nextOffset
+    while ($response.items.Count -lt $TotalItemsCount) {
+        Write-Debug "Fetching next page with offset $($QueryParams['_offset'])"
+        $nextPageResponse = Invoke-ApiRequest -Method $Method -ApiEndpoint $ApiEndpoint -Body $Body -QueryParams $QueryParams
+        Write-Debug "Retrieved an additional page from API endpoint $($ApiEndpoint)"
+        Write-Debug "Response size: $($nextPageResponse.items.Count)"
+        if ($nextPageResponse.items.Count -gt 0) {
+            $response.items += $nextPageResponse.items
+        }
+        Write-Debug "Items retrieved so far: $($response.items.Count)"
+        Write-Debug "Next Offset $($nextPageResponse.nextOffset)"
+        $QueryParams['_offset'] = $nextPageResponse.nextOffset
+    }
+    
+    Write-Debug "Total items retrieved: $($response.items.Count)"
+    Write-Debug "Retrieved all pages from $($ApiEndpoint)"
+
+    return $response
+}
+
 <#
     .SYNOPSIS
         Makes HTTP requests to the Zero Networks API with error handling.
@@ -889,7 +1024,10 @@ function Invoke-ApiRequest {
         [string]$ApiEndpoint,
         
         [Parameter(Mandatory = $false)]
-        [object]$Body = $null
+        [object]$Body = $null,
+
+        [Parameter(Mandatory = $false)]
+        [object]$QueryParams = $null
     )
     
     try {
@@ -900,13 +1038,22 @@ function Invoke-ApiRequest {
             Headers = $script:Headers
         }
         
+        $QueryString = ""
+        if ($null -ne $QueryParams) {
+            $QueryString = ($QueryParams.GetEnumerator() | ForEach-Object { 
+                "$($_.Key)=$($_.Value.ToString())" 
+            }) -join '&'
+            $requestParams['Uri'] = $requestParams['Uri'] + "?" + $QueryString
+        }
+
+
         # Add request body if provided (convert objects to JSON)
         if ($null -ne $Body) {
             $requestParams['Body'] = if ($Body -is [string]) {
                 $Body
             }
             else {
-                $Body | ConvertTo-Json -Depth 10 -Compress
+                $requestParams['Body'] = ($Body | ConvertTo-Json -Depth 10 -Compress)
             }
             $requestParams['ContentType'] = "application/json"
         }
@@ -917,7 +1064,7 @@ function Invoke-ApiRequest {
 
         # Validate status code (throws exception for non-2XX codes)
         Test-ApiResponseStatusCode -StatusCode $statusCode -Response $response
-        
+
         return $response
     }
     catch {
@@ -954,12 +1101,14 @@ switch ($PSCmdlet.ParameterSetName) {
         Write-Host "$($DryRun ? "[DRY RUN] " : '') Starting workflow to $($Unpin ? "unpin" : "pin") assets in OU path $OUPath to deployment cluster $DeploymentClusterId"
         Initialize-ApiContext
         
-
         # Validate deployment cluster exists and has online segment servers
         Invoke-ValidateDeploymentClusterId -DeploymentClusterId $DeploymentClusterId -SkipSegmentServerValidation:$SkipSegmentServerValidation
 
-        # Get assets by OU path
-        $assets = Get-AssetsByOUPath -OUPath $OUPath
+        # Get OU Information from API
+        $OUInformation = Get-OUInfoFromApi -OUPath $OUPath
+
+        # Get members of OU
+        $Assets = Get-AssetsFromOU -EntityId $OUInformation.id -DisableNestedOuResolution:$DisableNestedOuResolution
         
         # Extract asset IDs from assets array
         $assetIds = $assets | ForEach-Object { $_.id }
