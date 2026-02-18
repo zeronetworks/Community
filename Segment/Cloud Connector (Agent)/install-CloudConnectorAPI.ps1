@@ -1,20 +1,81 @@
+<#
+.SYNOPSIS
+Installs or uninstalls the Zero Networks Cloud Connector on Windows systems.
+
+.DESCRIPTION
+This script automates the installation and removal of the Zero Networks Cloud Connector.
+It dynamically determines the correct installer endpoint by decoding the provided JWT
+token, retrieves the installer package, executes it with the appropriate arguments,
+and logs all major actions.
+
+The script supports multiple Cloud Connector source types and includes optional
+flag-based behavior for domain-joined manual synchronization. It is compatible with
+Windows PowerShell 5.1 and PowerShell 6+.
+
+.PARAMETER CloudConnectorFunction
+Specifies whether to install or uninstall the Cloud Connector.
+
+Valid values:
+
+* install   (default)
+* uninstall
+
+.PARAMETER CloudConnectorToken
+JWT token used to authenticate with Zero Networks and authorize the install or uninstall.
+This token is decoded locally to extract the API audience.
+
+.PARAMETER CloudConnectorSource
+Specifies the environment or identity source for the Cloud Connector.
+
+Valid values:
+AD, WORKGROUP, AZURE, AZURE_AD, AWS, GCP, IBM, ORACLE, VMWARE,
+ALIBABA, OVH, LUMEN, DOMAIN-JOINED-MANUALLY-SYNC
+
+Default: AD
+
+.PARAMETER DomainJoinedManuallySync
+Optional switch parameter. When specified, the installer is executed with the
+-domain-joined-manually-sync flag. If omitted, the flag is not passed.
+
+.NOTES
+Logs are written to:
+%TEMP%\CloudConnector.log
+
+Cloud Connector setup logs (if present):
+%LOCALAPPDATA%\ZeroNetworks\logs\setup.log
+#>
+
 #update 4.0
 [CmdletBinding()]
 param(
-    # Install/Uninstall
     [Parameter(Mandatory = $False)]
     [ValidateSet("install", "uninstall")]
     [String]$CloudConnectorFunction = "install",
 
-    # Token to use to install the Cloud Connector
     [Parameter(Mandatory = $False)]
     [String]$CloudConnectorToken = "<INSERT_CC_TOKEN>",
 
-    # Cloud Connector Source
-    [ValidateSet("AD", "WORKGROUP", "AZURE", "AZURE_AD", "AWS", "GCP", "IBM", "ORACLE", "VMWARE", "ALIBABA", "OVH", "LUMEN")]
+    [ValidateSet(
+        "AD",
+        "WORKGROUP",
+        "AZURE",
+        "AZURE_AD",
+        "AWS",
+        "GCP",
+        "IBM",
+        "ORACLE",
+        "VMWARE",
+        "ALIBABA",
+        "OVH",
+        "LUMEN"
+    )]
     [Parameter(Mandatory = $False)]
-    [String]$CloudConnectorSource = "AD"
+    [String]$CloudConnectorSource = "AD",
+
+    [Parameter(Mandatory = $false)]
+    [switch]$DomainJoinedManuallySync
 )
+
 
 # Extract Aud from JWT to find cloud connector URL.
 # Your JWT token
@@ -74,12 +135,17 @@ if ($CloudConnectorToken -eq "<INSERT_CC_TOKEN>") {
 # Define installer arguments
 switch ($CloudConnectorFunction) {
     "install" {
-        $installerArgs = "-$CloudConnectorFunction -token $CloudConnectorToken -source $CloudConnectorSource"
+        $installerArgs = "-install -token $CloudConnectorToken -source $CloudConnectorSource"
+
+        if ($DomainJoinedManuallySync.IsPresent) {
+            $installerArgs += " -domain-joined-manually-sync"
+        }
     }
-    "uninstall" { 
-        $installerArgs = "-$CloudConnectorFunction -token $CloudConnectorToken"
+    "uninstall" {
+        $installerArgs = "-uninstall -token $CloudConnectorToken"
     }
 }
+
 
 # Set up headers for API request
 $znHeaders = @{
