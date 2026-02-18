@@ -2,3 +2,5 @@
 *.log
 *.code-workspace
 .vscode
+CLAUDE.md
+.claude

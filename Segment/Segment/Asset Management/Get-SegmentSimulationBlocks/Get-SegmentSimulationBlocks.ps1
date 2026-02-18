@@ -33,7 +33,11 @@ param(
 
     [Parameter(Mandatory = $false, ParameterSetName = "ByAssetId")]
     [Parameter(Mandatory = $false, ParameterSetName = "AllAssets")]
-    [switch]$ShowDisabledRules
+    [switch]$ShowDisabledRules,
+
+    [Parameter(Mandatory = $false, ParameterSetName = "ByAssetId")]
+    [Parameter(Mandatory = $false, ParameterSetName = "AllAssets")]
+    [bool]$ShowAllowedConnections = $false
 )
 
 $ErrorActionPreference = "Stop"
@@ -601,14 +605,15 @@ function Get-AssetSegmentSimulationResults {
         "from" = $From
         "direction" = $DirectionCode
         "trafficType" = $TrafficTypeCode
-        "ruleStates" = $RuleStates
+        #"ruleStates" = $RuleStates
+        "includePendingRules" = $IgnorePendingRules
     }
 
-    if ($FullUrl.contains("dev")) {
+    <#if ($FullUrl.contains("dev")) {
         Write-Host "Running in development environment, using early access request body syntax (removing ruleStates, using includePendingRules instead)" -ForegroundColor DarkYellow
         $BodyHashTable.Add("includePendingRules", $IgnorePendingRules)
         $BodyHashTable.Remove("ruleStates")
-    }
+    }#>
     
     $Response = Invoke-ZeroNetworksApiCall -Headers $Script:Headers -Method POST -Url $FullUrl -Body $BodyHashTable
     Test-ResponseForError -Response $Response
@@ -709,8 +714,28 @@ function Write-AssetSegmentSimulationResults {
         Write-Host "Will Be Segmented On: $(Convert-MsTimestampToIso -MsTimestamp $Asset.ProtectAt)" -ForegroundColor DarkMagenta
     }
     Write-SeparatorLine -DivisionFactor 4 -Characters "-" -ForegroundColor DarkMagenta
+
+    $ResultStatistics = @{
+        "TotalAllowedSources" = 0
+        "TotalBlockedSources" = 0
+        "TotalMfaPromotedSources" = 0
+    }
+
+    foreach ($Result in $Asset.SegmentSimulationResults) {
+        $ResultStatistics["TotalAllowedSources"] += $Result.coveredEntities.Count
+        $ResultStatistics["TotalBlockedSources"] += $Result.uncoveredEntities.Count
+        $ResultStatistics["TotalMfaPromotedSources"] += $Result.coveredByMfaEntities.Count
+    }
+
+    if ($ResultStatistics["TotalAllowedSources"] -gt 0 -and $ResultStatistics["TotalBlockedSources"] -eq 0 -and $ResultStatistics["TotalMfaPromotedSources"] -eq 0) {
+        Write-Host "$("`t"*1)No blocked (or MFA prompted) sources found! Use -ShowAllowedConnections to see assets that only have allowed sources." -ForegroundColor Green
+    }
+
     # Enumerate the segment simulation results
     foreach ($Result in $Asset.SegmentSimulationResults) {
+        if ($Result.coveredEntities.Count -gt 0 -and $Result.coveredByMfaEntities.Count -eq 0 -and $Result.uncoveredEntities.Count -eq 0 -and (-not $ShowAllowedConnections)) {
+            continue
+        }
         Write-SeparatorLine -DivisionFactor 3 -Characters "-" -ForegroundColor DarkCyan -TabCount 1
         $ValidProcesses = $Result.localProcessesList | Where-Object { $_ -ne "Unknown" -and $_ -ne "" }
         # Need to cast the protocolType to an int32 integer to use the mapping table - the value from the result is int64
@@ -723,11 +748,11 @@ function Write-AssetSegmentSimulationResults {
                 Write-Host "$("`t"*2) - $($Process)" -ForegroundColor DarkCyan
             }
         }
-        if ($Result.coveredEntities.Count -gt 0) {
+        if ($Result.coveredEntities.Count -gt 0 -and $ShowAllowedConnections) {
             Write-SeparatorLine -DivisionFactor 4 -Characters "=" -ForegroundColor DarkGreen -TabCount 1
-            Write-Host "$("`t"*1)The following entities will be allowed to connect to $($script:ProtocolTypeMap[[int]$Result.protocolType])/$($Result.port)after semgnetation:" -ForegroundColor DarkGreen
+            Write-Host "$("`t"*1)The following entities will be allowed to connect to $($script:ProtocolTypeMap[[int]$Result.protocolType])/$($Result.port) after semgnetation:" -ForegroundColor DarkGreen
             foreach ($Entity in $Result.coveredEntities) {
-                Write-Host "$("`t"*2)✅   - $($Entity.name) ($($Entity.id)) -✅-> $($Asset.Name):$($script:ProtocolTypeMap[[int]$Result.protocolType])/$($Result.port) - Observed $($Entity.count) times" -ForegroundColor DarkGreen
+                Write-Host "$("`t"*2)✅   - $($Entity.name) ($($Entity.id)) --> $($Asset.Name):$($script:ProtocolTypeMap[[int]$Result.protocolType])/$($Result.port) - Observed $($Entity.count) times" -ForegroundColor DarkGreen
             }
             Write-SeparatorLine -DivisionFactor 4 -Characters "=" -ForegroundColor DarkGreen -TabCount 1
         } else {
@@ -737,7 +762,7 @@ function Write-AssetSegmentSimulationResults {
             Write-SeparatorLine -DivisionFactor 4 -Characters "=" -ForegroundColor DarkBlue -TabCount 1
             Write-Host "$("`t"*1)The following entities will be prompoted for MFA to connect to $($script:ProtocolTypeMap[[int]$Result.protocolType])/$($Result.port) after semgnetation:" -ForegroundColor DarkBlue
             foreach ($Entity in $Result.coveredByMfaEntities) {
-                Write-Host "$("`t"*2)⚠️   - $($Entity.name) ($($Entity.id)) -⏳-> $($Asset.Name):$($script:ProtocolTypeMap[[int]$Result.protocolType])/$($Result.port) - Observed $($Entity.count) times" -ForegroundColor DarkBlue
+                Write-Host "$("`t"*2)⚠️   - $($Entity.name) ($($Entity.id)) --> $($Asset.Name):$($script:ProtocolTypeMap[[int]$Result.protocolType])/$($Result.port) - Observed $($Entity.count) times" -ForegroundColor DarkBlue
             }
             Write-SeparatorLine -DivisionFactor 4 -Characters "=" -ForegroundColor DarkBlue -TabCount 1
         }
@@ -748,7 +773,7 @@ function Write-AssetSegmentSimulationResults {
             Write-SeparatorLine -DivisionFactor 4 -Characters "=" -ForegroundColor Red -TabCount 1
             Write-Host "$("`t"*1)The following entities will be BLOCKED FROM CONNECTING to $($script:ProtocolTypeMap[[int]$Result.protocolType])/$($Result.port) after semgnetation:" -ForegroundColor Red
             foreach ($Entity in $Result.uncoveredEntities) {
-                Write-Host "$("`t"*2)📛   - $($Entity.name) ($($Entity.id)) -❌-> $($Asset.Name):$($script:ProtocolTypeMap[[int]$Result.protocolType])/$($Result.port) - Observed $($Entity.count) times" -ForegroundColor Red
+                Write-Host "$("`t"*2)❌   - $($Entity.name) ($($Entity.id)) --> $($Asset.Name):$($script:ProtocolTypeMap[[int]$Result.protocolType])/$($Result.port) - Observed $($Entity.count) times" -ForegroundColor Red
             }
             Write-SeparatorLine -DivisionFactor 4 -Characters "=" -ForegroundColor Red -TabCount 1
         } else {
