@@ -4,44 +4,55 @@
 param(
     [Parameter(Mandatory = $true, ParameterSetName = "ByAssetId")]
     [Parameter(Mandatory = $true, ParameterSetName = "AllAssets")]
+    [Parameter(Mandatory = $true, ParameterSetName = "ByCsvImport")]
     [string]$ApiKey,
 
     [Parameter(Mandatory = $true, ParameterSetName = "ByAssetId")]
     [string]$AssetId,
 
+    [Parameter(Mandatory = $false, ParameterSetName = "ByCsvImport")]
+    [string]$CsvFilePath,
+
     [Parameter(Mandatory = $false, ParameterSetName = "AllAssets")]
     [Parameter(Mandatory = $false, ParameterSetName = "ByAssetId")]
+    [Parameter(Mandatory = $false, ParameterSetName = "ByCsvImport")]
     [switch]$SkipLearningFilter,
 
     [Parameter(Mandatory = $false, ParameterSetName = "ByAssetId")]
     [Parameter(Mandatory = $false, ParameterSetName = "AllAssets")]
+    [Parameter(Mandatory = $false, ParameterSetName = "ByCsvImport")]
     [ValidateSet("Incoming", "Outgoing")]
     [string]$Direction = "Incoming",
 
     [Parameter(Mandatory = $false, ParameterSetName = "ByAssetId")]
     [Parameter(Mandatory = $false, ParameterSetName = "AllAssets")]
+    [Parameter(Mandatory = $false, ParameterSetName = "ByCsvImport")]
     [switch]$IgnorePendingRules,
 
     [Parameter(Mandatory = $false, ParameterSetName = "ByAssetId")]
     [Parameter(Mandatory = $false, ParameterSetName = "AllAssets")]
+    [Parameter(Mandatory = $false, ParameterSetName = "ByCsvImport")]
     [ValidateSet("Both", "Internal", "External")]
     [string]$TrafficType = "Both",
 
     [Parameter(Mandatory = $false, ParameterSetName = "ByAssetId")]
     [Parameter(Mandatory = $false, ParameterSetName = "AllAssets")]
+    [Parameter(Mandatory = $false, ParameterSetName = "ByCsvImport")]
     [string]$From,
 
     [Parameter(Mandatory = $false, ParameterSetName = "ByAssetId")]
     [Parameter(Mandatory = $false, ParameterSetName = "AllAssets")]
+    [Parameter(Mandatory = $false, ParameterSetName = "ByCsvImport")]
     [switch]$ShowDisabledRules,
 
     [Parameter(Mandatory = $false, ParameterSetName = "ByAssetId")]
     [Parameter(Mandatory = $false, ParameterSetName = "AllAssets")]
+    [Parameter(Mandatory = $false, ParameterSetName = "ByCsvImport")]
     [bool]$ShowAllowedConnections = $false
 )
 
+# By default, stop on errors, unless caught and handled by script
 $ErrorActionPreference = "Stop"
-
 
 <#
  SCRIPT SCOPED MAPPING TABLES
@@ -331,10 +342,12 @@ $script:ProtocolTypeMap = @{
 }
 
 <#
-Script wide variables
+Initialize a couple of required script wide variables
 #>
 $script:AssetsWithBlockResults = @()
-$script:AssetsWithMfaResults
+
+#$script:AssetsWithMfaResults
+
 function Test-ResponseForError {
     param(
         [Parameter(Mandatory = $true)]
@@ -495,13 +508,19 @@ function Invoke-ZeroNetworksApiCall {
     }
     catch {
         $StatusCode = $_.Exception.Response.StatusCode.value__
+        $ReasonPhrase = $_.Exception.Response.ReasonPhrase
         $ErrorMessage = $_.Exception.Message
         
-        if ($_.ErrorDetails.Message) {
-            $ErrorMessage = $_.ErrorDetails.Message
-        }
-        
-        throw "API call failed with status code $StatusCode : $ErrorMessage"
+        $ErrorMessage = "=====`nThe following HTTP request failed:`n"
+        $ErrorMessage += "URI : $($InvokeParams.Uri)`n"
+        $ErrorMessage += "Method: $($InvokeParams.Method)`n"
+        $ErrorMessage += "Body: $($InvokeParams.Body)`n"
+        $ErrorMessage += "=====`nResponse from Zero Networks API:`n"
+        $ErrorMessage += "StatusCode: $StatusCode - $ReasonPhrase`n"
+        $ErrorMessage += "ErrorMessage: $ErrorMessage`n=====`n"
+        Write-Debug $ErrorMessage
+
+        throw "API call failed! Provide -Debug switch to see detailed error information."
     }
 }
 
@@ -750,38 +769,59 @@ function Write-AssetSegmentSimulationResults {
         }
         if ($Result.coveredEntities.Count -gt 0 -and $ShowAllowedConnections) {
             Write-SeparatorLine -DivisionFactor 4 -Characters "=" -ForegroundColor DarkGreen -TabCount 1
-            Write-Host "$("`t"*1)The following entities will be allowed to connect to $($script:ProtocolTypeMap[[int]$Result.protocolType])/$($Result.port) after semgnetation:" -ForegroundColor DarkGreen
+            Write-Host "$("`t"*1)The following entities will be allowed to connect to $($script:ProtocolTypeMap[[int]$Result.protocolType])/$($Result.port) after segmentation:" -ForegroundColor DarkGreen
             foreach ($Entity in $Result.coveredEntities) {
                 Write-Host "$("`t"*2)✅   - $($Entity.name) ($($Entity.id)) --> $($Asset.Name):$($script:ProtocolTypeMap[[int]$Result.protocolType])/$($Result.port) - Observed $($Entity.count) times" -ForegroundColor DarkGreen
             }
             Write-SeparatorLine -DivisionFactor 4 -Characters "=" -ForegroundColor DarkGreen -TabCount 1
-        } else {
-            Write-Host "$("`t"*1) ⚠️   There are no observed entities that will be OUTRIGHT allowed to connect to $($script:ProtocolTypeMap[[int]$Result.protocolType])/$($Result.port) after semgnetation!" -ForegroundColor DarkYellow
-        }
+        } <#else {
+            Write-Host "$("`t"*1) ⚠️   There are no observed entities that will be OUTRIGHT allowed to connect to $($script:ProtocolTypeMap[[int]$Result.protocolType])/$($Result.port) after segmentation!" -ForegroundColor DarkYellow
+        }#>
         if ($Result.coveredByMfaEntities.Count -gt 0) {
             Write-SeparatorLine -DivisionFactor 4 -Characters "=" -ForegroundColor DarkBlue -TabCount 1
-            Write-Host "$("`t"*1)The following entities will be prompoted for MFA to connect to $($script:ProtocolTypeMap[[int]$Result.protocolType])/$($Result.port) after semgnetation:" -ForegroundColor DarkBlue
+            Write-Host "$("`t"*1)The following entities will be prompoted for MFA to connect to $($script:ProtocolTypeMap[[int]$Result.protocolType])/$($Result.port) after segmentation:" -ForegroundColor DarkBlue
             foreach ($Entity in $Result.coveredByMfaEntities) {
                 Write-Host "$("`t"*2)⚠️   - $($Entity.name) ($($Entity.id)) --> $($Asset.Name):$($script:ProtocolTypeMap[[int]$Result.protocolType])/$($Result.port) - Observed $($Entity.count) times" -ForegroundColor DarkBlue
             }
             Write-SeparatorLine -DivisionFactor 4 -Characters "=" -ForegroundColor DarkBlue -TabCount 1
         }
-        else {
-            Write-Host "$("`t"*1) ℹ️   There are no observed entities that will be prompoted for MFA to connect to $($script:ProtocolTypeMap[[int]$Result.protocolType])/$($Result.port) after semgnetation!" -ForegroundColor DarkBlue
-        }
+        <#else {
+            Write-Host "$("`t"*1) ℹ️   There are no observed entities that will be prompoted for MFA to connect to $($script:ProtocolTypeMap[[int]$Result.protocolType])/$($Result.port) after segmentation!" -ForegroundColor DarkBlue
+        }#>
         if ($Result.uncoveredEntities.Count -gt 0) {
             Write-SeparatorLine -DivisionFactor 4 -Characters "=" -ForegroundColor Red -TabCount 1
-            Write-Host "$("`t"*1)The following entities will be BLOCKED FROM CONNECTING to $($script:ProtocolTypeMap[[int]$Result.protocolType])/$($Result.port) after semgnetation:" -ForegroundColor Red
+            Write-Host "$("`t"*1)The following entities will be BLOCKED FROM CONNECTING to $($script:ProtocolTypeMap[[int]$Result.protocolType])/$($Result.port) after segmentation:" -ForegroundColor Red
             foreach ($Entity in $Result.uncoveredEntities) {
                 Write-Host "$("`t"*2)❌   - $($Entity.name) ($($Entity.id)) --> $($Asset.Name):$($script:ProtocolTypeMap[[int]$Result.protocolType])/$($Result.port) - Observed $($Entity.count) times" -ForegroundColor Red
             }
             Write-SeparatorLine -DivisionFactor 4 -Characters "=" -ForegroundColor Red -TabCount 1
-        } else {
-            Write-Host "$("`t"*1) ℹ️   There were no observed entities that will be OUTRIGHT blocked from connecting to $($script:ProtocolTypeMap[[int]$Result.protocolType])/$($Result.port) after semgnetation!" -ForegroundColor Green
-        }
+        } <#else {
+            Write-Host "$("`t"*1) ℹ️   There were no observed entities that will be OUTRIGHT blocked from connecting to $($script:ProtocolTypeMap[[int]$Result.protocolType])/$($Result.port) after segmentation!" -ForegroundColor Green
+        }#>
         Write-SeparatorLine -DivisionFactor 3 -Characters "-" -ForegroundColor DarkCyan -TabCount 1
     }
     Write-Host "`n"
+}
+
+function Import-CsvFileData {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$CsvFilePath
+    )
+    Write-Host "Importing CSV file data from $($CsvFilePath)" -ForegroundColor Green
+    $CsvData = Import-Csv -Path $CsvFilePath -Delimiter "," -Header "Asset Id", "Name"
+    Write-Host "Imported $($CsvData.Count) rows of data from CSV file" -ForegroundColor Green
+
+    # Re-writing the objects in the array to have uniform attribute names "Id,Name" (align w/ API)
+    $NewCsvData = @()
+    # We skip the first row (header) by adding [1..($CsvData.Length - 1)] to the foreach statement
+    foreach ($Row in $CsvData[1..($CsvData.Length - 1)]) {
+        $NewCsvData += [PSCustomObject]@{
+            Id = $Row.'Asset Id'
+            Name = $Row.Name
+        }
+    }
+    return $NewCsvData
 }
 
 <#
@@ -803,6 +843,10 @@ Write-Host @"
 "@ -ForegroundColor DarkBlue
 Write-Host ""
 
+# Parameter validation
+if ($AssetId -and $CsvFilePath) {
+    throw "Cannot specify both -AssetId and -CsvFilePath parameters. Please specify only one, or neither (to run against all assets)"
+}
 
 # Set API Key for ZeroNetworks module - If key invalid, this will throw an error
 Set-ZnApiKey -ApiKey $ApiKey
@@ -846,6 +890,9 @@ Write-Host "Converted From timestamp to milliseconds: $FromMsTimestamp" -Foregro
 if ($AssetId) {
     $Assets = @(Get-RequiredZnAssets -AssetId $AssetId -SkipLearningFilter:$SkipLearningFilter)
 }
+elseif ($CsvFilePath) {
+    $Assets = @(Import-CsvFileData -CsvFilePath $CsvFilePath)
+}
 else {
     $Assets = @(Get-RequiredZnAssets -SkipLearningFilter:$SkipLearningFilter)   
 }
@@ -853,22 +900,46 @@ else {
 #Write-Host "---`n$($Assets | ConvertTo-Json -Depth 10 -Compress -AsArray | Out-String)`n---"
 
 # Iterate over all retrieve assets and run segment simulation for each asset
+$AssetsWithSimulationResults = @()
 foreach ($Asset in $Assets) {
-    $Results = @(Get-AssetSegmentSimulationResults -AssetId $Asset.Id -Direction $Direction -TrafficType $TrafficType -IgnorePendingRules:$IgnorePendingRules -From $FromMsTimestamp -ShowDisabledRules:$ShowDisabledRules)
-    $Asset | Add-Member -MemberType NoteProperty -Name "SegmentSimulationResults" -Value $Results
+
+    try {
+        $Results = @(Get-AssetSegmentSimulationResults -AssetId $Asset.Id -Direction $Direction -TrafficType $TrafficType -IgnorePendingRules:$IgnorePendingRules -From $FromMsTimestamp -ShowDisabledRules:$ShowDisabledRules)
+        if ($Results.Count -gt 0) {
+            $TotalBlockedOrMfaResults = ($Results | Where-Object { $_.coveredByMfaEntities.Count -gt 0 -or $_.uncoveredEntities.Count -gt 0}).Count
+            $Asset | Add-Member -MemberType NoteProperty -Name "SegmentSimulationResults" -Value $Results
+            if ($TotalBlockedOrMfaResults -gt 0) {
+                Write-Debug "Asset $($Asset.Name) - $($Asset.Id) has $($TotalBlockedOrMfaResults) blocked or MFA prompted results to display. Will be included in filter."
+                $AssetsWithSimulationResults += $Asset
+            } elseif ($ShowAllowedConnections) {
+                Write-Debug "Asset $($Asset.Name) - $($Asset.Id) has has no blocked or MFA prompted results to display, but -ShowAllowedConnections is set. Will be included in filter."
+                $AssetsWithSimulationResults += $Asset
+            }
+            
+        }
+        else {
+            Write-Debug "Asset $($Asset.Name) - $($Asset.Id) has no segment simulation results. No output will be displayed for this asset!"
+            continue
+        }
+    }
+    catch {
+        #Write-Host "Error retrieving segment simulation results for asset $($Asset.Name) - $($Asset.Id): $($_.Exception.Message)" -ForegroundColor DarkYellow
+        #Write-Host "Skipping asset $($Asset.Name) - $($Asset.Id) and continuing with next asset..." -ForegroundColor DarkYellow
+        Write-Warning "Error retrieving segment simulation results for asset $($Asset.Name) - $($Asset.Id): $($_.Exception.Message)"
+        Write-Warning "Skipping asset $($Asset.Name) - $($Asset.Id) and continuing with next asset..."
+        continue
+    }
 }
 Write-Host "Finished retrieving segment simulation results for $($Assets.Count) assets" -ForegroundColor Green
 
-# Filter $Assets to only include assets that have > 0 segment simulation results
-$AssetsWithResults = $Assets | Where-Object { $_.SegmentSimulationResults.Count -gt 0 }
 # If there are assets with results, print them for each asset
-if ($AssetsWithResults.Count -gt 0) {
-    Write-Host "Filtered down to $($AssetsWithResults.Count) assets that returned segment simulation results" -ForegroundColor Green
+if ($AssetsWithSimulationResults.Count -gt 0) {
+    Write-Host "Filtered down to $($AssetsWithSimulationResults.Count) assets that returned relevant segment simulation results" -ForegroundColor Green
     # Iterate over the filtered assets and print the segment simulation results
-    foreach ($Asset in $AssetsWithResults) {
+    foreach ($Asset in $AssetsWithSimulationResults) {
         Write-AssetSegmentSimulationResults -Asset $Asset
     }
 } else {
     # Else exit with a warning
-    Write-Host "No assets returned segment simulation results. Exiting..." -ForegroundColor DarkYellow
+    Write-Host "No assets returned relevant segment simulation results. Exiting..." -ForegroundColor DarkYellow
 }
