@@ -75,3 +75,98 @@ The script uses PowerShell's standard `-Debug` common parameter (available becau
 ```powershell
 .\Get-SegmentSimulationBlocks.ps1 -ApiKey "<your-api-key>" -AssetId "a:a:XXXXXXXX" -Debug
 ```
+## Understanding output
+
+Due to the complex nature of simulate segmentation results, it's difficult to provide a CSV export in this fashion that is **easily readable** (you can export the results per asset in the admin portal, but it's not the easiest to read, hence the tools existence).
+
+So, the script prints out results for each asset, using a intendation and divider-based structured format, like below. Comments are included below to explain the structure of the output, and how to interept it.
+
+```powershell
+-------------------------------------------------------
+# This is the asset these results pertain to
+Segmentation Simulation Results for: CONTOSO-DC02 (a:a:Mn5Op6Qr)
+# This is just a warning to let you know this asset is in indefinite learning
+⚠️   Asset is set to indefinite Learning Mode!
+-------------------------------------------------------
+        # Each section below pertains to a particular destination port on the asset
+        -------------------------------------------------------------------------
+        # This is the port these results pertain to, along with asset information
+        # Formatted so you know THIS/PORT --INTO--> THIS ASSET (ID)
+        TCP/3389 --> CONTOSO-DC02 (a:a:Mn5Op6Qr)
+        # How many times connections were made to this port
+        Number of Occurences: 12
+        # Timestamp of last connection to this port
+        Last observed at: 2026-02-24T13:05:06.918-05:00
+        # The process(es) which listen on this port, effectively
+        Connections landed on local processes:
+                 - c:\windows\system32\svchost.exe (termservice)
+        =======================================================
+        <#
+         This section might have three sections
+         - ALLOWED ASSETS (if -ShowAllowedConnections provided) - Assets that attempted to connect to this port and would be allowed post-segment
+         - BLOCKED ASSETS - Assets that attempted to connect to this port and would be blocked post-segment
+         - ASSETS PROMPTED FOR MFA - Assets that attmepted to connect to this port and would instead by prompted for MFA post-segment
+        #>
+
+        <# In this example, this asset attempted to connect to RDP 11 times over the time period, and after segmenting the destination asset (CONTOSO-DC02), would be prompted for MFA #>
+        The following entities will be prompoted for MFA to connect to TCP/3389 after segmentation:
+                ⚠️   - CONTOSO-JUMP01 (a:a:Kl3Mn4Op) --> CONTOSO-DC02:TCP/3389 - Observed 11 times
+        =======================================================
+        -------------------------------------------------------------------------
+        -------------------------------------------------------------------------
+        TCP/139 --> CONTOSO-DC02 (a:a:Mn5Op6Qr)
+        Number of Occurences: 11
+        Last observed at: 2026-02-24T13:11:40.800-05:00
+        Connections landed on local processes:
+                 - system
+        =======================================================
+        # In this example, you can see that CONTOSO-JUMP01 would be BLOCKED from TCP/139 once this asset (CONTOSO-DC002) is segmented
+        The following entities will be BLOCKED FROM CONNECTING to TCP/139 after segmentation:
+                ❌   - CONTOSO-JUMP01 (a:a:Kl3Mn4Op) --> CONTOSO-DC02:TCP/139 - Observed 11 times
+        =======================================================
+        -------------------------------------------------------------------------
+        -------------------------------------------------------------------------
+        TCP/5985 --> CONTOSO-DC02 (a:a:Mn5Op6Qr)
+        Number of Occurences: 11
+        Last observed at: 2026-02-24T13:13:27.481-05:00
+        Connections landed on local processes:
+                 - system
+        =======================================================
+        The following entities will be prompoted for MFA to connect to TCP/5985 after segmentation:
+                ⚠️   - CONTOSO-JUMP01 (a:a:Kl3Mn4Op) --> CONTOSO-DC02:TCP/5985 - Observed 11 times
+        =======================================================
+        -------------------------------------------------------------------------
+        -------------------------------------------------------------------------
+        UDP/5353 --> CONTOSO-DC02 (a:a:Mn5Op6Qr)
+        Number of Occurences: 6
+        Last observed at: 2026-02-24T13:01:27.672-05:00
+        Connections landed on local processes:
+                 - c:\windows\system32\svchost.exe (dnscache)
+        =======================================================
+        The following entities will be BLOCKED FROM CONNECTING to UDP/5353 after segmentation:
+                ❌   - CONTOSO-JUMP01 (a:a:Kl3Mn4Op) --> CONTOSO-DC02:UDP/5353 - Observed 6 times
+        =======================================================
+        -------------------------------------------------------------------------
+        -------------------------------------------------------------------------
+        UDP/137 --> CONTOSO-DC02 (a:a:Mn5Op6Qr)
+        Number of Occurences: 6
+        Last observed at: 2026-02-24T13:00:54.971-05:00
+        Connections landed on local processes:
+                 - system
+        =======================================================
+        The following entities will be BLOCKED FROM CONNECTING to UDP/137 after segmentation:
+                ❌   - CONTOSO-JUMP01 (a:a:Kl3Mn4Op) --> CONTOSO-DC02:UDP/137 - Observed 6 times
+        =======================================================
+        -------------------------------------------------------------------------
+        -------------------------------------------------------------------------
+        TCP/5357 --> CONTOSO-DC02 (a:a:Mn5Op6Qr)
+        Number of Occurences: 6
+        Last observed at: 2026-02-24T13:00:59.125-05:00
+        Connections landed on local processes:
+                 - system
+        =======================================================
+        The following entities will be BLOCKED FROM CONNECTING to TCP/5357 after segmentation:
+                ❌   - CONTOSO-JUMP01 (a:a:Kl3Mn4Op) --> CONTOSO-DC02:TCP/5357 - Observed 6 times
+        =======================================================
+        -------------------------------------------------------------------------
+```
