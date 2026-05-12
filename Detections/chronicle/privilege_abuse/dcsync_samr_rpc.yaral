@@ -1,0 +1,66 @@
+// Copyright 2026 Zero Networks. All rights reserved.
+//
+// -- Title         : ZN - DCSync / Account Enumeration (Any Source)
+// -- Description   : Detects drsuapi (DCSync) or samr (account enumeration) RPC operations
+// --                 from any non-domain-controller source. Fires on every occurrence.
+// -- Version       : 1.0.0
+// -- Last modified : 2026-05-03
+// -- Author        : Zero Networks
+// -- MITRE ATT&CK  : TA0006, T1003.006 (OS Credential Dumping: DCSync), T1087.002
+// -- Severity      : CRITICAL (drsuapi), HIGH (samr from Workstation), MEDIUM (samr from Server)
+// -- Log type      : ZN_RPC
+// --
+// -- UDM field mapping assumed (from ZN Chronicle parser):
+// --   Operation.Name  -> additional.fields["OperationName"]
+// --   Src.AssetType   -> additional.fields["SrcAssetType"]
+
+rule zn_dcsync_samr_rpc {
+  meta:
+    author              = "Zero Networks"
+    description         = "drsuapi or samr RPC from non-DC source - DCSync or account enumeration."
+    severity            = "CRITICAL"
+    priority            = "CRITICAL"
+    mitre_attack_tactic = "TA0006"
+    mitre_attack_technique = "T1003.006"
+    version             = "1.0.0"
+    last_modified       = "2026-05-03"
+
+  events:
+    $e.metadata.log_type = "ZN_RPC"
+
+    $op = $e.additional.fields["OperationName"]
+    ($op = "drsuapi" or $op = "samr")
+
+    $src_id = $e.principal.asset.asset_id
+    $dst_id = $e.target.asset.asset_id
+    $src_id != ""
+    $dst_id != ""
+
+    // Suppress legitimate DC-to-DC drsuapi replication
+    not ($op = "drsuapi" and $e.additional.fields["SrcAssetType"] = "Domain Controller")
+
+  match:
+    $src_id, $dst_id, $op over 1h
+
+  outcome:
+    $src_asset_type   = array_first($e.additional.fields["SrcAssetType"])
+    $severity         = if(
+        $op = "drsuapi", "CRITICAL",
+        if($src_asset_type = "Workstation", "HIGH", "MEDIUM"))
+    $mitre_technique  = if($op = "drsuapi", "T1003.006", "T1087.002")
+    $status           = array_first($e.additional.fields["Status"])
+    $interface_uuid   = array_first($e.additional.fields["InterfaceUUID"])
+    $src_fqdn         = $e.principal.hostname
+    $src_ip           = $e.principal.ip
+    $src_seg_state    = array_first($e.additional.fields["SrcRPCSegState"])
+    $src_process      = $e.principal.process.file.full_path
+    $user_name        = $e.target.user.userid
+    $user_sid         = $e.target.user.windows_sid
+    $dst_fqdn         = $e.target.hostname
+    $dst_ip           = $e.target.ip
+    $dst_port         = $e.target.port
+    $dst_asset_type   = array_first($e.additional.fields["DstAssetType"])
+
+  condition:
+    $e
+}

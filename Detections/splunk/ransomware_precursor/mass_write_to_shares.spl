@@ -1,0 +1,68 @@
+`comment("
+Title         : ZN - Mass Write to Shares (New SMB Source)
+Description   : Fires when an internal source initiates SMB connections for the first time -
+                not seen doing SMB in the 14-day baseline. Covers ALL asset types (not just
+                workstations) to catch server-to-server lateral movement via file shares.
+Version       : 1.0.0
+Last modified : 2026-05-03
+Author        : Zero Networks
+MITRE ATT&CK  : T1021.002 (SMB/Windows Admin Shares), T1486 (Data Encrypted for Impact)
+Severity      : High (established), Medium (blocked), Low (blocked_at_source)
+Data source   : index=zeronetworks sourcetype=zn:network
+Requires      : KV Store collection 'zn_known_smb_sources'. Schedule companion baseline
+                search every 24h and run for 14+ days before enabling this alert.
+")`
+index=zeronetworks sourcetype="zn:network" earliest=-1h@h latest=now
+| spath output=traffic_type   path="TrafficType"
+| spath output=dst_port       path="Dst.Port"
+| spath output=conn_status    path="ConnectionStatus"
+| spath output=src_asset_id   path="Src.AssetID"
+| spath output=dst_asset_id   path="Dst.AssetID"
+| spath output=src_fqdn       path="Src.Fqdn"
+| spath output=src_ip         path="Src.IP"
+| spath output=src_asset_type path="Src.AssetType"
+| spath output=src_user       path="Src.UserName"
+| spath output=src_process    path="Src.ProcessPath"
+| spath output=src_seg_state  path="Src.AssetNetworkSegmentationState"
+| spath output=dst_fqdn       path="Dst.Fqdn"
+| where traffic_type="Internal"
+    AND (dst_port="445" OR dst_port="139")
+    AND isnotnull(src_asset_id) AND src_asset_id!=""
+    AND isnotnull(dst_asset_id) AND dst_asset_id!=""
+`comment("Anti-join against known SMB sources baseline")`
+| lookup zn_known_smb_sources src_asset_id OUTPUT src_asset_id AS known_src
+| where isnull(known_src)
+| stats
+    dc(dst_asset_id)     AS distinct_dst_count
+    values(dst_fqdn)     AS dst_fqdns
+    values(conn_status)  AS conn_statuses
+    min(_time)           AS first_seen
+    BY src_asset_id src_fqdn src_ip src_asset_type src_user src_process src_seg_state
+| eval
+    top_status=mvindex(conn_statuses, 0),
+    alert_severity=case(
+        top_status="established",       "High",
+        top_status="blocked",           "Medium",
+        top_status="requested",         "Medium",
+        top_status="blocked_at_source", "Low",
+        true(), "Medium"),
+    src_display=if(isnotnull(src_fqdn) AND src_fqdn!="", src_fqdn, src_ip),
+    alert_name="New SMB source: ".src_display." (".distinct_dst_count." shares)"
+| table first_seen alert_name alert_severity distinct_dst_count
+    src_asset_id src_fqdn src_ip src_asset_type src_user src_process src_seg_state
+    dst_fqdns conn_statuses
+| sort - distinct_dst_count
+
+`comment("
+--- BASELINE BUILDER (schedule every 24h, lookback=14d) ---
+index=zeronetworks sourcetype=zn:network earliest=-14d@d latest=now
+| spath output=traffic_type path=TrafficType
+| spath output=dst_port     path=Dst.Port
+| spath output=src_asset_id path=Src.AssetID
+| where traffic_type=Internal
+    AND (dst_port='445' OR dst_port='139')
+    AND isnotnull(src_asset_id) AND src_asset_id!=''
+| stats count by src_asset_id
+| table src_asset_id
+| outputlookup zn_known_smb_sources
+")`

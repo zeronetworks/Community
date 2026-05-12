@@ -1,0 +1,47 @@
+// -- Title         : ZN - Multi-Machine Authentication Spread
+// -- Description   : Detects a single account authenticating to 10+ distinct machines in 1h.
+// --                 Indicates Pass-the-Hash/Ticket or automated lateral movement.
+// -- Version       : 1.0.0
+// -- Last modified : 2026-05-05
+// -- Author        : Zero Networks
+// -- MITRE ATT&CK  : T1550.002 (Pass the Hash), T1550.003 (Pass the Ticket), T1078 (Valid Accounts)
+// -- Severity      : High
+// -- Index         : logs-zn.identity-*
+// --
+// -- DEPLOYMENT: Use the "threshold" rule type in Kibana Detection Engine.
+// --
+// -- threshold rule configuration:
+// --   rule_type       : threshold
+// --   index           : logs-zn.identity-*
+// --   interval        : 1h
+// --   from            : now-65m
+// --   threshold.field : ["subjectUser.name"]
+// --   threshold.value : 1
+// --   threshold.cardinality:
+// --     - field: dst.assetId
+// --       value: 10
+// --   query (KQL)     : see below
+// --
+// -- KQL filter:
+//
+//    failureReason: 0
+//    AND subjectUser.name: *
+//    AND dst.assetId: *
+//    AND NOT subjectUser.name: /*\$$/
+//
+// -- EQL query (custom_query fallback):
+
+any where
+    event.dataset == "zn.identity"
+    and failureReason == 0
+    and subjectUser.name != null and subjectUser.name != ""
+    and dst.assetId != null and dst.assetId != ""
+    and not (subjectUser.name like "*$" and not subjectUser.name like "*\\*")
+
+// -- Field reference (logs-zn.identity-*):
+// --   subjectUser.name          : authenticating account name
+// --   subjectUser.sid           : account security identifier
+// --   dst.assetId               : target machine (used for cardinality threshold)
+// --   dst.fqdn                  : target machine FQDN
+// --   authenticationPackageName : "Kerberos" | "NTLM" | "Negotiate" | etc.
+// --   failureReason             : 0 = success, non-zero = failure code

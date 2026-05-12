@@ -1,0 +1,54 @@
+// Copyright 2026 Zero Networks. All rights reserved.
+//
+// -- Title         : ZN - Internal Port Fanout
+// -- Description   : Detects a single internal source asset connecting to an unusually large
+// --                 number of distinct destination assets in a short time window. Indicates
+// --                 lateral movement scanning, ransomware staging, or worm propagation.
+// -- Version       : 1.0.0
+// -- Last modified : 2026-04-22
+// -- Author        : Zero Networks
+// -- MITRE ATT&CK  : TA0007 (Discovery), TA0008 (Lateral Movement), T1046
+// -- Severity      : HIGH
+// -- Log type      : ZN_NETWORK
+// -- Tuning        : Adjust the condition threshold (default: 20 distinct destinations).
+// --                 Add known scanners/backup agents to a 'zn_scanner_exclusions' reference
+// --                 list and add: not $src_id in %zn_scanner_exclusions
+
+rule zn_internal_port_fanout {
+  meta:
+    author              = "Zero Networks"
+    description         = "Single internal source connecting to 20+ distinct destinations in 10m."
+    severity            = "HIGH"
+    priority            = "HIGH"
+    mitre_attack_tactic = "TA0007"
+    mitre_attack_technique = "T1046"
+    version             = "1.0.0"
+    last_modified       = "2026-04-22"
+
+  events:
+    $e.metadata.log_type = "ZN_NETWORK"
+    $e.additional.fields["TrafficType"] = "Internal"
+
+    // Bind source asset ID for grouping; exclude domain controllers
+    $src_id = $e.principal.asset.asset_id
+    $src_id != ""
+    $e.principal.labels["AssetType"] != "Domain Controller"
+
+    $e.target.asset.asset_id != ""
+
+  match:
+    $src_id over 10m
+
+  outcome:
+    $distinct_dst_count = count_distinct($e.target.asset.asset_id)
+    $total_connections  = count($e)
+    $src_fqdn           = $e.principal.hostname
+    $src_ip             = $e.principal.ip
+    $src_user           = $e.principal.user.userid
+    $src_process        = $e.principal.process.file.full_path
+    $dst_ports          = array_distinct($e.target.port)
+    $conn_statuses      = array_distinct($e.additional.fields["ConnectionStatus"])
+
+  condition:
+    #e.target.asset.asset_id > 20
+}

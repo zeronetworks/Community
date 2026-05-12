@@ -1,0 +1,88 @@
+`comment("
+Title         : ZN - New RPC Pair (Dangerous Interface)
+Description   : Fires when a new (src, dst, rpc_interface) triple is observed for a high-risk
+                RPC operation not seen in the 14-day baseline. Covers:
+                  ITaskSchedulerService (T1053.005) - remote scheduled task
+                  IWbemServices (T1047)             - WMI lateral movement
+                  winreg (T1112)           - remote registry
+                  svcctl (T1543.003)       - remote service manipulation
+                  drsuapi (T1003.006)               - DCSync / credential dump
+                  samr (T1087.002)                  - account enumeration
+Version       : 1.0.0
+Last modified : 2026-04-22
+Author        : Zero Networks
+MITRE ATT&CK  : T1047, T1053.005, T1003.006, T1112, T1543.003, T1569.002, T1087.002
+Severity      : Critical (drsuapi), High (ITaskScheduler/IWbemServices/svcctl), Medium (rest)
+Data source   : index=zeronetworks sourcetype=zn:rpc
+Requires      : KV Store lookup 'zn_known_rpc_pairs' (built by companion baseline search).
+")`
+index=zeronetworks sourcetype="zn:rpc" earliest=-1h@h latest=now
+| spath output=operation_name    path="Operation.Name"
+| spath output=operation_number  path="Operation.Number"
+| spath output=status            path="Status"
+| spath output=interface_uuid    path="Interface.UUID"
+| spath output=interface_name    path="Interface.Name"
+| spath output=user_name         path="User.Name"
+| spath output=user_sid          path="User.SID"
+| spath output=src_asset_id      path="Src.AssetID"
+| spath output=src_fqdn          path="Src.Fqdn"
+| spath output=src_ip            path="Src.IP"
+| spath output=src_asset_type    path="Src.AssetType"
+| spath output=src_seg_state     path="Src.AssetRPCSegmentationState"
+| spath output=src_process       path="Src.ProcessPath"
+| spath output=dst_asset_id      path="Dst.AssetID"
+| spath output=dst_fqdn          path="Dst.Fqdn"
+| spath output=dst_ip            path="Dst.IP"
+| spath output=dst_port          path="Dst.Port"
+| spath output=dst_asset_type    path="Dst.AssetType"
+| spath output=dst_seg_state     path="Dst.AssetRPCSegmentationState"
+| where operation_name IN(
+    "ITaskSchedulerService",
+    "IWbemServices",
+    "winreg",
+    "drsuapi",
+    "samr",
+    "svcctl")
+    AND isnotnull(src_asset_id) AND src_asset_id!=""
+    AND isnotnull(dst_asset_id) AND dst_asset_id!=""
+| lookup zn_known_rpc_pairs src_asset_id dst_asset_id operation_name
+    OUTPUT src_asset_id AS known_src
+| where isnull(known_src)
+| eval
+    mitre_technique=case(
+        operation_name="ITaskSchedulerService", "T1053.005",
+        operation_name="IWbemServices",         "T1047",
+        operation_name="winreg",       "T1112",
+        operation_name="svcctl",       "T1543.003",
+        operation_name="drsuapi",               "T1003.006",
+        operation_name="samr",                  "T1087.002",
+        true(), "T1021"),
+    alert_severity=case(
+        operation_name="drsuapi",                              "Critical",
+        operation_name IN("ITaskSchedulerService","IWbemServices","svcctl"), "High",
+        true(), "Medium"),
+    src_display=if(isnotnull(src_fqdn) AND src_fqdn!="", src_fqdn, src_ip),
+    dst_display=if(isnotnull(dst_fqdn) AND dst_fqdn!="", dst_fqdn, dst_ip),
+    alert_name="New RPC pair (".operation_name."): ".src_display." -> ".dst_display
+| table _time alert_name alert_severity mitre_technique operation_name operation_number
+    status interface_uuid interface_name
+    src_asset_id src_fqdn src_ip src_asset_type src_seg_state src_process
+    user_name user_sid
+    dst_asset_id dst_fqdn dst_ip dst_port dst_asset_type dst_seg_state
+| sort alert_severity _time
+
+`comment("
+--- BASELINE BUILDER (schedule every 24h, lookback=14d) ---
+index=zeronetworks sourcetype=zn:rpc earliest=-14d@d latest=now
+| spath output=operation_name  path=Operation.Name
+| spath output=src_asset_id    path=Src.AssetID
+| spath output=dst_asset_id    path=Dst.AssetID
+| where operation_name IN(
+    'ITaskSchedulerService','IWbemServices','winreg',
+    'drsuapi','samr','svcctl')
+    AND isnotnull(src_asset_id) AND src_asset_id!=''
+    AND isnotnull(dst_asset_id) AND dst_asset_id!=''
+| stats count by src_asset_id dst_asset_id operation_name
+| table src_asset_id dst_asset_id operation_name
+| outputlookup zn_known_rpc_pairs
+")`
