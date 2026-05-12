@@ -1,0 +1,58 @@
+// -- Title         : ZN - Rapid Sequential Port Scan
+// -- Description   : Detects a single internal source connecting to many distinct destination
+// --                 ports on the same target in a short window. Indicates port scanning,
+// --                 service enumeration, or ransomware pre-encryption reconnaissance.
+// -- Version       : 1.0.0
+// -- Last modified : 2026-05-03
+// -- Author        : Zero Networks
+// -- MITRE ATT&CK  : T1046 (Network Service Discovery), T1595.001 (Active Scanning: Port Scans)
+// -- Severity      : High
+// -- Data source   : ZNNetworkActivity_CL
+// -- Tuning        : Raise _portThreshold for noisy environments; add known vulnerability
+// --                 scanner AssetIDs to an exclusion watchlist.
+
+let _windowMinutes  = 5;    // rolling window for port count
+let _portThreshold  = 15;   // distinct destination ports before alerting
+
+ZNNetworkActivity_CL
+| where TimeGenerated >= ago(totimespan(strcat(tostring(_windowMinutes), "m")))
+| where TrafficType_s == "Internal"
+| where isnotempty(Src_AssetID_s) and isnotempty(Dst_AssetID_s)
+| summarize
+    DistinctPortCount  = dcount(Dst_Port_d),
+    ScannedPorts       = make_set(Dst_Port_d, 200),
+    ConnectionStatuses = make_set(ConnectionStatus_s, 5),
+    FirstSeen          = min(TimeGenerated),
+    LastSeen           = max(TimeGenerated),
+    TotalConnections   = count()
+    by Src_AssetID_s, Src_Fqdn_s, Src_IP_s, Src_AssetType_s,
+       Src_UserName_s, Src_ProcessPath_s,
+       Dst_AssetID_s, Dst_Fqdn_s, Dst_IP_s, Dst_AssetNetworkSegmentationState_s
+| where DistinctPortCount >= _portThreshold
+| extend AlertName = strcat(
+    "Rapid port scan: ",
+    iff(isnotempty(Src_Fqdn_s), Src_Fqdn_s, Src_IP_s),
+    " -> ",
+    iff(isnotempty(Dst_Fqdn_s), Dst_Fqdn_s, Dst_IP_s),
+    " (", tostring(DistinctPortCount), " ports in ",
+    tostring(_windowMinutes), "m)")
+| project
+    FirstSeen,
+    LastSeen,
+    AlertName,
+    AlertSeverity       = "High",
+    TotalConnections,
+    DistinctPortCount,
+    SrcAssetID          = Src_AssetID_s,
+    SrcFqdn             = Src_Fqdn_s,
+    SrcIP               = Src_IP_s,
+    SrcAssetType        = Src_AssetType_s,
+    SrcUserName         = Src_UserName_s,
+    SrcProcessPath      = Src_ProcessPath_s,
+    DstAssetID          = Dst_AssetID_s,
+    DstFqdn             = Dst_Fqdn_s,
+    DstIP               = Dst_IP_s,
+    DstSegState         = Dst_AssetNetworkSegmentationState_s,
+    ScannedPorts,
+    ConnectionStatuses
+| sort by DistinctPortCount desc

@@ -1,0 +1,63 @@
+// -- Title         : ZN - OT/IT Boundary Crossing
+// -- Description   : Detects communication that crosses the OT/IT network boundary.
+// --                 An OT asset is identified by a non-empty Src.OTSwitchID or Dst.OTSwitchID.
+// --                 Fires when exactly one side of the connection is an OT asset (the other
+// --                 side is a standard IT asset with no OTSwitchID). Pure OT-to-OT traffic
+// --                 is excluded. Both directions (OT->IT and IT->OT) are alerted.
+// -- Version       : 1.0.0
+// -- Last modified : 2026-04-22
+// -- Author        : Zero Networks
+// -- MITRE ATT&CK  : T1599 (Network Boundary Bridging)
+// -- Severity      : High (established), Medium (blocked/requested), Low (blocked_at_source)
+// -- Data source   : ZNNetworkActivity_CL
+
+ZNNetworkActivity_CL
+| where TimeGenerated >= ago(1h)
+| where TrafficType_s == "Internal"
+// XOR: exactly one side is an OT asset (boundary crossing, not OT-internal)
+| where (isnotempty(Src_OTSwitchID_s) and isempty(Dst_OTSwitchID_s))
+     or (isempty(Src_OTSwitchID_s) and isnotempty(Dst_OTSwitchID_s))
+| extend
+    CrossingDirection = iff(isnotempty(Src_OTSwitchID_s), "OT->IT", "IT->OT"),
+    OTSwitchID        = iff(isnotempty(Src_OTSwitchID_s), Src_OTSwitchID_s, Dst_OTSwitchID_s),
+    OTSwitchInterface = iff(
+        isnotempty(Src_OTSwitchID_s),
+        Src_OTSwitchInterfaceName_s,
+        Dst_OTSwitchInterfaceName_s),
+    AlertSeverity = case(
+        ConnectionStatus_s == "established",       "High",
+        ConnectionStatus_s == "blocked",           "Medium",
+        ConnectionStatus_s == "requested",         "Medium",
+        ConnectionStatus_s == "blocked_at_source", "Low",
+        "Medium"),
+    AlertName = strcat(
+        "OT/IT boundary crossing (",
+        iff(isnotempty(Src_OTSwitchID_s), "OT->IT", "IT->OT"),
+        "): ",
+        iff(isnotempty(Src_Fqdn_s), Src_Fqdn_s, Src_IP_s),
+        " -> ",
+        iff(isnotempty(Dst_Fqdn_s), Dst_Fqdn_s, Dst_IP_s))
+| project
+    TimeGenerated,
+    AlertName,
+    AlertSeverity,
+    CrossingDirection,
+    OTSwitchID,
+    OTSwitchInterface,
+    ConnectionStatus    = ConnectionStatus_s,
+    ProtocolType        = ProtocolType_d,
+    SrcAssetID          = Src_AssetID_s,
+    SrcFqdn             = Src_Fqdn_s,
+    SrcIP               = Src_IP_s,
+    SrcAssetType        = Src_AssetType_s,
+    SrcOTSwitchID       = Src_OTSwitchID_s,
+    SrcOTInterface      = Src_OTSwitchInterfaceName_s,
+    SrcUserName         = Src_UserName_s,
+    DstAssetID          = Dst_AssetID_s,
+    DstFqdn             = Dst_Fqdn_s,
+    DstIP               = Dst_IP_s,
+    DstPort             = Dst_Port_d,
+    DstAssetType        = Dst_AssetType_s,
+    DstOTSwitchID       = Dst_OTSwitchID_s,
+    DstOTInterface      = Dst_OTSwitchInterfaceName_s
+| sort by TimeGenerated desc

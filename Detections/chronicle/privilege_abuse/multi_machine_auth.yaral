@@ -1,0 +1,55 @@
+// Copyright 2026 Zero Networks. All rights reserved.
+//
+// -- Title         : ZN - Multi-Machine Authentication Spread
+// -- Description   : Detects a single account authenticating to 10+ distinct machines in 1h.
+// --                 Indicates Pass-the-Hash/Ticket or automated lateral movement tooling.
+// -- Version       : 1.0.0
+// -- Last modified : 2026-05-03
+// -- Author        : Zero Networks
+// -- MITRE ATT&CK  : TA0008, T1550.002 (Pass the Hash), T1550.003 (Pass the Ticket)
+// -- Severity      : HIGH
+// -- Log type      : ZN_IDENTITY
+// --
+// -- UDM field mapping (from ZN Chronicle parser):
+// --   subjectUser.name          -> additional.fields["SubjectUserName"]
+// --   subjectUser.sid           -> additional.fields["SubjectUserSID"]
+// --   failureReason             -> additional.fields["FailureReason"] (stringified int; "0" = success)
+// --   authenticationPackageName -> additional.fields["AuthPackage"]
+// --   dst.assetId               -> target.asset.asset_id
+// --   dst.fqdn                  -> target.hostname
+
+rule zn_multi_machine_auth {
+  meta:
+    author              = "Zero Networks"
+    description         = "Single account authenticating to 10+ distinct machines in 1h."
+    severity            = "HIGH"
+    priority            = "HIGH"
+    mitre_attack_tactic = "TA0008"
+    mitre_attack_technique = "T1550.002"
+    version             = "1.0.0"
+    last_modified       = "2026-05-05"
+
+  events:
+    $e.metadata.log_type = "ZN_IDENTITY"
+    $e.additional.fields["FailureReason"] = "0"
+
+    $user_name = $e.additional.fields["SubjectUserName"]
+    $dst_id    = $e.target.asset.asset_id
+    $user_name != ""
+    $dst_id    != ""
+
+    // Suppress machine accounts (COMPUTER$) authenticating in normal Kerberos flows
+    not re.regex($user_name, `\$$`)
+
+  match:
+    $user_name over 1h
+
+  outcome:
+    $distinct_machines = count_distinct($dst_id)
+    $user_sid          = array_first($e.additional.fields["SubjectUserSID"])
+    $target_fqdns      = array_distinct($e.target.hostname)
+    $auth_packages     = array_distinct($e.additional.fields["AuthPackage"])
+
+  condition:
+    $e and $distinct_machines >= 10
+}

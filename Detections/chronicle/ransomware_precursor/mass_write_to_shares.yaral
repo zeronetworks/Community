@@ -1,0 +1,61 @@
+// Copyright 2026 Zero Networks. All rights reserved.
+//
+// -- Title         : ZN - Mass Write to Shares (New SMB Source)
+// -- Description   : Fires when an internal source initiates SMB connections for the first
+// --                 time - not present in the zn_known_smb_sources reference list.
+// --                 Covers all asset types (workstations, servers, OT assets).
+// -- Version       : 1.0.0
+// -- Last modified : 2026-05-03
+// -- Author        : Zero Networks
+// -- MITRE ATT&CK  : TA0040, T1021.002 (SMB/Windows Admin Shares)
+// -- Severity      : HIGH
+// -- Log type      : ZN_NETWORK
+// --
+// -- Prerequisites:
+// --   Reference list 'zn_known_smb_sources' populated before enabling.
+// --   Format: one src_asset_id per line.
+// --   Populate via scheduled baseline export (14+ days of SMB source data).
+
+rule zn_mass_write_to_shares {
+  meta:
+    author              = "Zero Networks"
+    description         = "First-ever SMB/NetBIOS connection from an internal source not in baseline."
+    severity            = "HIGH"
+    priority            = "HIGH"
+    mitre_attack_tactic = "TA0040"
+    mitre_attack_technique = "T1021.002"
+    version             = "1.0.0"
+    last_modified       = "2026-05-03"
+
+  events:
+    $e.metadata.log_type = "ZN_NETWORK"
+    $e.additional.fields["TrafficType"] = "Internal"
+
+    $e.target.port = 445 or $e.target.port = 139
+
+    $src_id = $e.principal.asset.asset_id
+    $dst_id = $e.target.asset.asset_id
+    $src_id != ""
+    $dst_id != ""
+
+    // Source has not previously used SMB
+    not $src_id in %zn_known_smb_sources
+
+  match:
+    $src_id over 1h
+
+  outcome:
+    $conn_status  = array_first($e.additional.fields["ConnectionStatus"])
+    $severity     = if(
+        $conn_status = "established", "HIGH",
+        if($conn_status = "blocked" or $conn_status = "requested", "MEDIUM", "LOW"))
+    $distinct_dst = count_distinct($dst_id)
+    $src_fqdn     = $e.principal.hostname
+    $src_ip       = $e.principal.ip
+    $src_user     = $e.principal.user.userid
+    $src_process  = $e.principal.process.file.full_path
+    $dst_fqdns    = array_distinct($e.target.hostname)
+
+  condition:
+    $e
+}

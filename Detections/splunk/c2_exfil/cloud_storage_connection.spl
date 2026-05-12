@@ -1,0 +1,72 @@
+`comment("
+Title         : ZN - Connection to Cloud Storage Service
+Description   : Detects internal hosts connecting to known cloud storage services (Dropbox,
+                MEGA, Google Drive, OneDrive, Box, WeTransfer) for the first time. Fires on
+                the first observed (src, provider) pair not seen in the 14-day baseline.
+Version       : 1.0.0
+Last modified : 2026-05-03
+Author        : Zero Networks
+MITRE ATT&CK  : T1567.002 (Exfiltration to Cloud Storage), T1048 (Exfiltration Over Alt Protocol)
+Severity      : Medium (server source), Low (workstation/other)
+Data source   : index=zeronetworks sourcetype=zn:network
+Requires      : KV Store collection 'zn_known_cloud_pairs'. Schedule companion baseline
+                search every 24h and run for 14+ days before enabling.
+")`
+index=zeronetworks sourcetype="zn:network" earliest=-1h@h latest=now
+| spath output=traffic_type   path="TrafficType"
+| spath output=conn_status    path="ConnectionStatus"
+| spath output=dst_fqdn       path="Dst.Fqdn"
+| spath output=src_asset_id   path="Src.AssetID"
+| spath output=src_fqdn       path="Src.Fqdn"
+| spath output=src_ip         path="Src.IP"
+| spath output=src_asset_type path="Src.AssetType"
+| spath output=src_seg_state  path="Src.AssetNetworkSegmentationState"
+| spath output=src_user       path="Src.UserName"
+| spath output=src_process    path="Src.ProcessPath"
+| spath output=dst_ip         path="Dst.IP"
+| spath output=dst_port       path="Dst.Port"
+| where traffic_type="External"
+    AND isnotnull(src_asset_id) AND src_asset_id!=""
+    AND isnotnull(dst_fqdn) AND dst_fqdn!=""
+    AND (match(dst_fqdn, "(?i)(dropbox\.com|mega\.nz|mega\.co\.nz|drive\.google\.com|docs\.google\.com|storage\.googleapis\.com|onedrive\.live\.com|1drv\.ms|sharepoint\.com|box\.com|wetransfer\.com|we\.tl|send\.firefox\.com|gofile\.io|anonfiles\.com)"))
+| eval cloud_provider=case(
+    match(dst_fqdn, "(?i)dropbox"),    "Dropbox",
+    match(dst_fqdn, "(?i)mega"),       "MEGA",
+    match(dst_fqdn, "(?i)google"),     "Google Drive",
+    match(dst_fqdn, "(?i)(onedrive|1drv)"), "OneDrive",
+    match(dst_fqdn, "(?i)sharepoint"), "SharePoint",
+    match(dst_fqdn, "(?i)box\.com"),   "Box",
+    match(dst_fqdn, "(?i)(wetransfer|we\.tl)"), "WeTransfer",
+    true(), "Other Cloud Storage")
+| lookup zn_known_cloud_pairs src_asset_id cloud_provider OUTPUT src_asset_id AS known_src
+| where isnull(known_src)
+| eval
+    alert_severity=if(src_asset_type="Server", "Medium", "Low"),
+    src_display=if(isnotnull(src_fqdn) AND src_fqdn!="", src_fqdn, src_ip),
+    alert_name="Cloud storage connection: ".src_display." -> ".cloud_provider." (".dst_fqdn.")"
+| table _time alert_name alert_severity cloud_provider conn_status
+    src_asset_id src_fqdn src_ip src_asset_type src_seg_state src_user src_process
+    dst_fqdn dst_ip dst_port
+| sort - _time
+
+`comment("
+--- BASELINE BUILDER (schedule every 24h, lookback=14d) ---
+index=zeronetworks sourcetype=zn:network earliest=-14d@d latest=now
+| spath output=traffic_type  path=TrafficType
+| spath output=src_asset_id  path=Src.AssetID
+| spath output=dst_fqdn      path=Dst.Fqdn
+| where traffic_type=External AND src_asset_id!='' AND dst_fqdn!=''
+    AND (match(dst_fqdn, '(?i)(dropbox|mega|google|onedrive|1drv|sharepoint|box\.com|wetransfer|we\.tl|send\.firefox|gofile|anonfiles)'))
+| eval cloud_provider=case(
+    match(dst_fqdn,'(?i)dropbox'),'Dropbox',
+    match(dst_fqdn,'(?i)mega'),'MEGA',
+    match(dst_fqdn,'(?i)google'),'Google Drive',
+    match(dst_fqdn,'(?i)(onedrive|1drv)'),'OneDrive',
+    match(dst_fqdn,'(?i)sharepoint'),'SharePoint',
+    match(dst_fqdn,'(?i)box\.com'),'Box',
+    match(dst_fqdn,'(?i)(wetransfer|we\.tl)'),'WeTransfer',
+    true(),'Other Cloud Storage')
+| stats count by src_asset_id cloud_provider
+| table src_asset_id cloud_provider
+| outputlookup zn_known_cloud_pairs
+")`

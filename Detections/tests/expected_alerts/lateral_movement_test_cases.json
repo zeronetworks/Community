@@ -1,0 +1,263 @@
+{
+  "description": "Expected alert test cases for Sprint 1 lateral movement detections. Each case documents the input event characteristics and the expected detection outcome.",
+  "version": "1.0.0",
+  "lastModified": "2026-04-22",
+  "testCases": [
+    {
+      "id": "TC-LM-001",
+      "detection": "new_internal_asset_pair",
+      "scenario": "Workstation initiates first-ever SMB to a server (established)",
+      "input": {
+        "eventType": "networkactivity",
+        "TrafficType": "Internal",
+        "ConnectionStatus": "established",
+        "ProtocolType": 6,
+        "Src": {
+          "AssetID": "src-ws-001",
+          "AssetType": "Workstation",
+          "Fqdn": "ws01.corp.local",
+          "IP": "10.0.1.50",
+          "UserName": "CORP\\jsmith",
+          "ProcessPath": "C:\\Windows\\explorer.exe"
+        },
+        "Dst": {
+          "AssetID": "dst-srv-002",
+          "AssetType": "Server",
+          "Fqdn": "fileserver01.corp.local",
+          "IP": "10.0.2.10",
+          "Port": 445
+        },
+        "baselineContains": false
+      },
+      "expectedAlert": {
+        "shouldFire": true,
+        "alertSeverity": "High",
+        "alertNameContains": "New internal asset pair"
+      }
+    },
+    {
+      "id": "TC-LM-002",
+      "detection": "new_internal_asset_pair",
+      "scenario": "Known asset pair - connection seen in baseline window (suppressed)",
+      "input": {
+        "eventType": "networkactivity",
+        "TrafficType": "Internal",
+        "ConnectionStatus": "established",
+        "Src": {"AssetID": "src-ws-001"},
+        "Dst": {"AssetID": "dst-srv-002", "Port": 445},
+        "baselineContains": true
+      },
+      "expectedAlert": {
+        "shouldFire": false
+      }
+    },
+    {
+      "id": "TC-LM-003",
+      "detection": "new_internal_asset_pair",
+      "scenario": "Lateral movement attempt blocked by ZN policy (new pair)",
+      "input": {
+        "eventType": "networkactivity",
+        "TrafficType": "Internal",
+        "ConnectionStatus": "blocked",
+        "Src": {
+          "AssetID": "src-ws-003",
+          "AssetType": "Workstation",
+          "Fqdn": "ws03.corp.local",
+          "IP": "10.0.1.53"
+        },
+        "Dst": {
+          "AssetID": "dst-srv-010",
+          "AssetType": "Server",
+          "Fqdn": "dc01.corp.local",
+          "IP": "10.0.0.5",
+          "Port": 445
+        },
+        "baselineContains": false
+      },
+      "expectedAlert": {
+        "shouldFire": true,
+        "alertSeverity": "Medium",
+        "alertNameContains": "New internal asset pair"
+      }
+    },
+    {
+      "id": "TC-LM-004",
+      "detection": "internal_port_fanout",
+      "scenario": "Single workstation connects to 25 distinct internal destinations in 10m",
+      "input": {
+        "eventType": "networkactivity",
+        "TrafficType": "Internal",
+        "Src": {
+          "AssetID": "src-ws-004",
+          "AssetType": "Workstation",
+          "Fqdn": "ws04.corp.local",
+          "IP": "10.0.1.54"
+        },
+        "distinctDstCount": 25,
+        "windowMinutes": 10
+      },
+      "expectedAlert": {
+        "shouldFire": true,
+        "alertSeverity": "High",
+        "distinctDstCountMin": 20,
+        "alertNameContains": "Internal fanout"
+      }
+    },
+    {
+      "id": "TC-LM-005",
+      "detection": "internal_port_fanout",
+      "scenario": "Domain controller connects to many destinations (suppressed - DC excluded)",
+      "input": {
+        "eventType": "networkactivity",
+        "TrafficType": "Internal",
+        "Src": {
+          "AssetID": "dc-001",
+          "AssetType": "Domain Controller",
+          "Fqdn": "dc01.corp.local"
+        },
+        "distinctDstCount": 50,
+        "windowMinutes": 10
+      },
+      "expectedAlert": {
+        "shouldFire": false,
+        "reason": "Domain Controller excluded from fanout detection"
+      }
+    },
+    {
+      "id": "TC-LM-006",
+      "detection": "first_smb_rdp_winrm",
+      "scenario": "Workstation uses RDP for the first time to a server",
+      "input": {
+        "eventType": "networkactivity",
+        "TrafficType": "Internal",
+        "ConnectionStatus": "established",
+        "Src": {
+          "AssetID": "src-ws-005",
+          "AssetType": "Workstation",
+          "Fqdn": "ws05.corp.local",
+          "UserName": "CORP\\badactor"
+        },
+        "Dst": {
+          "AssetID": "dst-srv-020",
+          "AssetType": "Server",
+          "Fqdn": "jumpserver.corp.local",
+          "Port": 3389
+        },
+        "baselineContains": false
+      },
+      "expectedAlert": {
+        "shouldFire": true,
+        "alertSeverity": "High",
+        "lateralProtocol": "RDP",
+        "alertNameContains": "First RDP from workstation"
+      }
+    },
+    {
+      "id": "TC-LM-007",
+      "detection": "ot_it_boundary_crossing",
+      "scenario": "OT PLC initiates connection to IT server (OT->IT, established)",
+      "input": {
+        "eventType": "networkactivity",
+        "TrafficType": "Internal",
+        "ConnectionStatus": "established",
+        "Src": {
+          "AssetID": "ot-plc-001",
+          "OTSwitchID": "switch-ot-floor1",
+          "OTSwitchInterfaceName": "GE1/0/1",
+          "IP": "192.168.100.10"
+        },
+        "Dst": {
+          "AssetID": "it-srv-001",
+          "OTSwitchID": "",
+          "IP": "10.0.2.50",
+          "Port": 445
+        }
+      },
+      "expectedAlert": {
+        "shouldFire": true,
+        "alertSeverity": "High",
+        "crossingDirection": "OT->IT",
+        "alertNameContains": "OT/IT boundary crossing"
+      }
+    },
+    {
+      "id": "TC-LM-008",
+      "detection": "ot_it_boundary_crossing",
+      "scenario": "Pure OT-to-OT traffic (suppressed - both sides are OT)",
+      "input": {
+        "eventType": "networkactivity",
+        "TrafficType": "Internal",
+        "ConnectionStatus": "established",
+        "Src": {
+          "AssetID": "ot-plc-001",
+          "OTSwitchID": "switch-ot-floor1"
+        },
+        "Dst": {
+          "AssetID": "ot-plc-002",
+          "OTSwitchID": "switch-ot-floor2"
+        }
+      },
+      "expectedAlert": {
+        "shouldFire": false,
+        "reason": "Both sides are OT assets - intra-OT traffic excluded"
+      }
+    },
+    {
+      "id": "TC-LM-009",
+      "detection": "rpc_new_pair",
+      "scenario": "First-ever drsuapi (DCSync) call from new source to DC",
+      "input": {
+        "eventType": "rpcactivity",
+        "Operation": {"Name": "drsuapi", "Number": 3},
+        "Status": "success",
+        "Src": {
+          "AssetID": "src-srv-099",
+          "AssetType": "Server",
+          "Fqdn": "compromised-srv.corp.local",
+          "IP": "10.0.3.99"
+        },
+        "Dst": {
+          "AssetID": "dc-001",
+          "AssetType": "Domain Controller",
+          "Fqdn": "dc01.corp.local",
+          "IP": "10.0.0.5",
+          "Port": 135
+        },
+        "baselineContains": false
+      },
+      "expectedAlert": {
+        "shouldFire": true,
+        "alertSeverity": "Critical",
+        "mitreTechnique": "T1003.006",
+        "alertNameContains": "New RPC pair (drsuapi)"
+      }
+    },
+    {
+      "id": "TC-LM-010",
+      "detection": "rpc_new_pair",
+      "scenario": "First-ever WMI call (IWbemServices) from workstation to server",
+      "input": {
+        "eventType": "rpcactivity",
+        "Operation": {"Name": "IWbemServices", "Number": 6},
+        "Status": "success",
+        "Src": {
+          "AssetID": "src-ws-007",
+          "AssetType": "Workstation",
+          "Fqdn": "ws07.corp.local"
+        },
+        "Dst": {
+          "AssetID": "dst-srv-030",
+          "AssetType": "Server",
+          "Fqdn": "app01.corp.local"
+        },
+        "baselineContains": false
+      },
+      "expectedAlert": {
+        "shouldFire": true,
+        "alertSeverity": "High",
+        "mitreTechnique": "T1047",
+        "alertNameContains": "New RPC pair (IWbemServices)"
+      }
+    }
+  ]
+}

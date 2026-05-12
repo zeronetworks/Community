@@ -1,0 +1,50 @@
+// -- Title         : ZN - Beaconing Pattern (External)
+// -- Description   : Detects an internal host making established connections to the same
+// --                 external destination in 6+ distinct hourly buckets over 24 hours.
+// -- Version       : 1.0.0
+// -- Last modified : 2026-05-03
+// -- Author        : Zero Networks
+// -- MITRE ATT&CK  : T1071.001 (Web Protocols), T1071.004 (DNS), T1132 (Data Encoding)
+// -- Severity      : Medium
+// -- Index         : logs-zn.network-*
+// --
+// -- DEPLOYMENT: Use the "threshold" rule type with a 24-hour window.
+// --
+// -- threshold rule configuration:
+// --   rule_type        : threshold
+// --   index            : logs-zn.network-*
+// --   interval         : 1h
+// --   from             : now-25h
+// --   threshold.field  : ["Src.AssetID", "Dst.IP"]
+// --   threshold.value  : 1
+// --   threshold.cardinality:
+// --     - field: @timestamp  (use date_histogram bucket field if supported)
+// --       value: 6
+// -- Note: For true hourly-bucket cardinality, deploy a scheduled Transform
+// --       that bins events hourly and counts unique (src, dst) per hour,
+// --       then alert on pairs appearing in 6+ distinct hourly documents.
+// --
+// -- KQL filter:
+//
+//    TrafficType: "External"
+//    AND ConnectionStatus: "established"
+//    AND Src.AssetID: *
+//    AND Dst.IP: *
+//
+// -- ES|QL equivalent:
+
+FROM logs-zn.network-*
+| WHERE TrafficType == "External"
+    AND ConnectionStatus == "established"
+    AND Src.AssetID IS NOT NULL AND Src.AssetID != ""
+    AND Dst.IP IS NOT NULL AND Dst.IP != ""
+    AND @timestamp > NOW() - 24 hours
+| EVAL hour_bucket = DATE_TRUNC(1 hour, @timestamp)
+| STATS distinct_buckets  = COUNT_DISTINCT(hour_bucket),
+         total_connections = COUNT(),
+         first_seen        = MIN(@timestamp),
+         last_seen         = MAX(@timestamp)
+    BY Src.AssetID, Src.Fqdn, Src.IP, Src.AssetType, Src.UserName, Src.ProcessPath,
+       Dst.IP, Dst.Fqdn, Dst.Port, Dst.IsoCode
+| WHERE distinct_buckets >= 6
+| SORT distinct_buckets DESC
