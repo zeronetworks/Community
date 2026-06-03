@@ -1,0 +1,69 @@
+// -- Title         : ZN - Mass Write to Shares (New SMB Source)
+// -- Description   : Fires when an internal source initiates SMB connections for the first
+// --                 time - not seen doing SMB in the 14-day baseline. Unlike
+// --                 first_smb_rdp_winrm, this rule covers ALL asset types (servers, OT assets)
+// --                 and specifically targets SMB share access (ports 445/139).
+// -- Version       : 1.0.0
+// -- Last modified : 2026-05-03
+// -- Author        : Zero Networks
+// -- MITRE ATT&CK  : T1021.002 (SMB/Windows Admin Shares), T1486 (Data Encrypted for Impact)
+// -- Severity      : High (established), Medium (blocked/requested), Low (blocked_at_source)
+// -- Data source   : ZNNetworkActivity_CL
+
+let _lookbackDays       = 14d;
+let _detectionWindowMin = 60;
+
+let _detectionStart = ago(totimespan(strcat(tostring(_detectionWindowMin), "m")));
+let _baselineStart  = ago(_lookbackDays);
+
+// Baseline: sources already known to use SMB
+let KnownSMBSources = materialize(
+    ZNNetworkActivity_CL
+    | where TimeGenerated between (_baselineStart .. _detectionStart)
+    | where TrafficType_s == "Internal"
+    | where Dst_Port_d in (445, 139)
+    | where isnotempty(Src_AssetID_s)
+    | summarize by Src_AssetID_s
+);
+
+// Detection: new SMB sources not in baseline
+ZNNetworkActivity_CL
+| where TimeGenerated >= _detectionStart
+| where TrafficType_s == "Internal"
+| where Dst_Port_d in (445, 139)
+| where isnotempty(Src_AssetID_s) and isnotempty(Dst_AssetID_s)
+| join kind=leftanti KnownSMBSources on Src_AssetID_s
+| summarize
+    DistinctDstCount   = dcount(Dst_AssetID_s),
+    DstFqdns           = make_set(Dst_Fqdn_s, 20),
+    ConnectionStatuses = make_set(ConnectionStatus_s, 5),
+    FirstSeen          = min(TimeGenerated),
+    TopStatus          = any(ConnectionStatus_s)
+    by Src_AssetID_s, Src_Fqdn_s, Src_IP_s, Src_AssetType_s,
+       Src_UserName_s, Src_ProcessPath_s, Src_AssetNetworkSegmentationState_s
+| extend
+    AlertSeverity = case(
+        TopStatus == "established",       "High",
+        TopStatus == "blocked",           "Medium",
+        TopStatus == "requested",         "Medium",
+        TopStatus == "blocked_at_source", "Low",
+        "Medium"),
+    AlertName = strcat(
+        "New SMB source: ",
+        iff(isnotempty(Src_Fqdn_s), Src_Fqdn_s, Src_IP_s),
+        " (", tostring(DistinctDstCount), " shares)")
+| project
+    FirstSeen,
+    AlertName,
+    AlertSeverity,
+    DistinctDstCount,
+    SrcAssetID      = Src_AssetID_s,
+    SrcFqdn         = Src_Fqdn_s,
+    SrcIP           = Src_IP_s,
+    SrcAssetType    = Src_AssetType_s,
+    SrcUserName     = Src_UserName_s,
+    SrcProcessPath  = Src_ProcessPath_s,
+    SrcSegState     = Src_AssetNetworkSegmentationState_s,
+    DstFqdns,
+    ConnectionStatuses
+| sort by DistinctDstCount desc, FirstSeen asc

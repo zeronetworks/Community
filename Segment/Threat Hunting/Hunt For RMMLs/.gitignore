@@ -1,0 +1,28 @@
+# Ignore certain python files/directories
+pyproject.toml
+.venv
+*.pyc
+__pycache__
+
+# Ignore certain file types
+*.log
+*.csv
+*.yaml
+
+# Ignore log directories
+logs
+.vscode
+.cursor
+
+# Ignore RMML repository
+RMML/
+RMMs/
+
+# Ignore in dev version of zn_hunt_ops_v2
+src/zn_hunt_ops_v2.py
+src/zn_hunt_ops_v0.py
+
+# Ignore directories/files outside of Hunt For RMMLs
+# Note: These paths are relative to the repository root (Community/)
+Segment/Asset Management/
+Segment/Segment/Asset Management/

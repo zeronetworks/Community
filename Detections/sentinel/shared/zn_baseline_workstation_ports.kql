@@ -1,0 +1,29 @@
+// -- Title         : ZN - Baseline: Known Workstation Lateral Ports
+// -- Description   : Run this query standalone to populate the ZN_KnownWorkstationPorts Watchlist.
+// --                 Captures all (workstation src, lateral port) tuples seen in the lookback window.
+// --                 Required by: first_smb_rdp_winrm.kql
+// -- Schedule      : Run daily; refresh Watchlist after each run.
+// -- Watchlist     : ZN_KnownWorkstationPorts  (columns: SrcAssetID, DstPort)
+// -- Version       : 1.0.0
+// -- Last modified : 2026-05-03
+// -- Author        : Zero Networks
+
+let _lookbackDays  = 14d;
+let _lateralPorts  = dynamic([22, 135, 139, 389, 445, 636, 3389, 5985, 5986]);
+
+ZNNetworkActivity_CL
+| where TimeGenerated >= ago(_lookbackDays)
+| where TrafficType_s == "Internal"
+| where Src_AssetType_s == "Workstation"
+| where Dst_Port_d in (_lateralPorts)
+| where isnotempty(Src_AssetID_s)
+| summarize
+    LastSeen   = max(TimeGenerated),
+    EventCount = count()
+    by Src_AssetID_s, Dst_Port_d, Src_Fqdn_s
+| project
+    SrcAssetID = Src_AssetID_s,
+    DstPort    = Dst_Port_d,
+    SrcFqdn    = Src_Fqdn_s,
+    LastSeen,
+    EventCount

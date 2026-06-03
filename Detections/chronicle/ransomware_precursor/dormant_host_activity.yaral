@@ -1,0 +1,58 @@
+// Copyright 2026 Zero Networks. All rights reserved.
+//
+// -- Title         : ZN - Dormant Host Reactivation
+// -- Description   : Detects an internal asset resuming network activity after appearing in the
+// --                 zn_dormant_candidates reference list. The reference list must be populated
+// --                 externally (via SIEM scheduled export or API) with asset IDs that were
+// --                 active 30–45 days ago but have been silent for 30 days.
+// -- Version       : 1.0.0
+// -- Last modified : 2026-05-03
+// -- Author        : Zero Networks
+// -- MITRE ATT&CK  : TA0003, T1078 (Valid Accounts), T1021 (Remote Services)
+// -- Severity      : MEDIUM
+// -- Log type      : ZN_NETWORK
+// --
+// -- Prerequisites:
+// --   Reference list 'zn_dormant_candidates' populated by an external process:
+// --     - Query ZN_NETWORK logs for assets active in [now-45d, now-30d]
+// --       but NOT active in [now-30d, now]
+// --     - Write one src_asset_id per line to the reference list
+// --     - Refresh daily
+
+rule zn_dormant_host_activity {
+  meta:
+    author              = "Zero Networks"
+    description         = "Internal asset reactivated after 30+ days of silence."
+    severity            = "MEDIUM"
+    priority            = "MEDIUM"
+    mitre_attack_tactic = "TA0003"
+    mitre_attack_technique = "T1078"
+    version             = "1.0.0"
+    last_modified       = "2026-05-03"
+
+  events:
+    $e.metadata.log_type = "ZN_NETWORK"
+    $e.additional.fields["TrafficType"] = "Internal"
+
+    $src_id = $e.principal.asset.asset_id
+    $src_id != ""
+
+    // Fire only for hosts classified as dormant
+    $src_id in %zn_dormant_candidates
+
+  match:
+    $src_id over 1h
+
+  outcome:
+    $conn_status  = array_first($e.additional.fields["ConnectionStatus"])
+    $src_fqdn     = $e.principal.hostname
+    $src_ip       = $e.principal.ip
+    $src_seg_state = array_first($e.additional.fields["SrcSegState"])
+    $dst_fqdn     = $e.target.hostname
+    $dst_ip       = $e.target.ip
+    $dst_port     = $e.target.port
+    $dst_asset_id = $e.target.asset.asset_id
+
+  condition:
+    $e
+}

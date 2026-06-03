@@ -1,0 +1,47 @@
+`comment("
+Title         : ZN - Off-Hours Domain Controller Access
+Description   : Detects Kerberos or LDAP activity targeting a Domain Controller outside
+                normal business hours (before 07:00 or after 20:00 UTC, or on weekends).
+Version       : 1.0.0
+Last modified : 2026-05-05
+Author        : Zero Networks
+MITRE ATT&CK  : T1558 (Steal or Forge Kerberos Tickets), T1087.002 (Account Discovery - AD)
+Severity      : High (auth failure), Medium (success)
+Data source   : index=zeronetworks sourcetype=zn:identity
+Tuning        : Adjust strftime hour thresholds for your local timezone. Add known
+                scheduled jobs and monitoring accounts to an exclusion list.
+")`
+`comment("Domain Controllers have no dedicated assetType (SERVER=2 includes DCs). Populate zn_domain_controllers.csv with DC asset IDs from ZN inventory. Schedule daily refresh.")`
+index=zeronetworks sourcetype="zn:identity" earliest=-1h@h latest=now
+| spath output=dst_asset_type      path="dst.assetType"
+| spath output=auth_pkg            path="authenticationPackageName"
+| spath output=subject_user_name   path="subjectUser.name"
+| spath output=subject_user_sid    path="subjectUser.sid"
+| spath output=failure_reason      path="failureReason"
+| spath output=dst_asset_id        path="dst.assetId"
+| spath output=dst_fqdn            path="dst.fqdn"
+| spath output=event_type          path="eventType"
+| spath output=logon_type          path="logonType"
+`comment("Pre-filter to servers, then inner-join to DC lookup for exact match")`
+| where dst_asset_type=2
+    AND isnotnull(subject_user_name) AND subject_user_name!=""
+    AND isnotnull(dst_asset_id) AND dst_asset_id!=""
+| lookup zn_domain_controllers.csv asset_id AS dst_asset_id OUTPUT is_dc
+| where is_dc=1
+| eval
+    hour_of_day=tonumber(strftime(_time, "%H")),
+    day_of_week=strftime(_time, "%w")
+| where hour_of_day < 7 OR hour_of_day >= 20 OR day_of_week="0" OR day_of_week="6"
+| eval
+    alert_severity=if(failure_reason!=0, "High", "Medium"),
+    off_hours_reason=case(
+        day_of_week="0" OR day_of_week="6", "Weekend",
+        hour_of_day < 7,  "Before business hours (".hour_of_day.":00 UTC)",
+        "After business hours (".hour_of_day.":00 UTC)"),
+    dst_display=if(isnotnull(dst_fqdn) AND dst_fqdn!="", dst_fqdn, dst_asset_id),
+    alert_name="Off-hours DC access: ".subject_user_name." -> ".dst_display
+        ." [".auth_pkg."] ".off_hours_reason
+| table _time alert_name alert_severity off_hours_reason auth_pkg failure_reason
+    subject_user_name subject_user_sid
+    dst_asset_id dst_fqdn dst_asset_type event_type logon_type
+| sort - _time

@@ -1,0 +1,105 @@
+// Copyright 2026 Zero Networks. All rights reserved.
+//
+// -- Title         : ZN - New Internal Asset Pair
+// -- Description   : Detects the first observed connection between two internal ZN-managed
+// --                 assets. Uses a reference list of known (src:dst) asset ID pairs that
+// --                 must be populated by a scheduled export before enabling this rule.
+// --                 Falls back to an aggregation-window approach if no reference list exists.
+// -- Version       : 1.0.0
+// -- Last modified : 2026-04-22
+// -- Author        : Zero Networks
+// -- MITRE ATT&CK  : TA0008 (Lateral Movement), T1021
+// -- Severity      : HIGH (established), MEDIUM (blocked/requested), LOW (blocked_at_source)
+// -- Log type      : ZN_NETWORK
+// --
+// -- Prerequisites:
+// --   1. ZN_NETWORK logs must be parsed to UDM by the ZN Chronicle parser.
+// --      UDM field mapping assumed:
+// --        Src.IP          -> principal.ip
+// --        Src.AssetID     -> principal.asset.asset_id
+// --        Src.Fqdn        -> principal.hostname
+// --        Src.Port        -> principal.port
+// --        Src.UserName    -> principal.user.userid
+// --        Dst.IP          -> target.ip
+// --        Dst.AssetID     -> target.asset.asset_id
+// --        Dst.Fqdn        -> target.hostname
+// --        Dst.Port        -> target.port
+// --        ConnectionStatus -> additional.fields["ConnectionStatus"]
+// --        TrafficType      -> additional.fields["TrafficType"]
+// --        Src.AssetNetworkSegmentationState -> additional.fields["SrcSegState"]
+// --        Dst.AssetNetworkSegmentationState -> additional.fields["DstSegState"]
+// --   2. Reference list 'zn_known_asset_pairs' must be populated before enabling.
+// --      Format: one "src_asset_id:dst_asset_id" string per line.
+// --      Populate via: scheduled rule or API export from ZN / SIEM baseline query.
+
+rule zn_new_internal_asset_pair {
+  meta:
+    author              = "Zero Networks"
+    description         = "First-ever lateral communication between two internal ZN assets."
+    severity            = "HIGH"
+    priority            = "HIGH"
+    mitre_attack_tactic = "TA0008"
+    mitre_attack_technique = "T1021"
+    version             = "1.0.0"
+    last_modified       = "2026-04-22"
+
+  events:
+    $e.metadata.log_type = "ZN_NETWORK"
+    $e.additional.fields["TrafficType"] = "Internal"
+
+    // Bind src and dst asset IDs for the match block
+    $src_id = $e.principal.asset.asset_id
+    $dst_id = $e.target.asset.asset_id
+    $src_id != ""
+    $dst_id != ""
+
+    // Exclude pairs already recorded as known-good.
+    // The reference list holds "src_asset_id:dst_asset_id" composite strings.
+    // Populate via baseline export; see prerequisites above.
+    not strings.concat($src_id, ":", $dst_id) in %zn_known_asset_pairs
+
+  match:
+    // Aggregate over 1h; a pair firing here was not seen before if reference list is current.
+    $src_id, $dst_id over 1h
+
+  outcome:
+    $conn_status    = array_first($e.additional.fields["ConnectionStatus"])
+    $severity       = if(
+        $conn_status = "established", "HIGH",
+        if($conn_status = "blocked" or $conn_status = "requested", "MEDIUM", "LOW"))
+    $src_fqdn       = $e.principal.hostname
+    $src_ip         = $e.principal.ip
+    $src_user       = $e.principal.user.userid
+    $src_process    = $e.principal.process.file.full_path
+    $dst_fqdn       = $e.target.hostname
+    $dst_ip         = $e.target.ip
+    $dst_port       = $e.target.port
+    $src_seg_state  = array_first($e.additional.fields["SrcSegState"])
+    $dst_seg_state  = array_first($e.additional.fields["DstSegState"])
+
+  condition:
+    $e
+}
+
+// -- Alternative: aggregation-window first-seen (no reference list required)
+// -- Use this variant if you cannot maintain the reference list. It fires when a
+// -- (src, dst) pair appears for the first time in a 14-day rolling window.
+// -- Note: will re-alert after 14 days of inactivity for the same pair.
+//
+// rule zn_new_internal_asset_pair_firstseen {
+//   meta:
+//     author    = "Zero Networks"
+//     severity  = "HIGH"
+//     version   = "1.0.0"
+//   events:
+//     $e.metadata.log_type = "ZN_NETWORK"
+//     $e.additional.fields["TrafficType"] = "Internal"
+//     $src_id = $e.principal.asset.asset_id
+//     $dst_id = $e.target.asset.asset_id
+//     $src_id != ""
+//     $dst_id != ""
+//   match:
+//     $src_id, $dst_id over 14d
+//   condition:
+//     #e = 1
+// }

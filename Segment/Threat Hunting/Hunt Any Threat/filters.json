@@ -1,0 +1,4842 @@
+{
+    "asset": {
+        "id": "asset",
+        "type": 1,
+        "name": "Asset",
+        "placeholder": "E.g. work-pc or work-pc.corp.com",
+        "disableExcludeSupport": false,
+        "enableBulkSelection": true,
+        "isSingleValue": false
+    },
+    "directlyRetrieved": {
+        "id": "directlyRetrieved",
+        "type": 1,
+        "name": "Directly retrieved from asset",
+        "placeholder": "E.g. work-pc or work-pc.corp.com",
+        "disableExcludeSupport": false,
+        "enableBulkSelection": true,
+        "isSingleValue": false
+    },
+    "ipAddress": {
+        "id": "ipAddress",
+        "type": 1,
+        "name": "IP",
+        "placeholder": "E.g. 192.168.1.1 or 10.0.0.0/8",
+        "disableExcludeSupport": false,
+        "aliases": [
+            "address"
+        ],
+        "enableBulkSelection": true,
+        "isSingleValue": false
+    },
+    "protocolType": {
+        "id": "protocolType",
+        "type": 2,
+        "name": "Protocol type",
+        "placeholder": "Choose value(s)",
+        "disableExcludeSupport": false,
+        "isSingleValue": false,
+        "selections": [
+            {
+                "id": "0",
+                "name": "HOPOPT"
+            },
+            {
+                "id": "1",
+                "name": "ICMP"
+            },
+            {
+                "id": "2",
+                "name": "IGMP"
+            },
+            {
+                "id": "3",
+                "name": "GGP"
+            },
+            {
+                "id": "4",
+                "name": "IPv4"
+            },
+            {
+                "id": "5",
+                "name": "ST"
+            },
+            {
+                "id": "6",
+                "name": "TCP"
+            },
+            {
+                "id": "7",
+                "name": "CBT"
+            },
+            {
+                "id": "8",
+                "name": "EGP"
+            },
+            {
+                "id": "9",
+                "name": "IGP"
+            },
+            {
+                "id": "10",
+                "name": "BBN-RCC-MON"
+            },
+            {
+                "id": "11",
+                "name": "NVP-II"
+            },
+            {
+                "id": "12",
+                "name": "PUP"
+            },
+            {
+                "id": "14",
+                "name": "EMCON"
+            },
+            {
+                "id": "15",
+                "name": "XNET"
+            },
+            {
+                "id": "16",
+                "name": "CHAOS"
+            },
+            {
+                "id": "17",
+                "name": "UDP"
+            },
+            {
+                "id": "18",
+                "name": "MUX"
+            },
+            {
+                "id": "19",
+                "name": "DCN-MEAS"
+            },
+            {
+                "id": "20",
+                "name": "HMP"
+            },
+            {
+                "id": "21",
+                "name": "PRM"
+            },
+            {
+                "id": "22",
+                "name": "XNS-IDP"
+            },
+            {
+                "id": "23",
+                "name": "TRUNK-1"
+            },
+            {
+                "id": "24",
+                "name": "TRUNK-2"
+            },
+            {
+                "id": "25",
+                "name": "LEAF-1"
+            },
+            {
+                "id": "26",
+                "name": "LEAF-2"
+            },
+            {
+                "id": "27",
+                "name": "RDP (Reliable Data Protocol)"
+            },
+            {
+                "id": "28",
+                "name": "IRTP"
+            },
+            {
+                "id": "29",
+                "name": "ISO-TP4"
+            },
+            {
+                "id": "30",
+                "name": "NETBLT"
+            },
+            {
+                "id": "31",
+                "name": "MFE-NSP"
+            },
+            {
+                "id": "32",
+                "name": "MERIT-INP"
+            },
+            {
+                "id": "33",
+                "name": "DCCP"
+            },
+            {
+                "id": "34",
+                "name": "3PC"
+            },
+            {
+                "id": "35",
+                "name": "IDPR"
+            },
+            {
+                "id": "36",
+                "name": "XTP"
+            },
+            {
+                "id": "37",
+                "name": "DDP"
+            },
+            {
+                "id": "38",
+                "name": "IDPR-CMTP"
+            },
+            {
+                "id": "39",
+                "name": "TP++"
+            },
+            {
+                "id": "40",
+                "name": "IL"
+            },
+            {
+                "id": "41",
+                "name": "Embedded IPv6"
+            },
+            {
+                "id": "42",
+                "name": "SDRP"
+            },
+            {
+                "id": "43",
+                "name": "IPv6RoutingHeader"
+            },
+            {
+                "id": "44",
+                "name": "IPv6FragmentHeader"
+            },
+            {
+                "id": "45",
+                "name": "IDRP"
+            },
+            {
+                "id": "46",
+                "name": "RSVP"
+            },
+            {
+                "id": "47",
+                "name": "GRE"
+            },
+            {
+                "id": "48",
+                "name": "DSR"
+            },
+            {
+                "id": "49",
+                "name": "BNA"
+            },
+            {
+                "id": "50",
+                "name": "ESP"
+            },
+            {
+                "id": "51",
+                "name": "AH"
+            },
+            {
+                "id": "52",
+                "name": "I-NLSP"
+            },
+            {
+                "id": "54",
+                "name": "NARP"
+            },
+            {
+                "id": "55",
+                "name": "MOBILE"
+            },
+            {
+                "id": "56",
+                "name": "TLSP"
+            },
+            {
+                "id": "57",
+                "name": "SKIP"
+            },
+            {
+                "id": "59",
+                "name": "IPv6NonExtHeader"
+            },
+            {
+                "id": "60",
+                "name": "IPv6DestinationOptions"
+            },
+            {
+                "id": "61",
+                "name": "Host-interanl"
+            },
+            {
+                "id": "62",
+                "name": "CFTP"
+            },
+            {
+                "id": "63",
+                "name": "local-network"
+            },
+            {
+                "id": "64",
+                "name": "SAT-EXPAK"
+            },
+            {
+                "id": "65",
+                "name": "KRYPTOLAN"
+            },
+            {
+                "id": "66",
+                "name": "RVD"
+            },
+            {
+                "id": "67",
+                "name": "IPPC"
+            },
+            {
+                "id": "68",
+                "name": "distributed-file-system"
+            },
+            {
+                "id": "69",
+                "name": "SAT-MON"
+            },
+            {
+                "id": "70",
+                "name": "VISA"
+            },
+            {
+                "id": "71",
+                "name": "IPCU"
+            },
+            {
+                "id": "72",
+                "name": "CPNX"
+            },
+            {
+                "id": "73",
+                "name": "CPHB"
+            },
+            {
+                "id": "74",
+                "name": "WSN"
+            },
+            {
+                "id": "75",
+                "name": "PVP"
+            },
+            {
+                "id": "76",
+                "name": "BR-SAT-MON"
+            },
+            {
+                "id": "77",
+                "name": "ND"
+            },
+            {
+                "id": "78",
+                "name": "WB-MON"
+            },
+            {
+                "id": "79",
+                "name": "WB-EXPAK"
+            },
+            {
+                "id": "80",
+                "name": "ISO-IP"
+            },
+            {
+                "id": "81",
+                "name": "VMTP"
+            },
+            {
+                "id": "82",
+                "name": "SECURE-VMTP"
+            },
+            {
+                "id": "83",
+                "name": "VINES"
+            },
+            {
+                "id": "84",
+                "name": "IPTM"
+            },
+            {
+                "id": "85",
+                "name": "NSFNET-IGP"
+            },
+            {
+                "id": "86",
+                "name": "DGP"
+            },
+            {
+                "id": "87",
+                "name": "TCF"
+            },
+            {
+                "id": "88",
+                "name": "EIGRP"
+            },
+            {
+                "id": "89",
+                "name": "OSPF"
+            },
+            {
+                "id": "90",
+                "name": "Sprite-RPC"
+            },
+            {
+                "id": "91",
+                "name": "LARP"
+            },
+            {
+                "id": "92",
+                "name": "MTP"
+            },
+            {
+                "id": "93",
+                "name": "AX.25"
+            },
+            {
+                "id": "94",
+                "name": "OS"
+            },
+            {
+                "id": "96",
+                "name": "SCC-SP"
+            },
+            {
+                "id": "97",
+                "name": "ETHERIP"
+            },
+            {
+                "id": "98",
+                "name": "ENCAP"
+            },
+            {
+                "id": "99",
+                "name": "private-incription"
+            },
+            {
+                "id": "100",
+                "name": "GMTP"
+            },
+            {
+                "id": "101",
+                "name": "IFMP"
+            },
+            {
+                "id": "102",
+                "name": "PNNI"
+            },
+            {
+                "id": "103",
+                "name": "PIM"
+            },
+            {
+                "id": "104",
+                "name": "ARIS"
+            },
+            {
+                "id": "105",
+                "name": "SCPS"
+            },
+            {
+                "id": "106",
+                "name": "QNX"
+            },
+            {
+                "id": "107",
+                "name": "A/N"
+            },
+            {
+                "id": "108",
+                "name": "IPComp"
+            },
+            {
+                "id": "109",
+                "name": "SNP"
+            },
+            {
+                "id": "110",
+                "name": "Compaq-Peer"
+            },
+            {
+                "id": "111",
+                "name": "IPX-in-IP"
+            },
+            {
+                "id": "112",
+                "name": "VRRP"
+            },
+            {
+                "id": "113",
+                "name": "PGM"
+            },
+            {
+                "id": "114",
+                "name": "0-hop"
+            },
+            {
+                "id": "115",
+                "name": "L2TP"
+            },
+            {
+                "id": "116",
+                "name": "DDX"
+            },
+            {
+                "id": "117",
+                "name": "IATP"
+            },
+            {
+                "id": "118",
+                "name": "STP"
+            },
+            {
+                "id": "119",
+                "name": "SRP"
+            },
+            {
+                "id": "120",
+                "name": "UTI"
+            },
+            {
+                "id": "121",
+                "name": "SMP"
+            },
+            {
+                "id": "123",
+                "name": "PTP"
+            },
+            {
+                "id": "124",
+                "name": "IS-IS-over-IPv4"
+            },
+            {
+                "id": "125",
+                "name": "FIRE"
+            },
+            {
+                "id": "126",
+                "name": "CRTP"
+            },
+            {
+                "id": "127",
+                "name": "CRUDP"
+            },
+            {
+                "id": "128",
+                "name": "SSCOPMCE"
+            },
+            {
+                "id": "129",
+                "name": "IPLT"
+            },
+            {
+                "id": "130",
+                "name": "SPS"
+            },
+            {
+                "id": "131",
+                "name": "PIPE"
+            },
+            {
+                "id": "132",
+                "name": "SCTP"
+            },
+            {
+                "id": "133",
+                "name": "FC"
+            },
+            {
+                "id": "134",
+                "name": "RSVP-E2E-IGNORE"
+            },
+            {
+                "id": "135",
+                "name": "Mobility-Header"
+            },
+            {
+                "id": "136",
+                "name": "UDPLite"
+            },
+            {
+                "id": "137",
+                "name": "MPLS-in-IP"
+            },
+            {
+                "id": "138",
+                "name": "manet"
+            },
+            {
+                "id": "139",
+                "name": "HIP"
+            },
+            {
+                "id": "140",
+                "name": "Shim6"
+            },
+            {
+                "id": "141",
+                "name": "WESP"
+            },
+            {
+                "id": "142",
+                "name": "ROHC"
+            },
+            {
+                "id": "143",
+                "name": "Ethernet"
+            },
+            {
+                "id": "144",
+                "name": "144 (custom)"
+            },
+            {
+                "id": "145",
+                "name": "145 (custom)"
+            },
+            {
+                "id": "146",
+                "name": "146 (custom)"
+            },
+            {
+                "id": "147",
+                "name": "147 (custom)"
+            },
+            {
+                "id": "148",
+                "name": "148 (custom)"
+            },
+            {
+                "id": "149",
+                "name": "149 (custom)"
+            },
+            {
+                "id": "150",
+                "name": "150 (custom)"
+            },
+            {
+                "id": "151",
+                "name": "151 (custom)"
+            },
+            {
+                "id": "152",
+                "name": "152 (custom)"
+            },
+            {
+                "id": "153",
+                "name": "153 (custom)"
+            },
+            {
+                "id": "154",
+                "name": "154 (custom)"
+            },
+            {
+                "id": "155",
+                "name": "155 (custom)"
+            },
+            {
+                "id": "156",
+                "name": "156 (custom)"
+            },
+            {
+                "id": "157",
+                "name": "157 (custom)"
+            },
+            {
+                "id": "158",
+                "name": "158 (custom)"
+            },
+            {
+                "id": "159",
+                "name": "159 (custom)"
+            },
+            {
+                "id": "160",
+                "name": "160 (custom)"
+            },
+            {
+                "id": "161",
+                "name": "161 (custom)"
+            },
+            {
+                "id": "162",
+                "name": "162 (custom)"
+            },
+            {
+                "id": "163",
+                "name": "163 (custom)"
+            },
+            {
+                "id": "164",
+                "name": "164 (custom)"
+            },
+            {
+                "id": "165",
+                "name": "165 (custom)"
+            },
+            {
+                "id": "166",
+                "name": "166 (custom)"
+            },
+            {
+                "id": "167",
+                "name": "167 (custom)"
+            },
+            {
+                "id": "168",
+                "name": "168 (custom)"
+            },
+            {
+                "id": "169",
+                "name": "169 (custom)"
+            },
+            {
+                "id": "170",
+                "name": "170 (custom)"
+            },
+            {
+                "id": "171",
+                "name": "171 (custom)"
+            },
+            {
+                "id": "172",
+                "name": "172 (custom)"
+            },
+            {
+                "id": "173",
+                "name": "173 (custom)"
+            },
+            {
+                "id": "174",
+                "name": "174 (custom)"
+            },
+            {
+                "id": "175",
+                "name": "175 (custom)"
+            },
+            {
+                "id": "176",
+                "name": "176 (custom)"
+            },
+            {
+                "id": "177",
+                "name": "177 (custom)"
+            },
+            {
+                "id": "178",
+                "name": "178 (custom)"
+            },
+            {
+                "id": "179",
+                "name": "179 (custom)"
+            },
+            {
+                "id": "180",
+                "name": "180 (custom)"
+            },
+            {
+                "id": "181",
+                "name": "181 (custom)"
+            },
+            {
+                "id": "182",
+                "name": "182 (custom)"
+            },
+            {
+                "id": "183",
+                "name": "183 (custom)"
+            },
+            {
+                "id": "184",
+                "name": "184 (custom)"
+            },
+            {
+                "id": "185",
+                "name": "185 (custom)"
+            },
+            {
+                "id": "186",
+                "name": "186 (custom)"
+            },
+            {
+                "id": "187",
+                "name": "187 (custom)"
+            },
+            {
+                "id": "188",
+                "name": "188 (custom)"
+            },
+            {
+                "id": "189",
+                "name": "189 (custom)"
+            },
+            {
+                "id": "190",
+                "name": "190 (custom)"
+            },
+            {
+                "id": "191",
+                "name": "191 (custom)"
+            },
+            {
+                "id": "192",
+                "name": "192 (custom)"
+            },
+            {
+                "id": "193",
+                "name": "193 (custom)"
+            },
+            {
+                "id": "194",
+                "name": "194 (custom)"
+            },
+            {
+                "id": "195",
+                "name": "195 (custom)"
+            },
+            {
+                "id": "196",
+                "name": "196 (custom)"
+            },
+            {
+                "id": "197",
+                "name": "197 (custom)"
+            },
+            {
+                "id": "198",
+                "name": "198 (custom)"
+            },
+            {
+                "id": "199",
+                "name": "199 (custom)"
+            },
+            {
+                "id": "200",
+                "name": "200 (custom)"
+            },
+            {
+                "id": "201",
+                "name": "201 (custom)"
+            },
+            {
+                "id": "202",
+                "name": "202 (custom)"
+            },
+            {
+                "id": "203",
+                "name": "203 (custom)"
+            },
+            {
+                "id": "204",
+                "name": "204 (custom)"
+            },
+            {
+                "id": "205",
+                "name": "205 (custom)"
+            },
+            {
+                "id": "206",
+                "name": "206 (custom)"
+            },
+            {
+                "id": "207",
+                "name": "207 (custom)"
+            },
+            {
+                "id": "208",
+                "name": "208 (custom)"
+            },
+            {
+                "id": "209",
+                "name": "209 (custom)"
+            },
+            {
+                "id": "210",
+                "name": "210 (custom)"
+            },
+            {
+                "id": "211",
+                "name": "211 (custom)"
+            },
+            {
+                "id": "212",
+                "name": "212 (custom)"
+            },
+            {
+                "id": "213",
+                "name": "213 (custom)"
+            },
+            {
+                "id": "214",
+                "name": "214 (custom)"
+            },
+            {
+                "id": "215",
+                "name": "215 (custom)"
+            },
+            {
+                "id": "216",
+                "name": "216 (custom)"
+            },
+            {
+                "id": "217",
+                "name": "217 (custom)"
+            },
+            {
+                "id": "218",
+                "name": "218 (custom)"
+            },
+            {
+                "id": "219",
+                "name": "219 (custom)"
+            },
+            {
+                "id": "220",
+                "name": "220 (custom)"
+            },
+            {
+                "id": "221",
+                "name": "221 (custom)"
+            },
+            {
+                "id": "222",
+                "name": "222 (custom)"
+            },
+            {
+                "id": "223",
+                "name": "223 (custom)"
+            },
+            {
+                "id": "224",
+                "name": "224 (custom)"
+            },
+            {
+                "id": "225",
+                "name": "225 (custom)"
+            },
+            {
+                "id": "226",
+                "name": "226 (custom)"
+            },
+            {
+                "id": "227",
+                "name": "227 (custom)"
+            },
+            {
+                "id": "228",
+                "name": "228 (custom)"
+            },
+            {
+                "id": "229",
+                "name": "229 (custom)"
+            },
+            {
+                "id": "230",
+                "name": "230 (custom)"
+            },
+            {
+                "id": "231",
+                "name": "231 (custom)"
+            },
+            {
+                "id": "232",
+                "name": "232 (custom)"
+            },
+            {
+                "id": "233",
+                "name": "233 (custom)"
+            },
+            {
+                "id": "234",
+                "name": "234 (custom)"
+            },
+            {
+                "id": "235",
+                "name": "235 (custom)"
+            },
+            {
+                "id": "236",
+                "name": "236 (custom)"
+            },
+            {
+                "id": "237",
+                "name": "237 (custom)"
+            },
+            {
+                "id": "238",
+                "name": "238 (custom)"
+            },
+            {
+                "id": "239",
+                "name": "239 (custom)"
+            },
+            {
+                "id": "240",
+                "name": "240 (custom)"
+            },
+            {
+                "id": "241",
+                "name": "241 (custom)"
+            },
+            {
+                "id": "242",
+                "name": "242 (custom)"
+            },
+            {
+                "id": "243",
+                "name": "243 (custom)"
+            },
+            {
+                "id": "244",
+                "name": "244 (custom)"
+            },
+            {
+                "id": "245",
+                "name": "245 (custom)"
+            },
+            {
+                "id": "246",
+                "name": "246 (custom)"
+            },
+            {
+                "id": "247",
+                "name": "247 (custom)"
+            },
+            {
+                "id": "248",
+                "name": "248 (custom)"
+            },
+            {
+                "id": "249",
+                "name": "249 (custom)"
+            },
+            {
+                "id": "250",
+                "name": "250 (custom)"
+            },
+            {
+                "id": "251",
+                "name": "251 (custom)"
+            },
+            {
+                "id": "252",
+                "name": "252 (custom)"
+            },
+            {
+                "id": "253",
+                "name": "253 (custom)"
+            },
+            {
+                "id": "254",
+                "name": "254 (custom)"
+            },
+            {
+                "id": "255",
+                "name": "Raw"
+            }
+        ],
+        "selectionsByName": {
+            "HOPOPT": "0",
+            "ICMP": "1",
+            "IGMP": "2",
+            "GGP": "3",
+            "IPv4": "4",
+            "ST": "5",
+            "TCP": "6",
+            "CBT": "7",
+            "EGP": "8",
+            "IGP": "9",
+            "BBN-RCC-MON": "10",
+            "NVP-II": "11",
+            "PUP": "12",
+            "EMCON": "14",
+            "XNET": "15",
+            "CHAOS": "16",
+            "UDP": "17",
+            "MUX": "18",
+            "DCN-MEAS": "19",
+            "HMP": "20",
+            "PRM": "21",
+            "XNS-IDP": "22",
+            "TRUNK-1": "23",
+            "TRUNK-2": "24",
+            "LEAF-1": "25",
+            "LEAF-2": "26",
+            "RDP (Reliable Data Protocol)": "27",
+            "IRTP": "28",
+            "ISO-TP4": "29",
+            "NETBLT": "30",
+            "MFE-NSP": "31",
+            "MERIT-INP": "32",
+            "DCCP": "33",
+            "3PC": "34",
+            "IDPR": "35",
+            "XTP": "36",
+            "DDP": "37",
+            "IDPR-CMTP": "38",
+            "TP++": "39",
+            "IL": "40",
+            "Embedded IPv6": "41",
+            "SDRP": "42",
+            "IPv6RoutingHeader": "43",
+            "IPv6FragmentHeader": "44",
+            "IDRP": "45",
+            "RSVP": "46",
+            "GRE": "47",
+            "DSR": "48",
+            "BNA": "49",
+            "ESP": "50",
+            "AH": "51",
+            "I-NLSP": "52",
+            "NARP": "54",
+            "MOBILE": "55",
+            "TLSP": "56",
+            "SKIP": "57",
+            "IPv6NonExtHeader": "59",
+            "IPv6DestinationOptions": "60",
+            "Host-interanl": "61",
+            "CFTP": "62",
+            "local-network": "63",
+            "SAT-EXPAK": "64",
+            "KRYPTOLAN": "65",
+            "RVD": "66",
+            "IPPC": "67",
+            "distributed-file-system": "68",
+            "SAT-MON": "69",
+            "VISA": "70",
+            "IPCU": "71",
+            "CPNX": "72",
+            "CPHB": "73",
+            "WSN": "74",
+            "PVP": "75",
+            "BR-SAT-MON": "76",
+            "ND": "77",
+            "WB-MON": "78",
+            "WB-EXPAK": "79",
+            "ISO-IP": "80",
+            "VMTP": "81",
+            "SECURE-VMTP": "82",
+            "VINES": "83",
+            "IPTM": "84",
+            "NSFNET-IGP": "85",
+            "DGP": "86",
+            "TCF": "87",
+            "EIGRP": "88",
+            "OSPF": "89",
+            "Sprite-RPC": "90",
+            "LARP": "91",
+            "MTP": "92",
+            "AX.25": "93",
+            "OS": "94",
+            "SCC-SP": "96",
+            "ETHERIP": "97",
+            "ENCAP": "98",
+            "private-incription": "99",
+            "GMTP": "100",
+            "IFMP": "101",
+            "PNNI": "102",
+            "PIM": "103",
+            "ARIS": "104",
+            "SCPS": "105",
+            "QNX": "106",
+            "A/N": "107",
+            "IPComp": "108",
+            "SNP": "109",
+            "Compaq-Peer": "110",
+            "IPX-in-IP": "111",
+            "VRRP": "112",
+            "PGM": "113",
+            "0-hop": "114",
+            "L2TP": "115",
+            "DDX": "116",
+            "IATP": "117",
+            "STP": "118",
+            "SRP": "119",
+            "UTI": "120",
+            "SMP": "121",
+            "PTP": "123",
+            "IS-IS-over-IPv4": "124",
+            "FIRE": "125",
+            "CRTP": "126",
+            "CRUDP": "127",
+            "SSCOPMCE": "128",
+            "IPLT": "129",
+            "SPS": "130",
+            "PIPE": "131",
+            "SCTP": "132",
+            "FC": "133",
+            "RSVP-E2E-IGNORE": "134",
+            "Mobility-Header": "135",
+            "UDPLite": "136",
+            "MPLS-in-IP": "137",
+            "manet": "138",
+            "HIP": "139",
+            "Shim6": "140",
+            "WESP": "141",
+            "ROHC": "142",
+            "Ethernet": "143",
+            "144 (custom)": "144",
+            "145 (custom)": "145",
+            "146 (custom)": "146",
+            "147 (custom)": "147",
+            "148 (custom)": "148",
+            "149 (custom)": "149",
+            "150 (custom)": "150",
+            "151 (custom)": "151",
+            "152 (custom)": "152",
+            "153 (custom)": "153",
+            "154 (custom)": "154",
+            "155 (custom)": "155",
+            "156 (custom)": "156",
+            "157 (custom)": "157",
+            "158 (custom)": "158",
+            "159 (custom)": "159",
+            "160 (custom)": "160",
+            "161 (custom)": "161",
+            "162 (custom)": "162",
+            "163 (custom)": "163",
+            "164 (custom)": "164",
+            "165 (custom)": "165",
+            "166 (custom)": "166",
+            "167 (custom)": "167",
+            "168 (custom)": "168",
+            "169 (custom)": "169",
+            "170 (custom)": "170",
+            "171 (custom)": "171",
+            "172 (custom)": "172",
+            "173 (custom)": "173",
+            "174 (custom)": "174",
+            "175 (custom)": "175",
+            "176 (custom)": "176",
+            "177 (custom)": "177",
+            "178 (custom)": "178",
+            "179 (custom)": "179",
+            "180 (custom)": "180",
+            "181 (custom)": "181",
+            "182 (custom)": "182",
+            "183 (custom)": "183",
+            "184 (custom)": "184",
+            "185 (custom)": "185",
+            "186 (custom)": "186",
+            "187 (custom)": "187",
+            "188 (custom)": "188",
+            "189 (custom)": "189",
+            "190 (custom)": "190",
+            "191 (custom)": "191",
+            "192 (custom)": "192",
+            "193 (custom)": "193",
+            "194 (custom)": "194",
+            "195 (custom)": "195",
+            "196 (custom)": "196",
+            "197 (custom)": "197",
+            "198 (custom)": "198",
+            "199 (custom)": "199",
+            "200 (custom)": "200",
+            "201 (custom)": "201",
+            "202 (custom)": "202",
+            "203 (custom)": "203",
+            "204 (custom)": "204",
+            "205 (custom)": "205",
+            "206 (custom)": "206",
+            "207 (custom)": "207",
+            "208 (custom)": "208",
+            "209 (custom)": "209",
+            "210 (custom)": "210",
+            "211 (custom)": "211",
+            "212 (custom)": "212",
+            "213 (custom)": "213",
+            "214 (custom)": "214",
+            "215 (custom)": "215",
+            "216 (custom)": "216",
+            "217 (custom)": "217",
+            "218 (custom)": "218",
+            "219 (custom)": "219",
+            "220 (custom)": "220",
+            "221 (custom)": "221",
+            "222 (custom)": "222",
+            "223 (custom)": "223",
+            "224 (custom)": "224",
+            "225 (custom)": "225",
+            "226 (custom)": "226",
+            "227 (custom)": "227",
+            "228 (custom)": "228",
+            "229 (custom)": "229",
+            "230 (custom)": "230",
+            "231 (custom)": "231",
+            "232 (custom)": "232",
+            "233 (custom)": "233",
+            "234 (custom)": "234",
+            "235 (custom)": "235",
+            "236 (custom)": "236",
+            "237 (custom)": "237",
+            "238 (custom)": "238",
+            "239 (custom)": "239",
+            "240 (custom)": "240",
+            "241 (custom)": "241",
+            "242 (custom)": "242",
+            "243 (custom)": "243",
+            "244 (custom)": "244",
+            "245 (custom)": "245",
+            "246 (custom)": "246",
+            "247 (custom)": "247",
+            "248 (custom)": "248",
+            "249 (custom)": "249",
+            "250 (custom)": "250",
+            "251 (custom)": "251",
+            "252 (custom)": "252",
+            "253 (custom)": "253",
+            "254 (custom)": "254",
+            "Raw": "255"
+        },
+        "selectionsById": {
+            "0": "HOPOPT",
+            "1": "ICMP",
+            "2": "IGMP",
+            "3": "GGP",
+            "4": "IPv4",
+            "5": "ST",
+            "6": "TCP",
+            "7": "CBT",
+            "8": "EGP",
+            "9": "IGP",
+            "10": "BBN-RCC-MON",
+            "11": "NVP-II",
+            "12": "PUP",
+            "14": "EMCON",
+            "15": "XNET",
+            "16": "CHAOS",
+            "17": "UDP",
+            "18": "MUX",
+            "19": "DCN-MEAS",
+            "20": "HMP",
+            "21": "PRM",
+            "22": "XNS-IDP",
+            "23": "TRUNK-1",
+            "24": "TRUNK-2",
+            "25": "LEAF-1",
+            "26": "LEAF-2",
+            "27": "RDP (Reliable Data Protocol)",
+            "28": "IRTP",
+            "29": "ISO-TP4",
+            "30": "NETBLT",
+            "31": "MFE-NSP",
+            "32": "MERIT-INP",
+            "33": "DCCP",
+            "34": "3PC",
+            "35": "IDPR",
+            "36": "XTP",
+            "37": "DDP",
+            "38": "IDPR-CMTP",
+            "39": "TP++",
+            "40": "IL",
+            "41": "Embedded IPv6",
+            "42": "SDRP",
+            "43": "IPv6RoutingHeader",
+            "44": "IPv6FragmentHeader",
+            "45": "IDRP",
+            "46": "RSVP",
+            "47": "GRE",
+            "48": "DSR",
+            "49": "BNA",
+            "50": "ESP",
+            "51": "AH",
+            "52": "I-NLSP",
+            "54": "NARP",
+            "55": "MOBILE",
+            "56": "TLSP",
+            "57": "SKIP",
+            "59": "IPv6NonExtHeader",
+            "60": "IPv6DestinationOptions",
+            "61": "Host-interanl",
+            "62": "CFTP",
+            "63": "local-network",
+            "64": "SAT-EXPAK",
+            "65": "KRYPTOLAN",
+            "66": "RVD",
+            "67": "IPPC",
+            "68": "distributed-file-system",
+            "69": "SAT-MON",
+            "70": "VISA",
+            "71": "IPCU",
+            "72": "CPNX",
+            "73": "CPHB",
+            "74": "WSN",
+            "75": "PVP",
+            "76": "BR-SAT-MON",
+            "77": "ND",
+            "78": "WB-MON",
+            "79": "WB-EXPAK",
+            "80": "ISO-IP",
+            "81": "VMTP",
+            "82": "SECURE-VMTP",
+            "83": "VINES",
+            "84": "IPTM",
+            "85": "NSFNET-IGP",
+            "86": "DGP",
+            "87": "TCF",
+            "88": "EIGRP",
+            "89": "OSPF",
+            "90": "Sprite-RPC",
+            "91": "LARP",
+            "92": "MTP",
+            "93": "AX.25",
+            "94": "OS",
+            "96": "SCC-SP",
+            "97": "ETHERIP",
+            "98": "ENCAP",
+            "99": "private-incription",
+            "100": "GMTP",
+            "101": "IFMP",
+            "102": "PNNI",
+            "103": "PIM",
+            "104": "ARIS",
+            "105": "SCPS",
+            "106": "QNX",
+            "107": "A/N",
+            "108": "IPComp",
+            "109": "SNP",
+            "110": "Compaq-Peer",
+            "111": "IPX-in-IP",
+            "112": "VRRP",
+            "113": "PGM",
+            "114": "0-hop",
+            "115": "L2TP",
+            "116": "DDX",
+            "117": "IATP",
+            "118": "STP",
+            "119": "SRP",
+            "120": "UTI",
+            "121": "SMP",
+            "123": "PTP",
+            "124": "IS-IS-over-IPv4",
+            "125": "FIRE",
+            "126": "CRTP",
+            "127": "CRUDP",
+            "128": "SSCOPMCE",
+            "129": "IPLT",
+            "130": "SPS",
+            "131": "PIPE",
+            "132": "SCTP",
+            "133": "FC",
+            "134": "RSVP-E2E-IGNORE",
+            "135": "Mobility-Header",
+            "136": "UDPLite",
+            "137": "MPLS-in-IP",
+            "138": "manet",
+            "139": "HIP",
+            "140": "Shim6",
+            "141": "WESP",
+            "142": "ROHC",
+            "143": "Ethernet",
+            "144": "144 (custom)",
+            "145": "145 (custom)",
+            "146": "146 (custom)",
+            "147": "147 (custom)",
+            "148": "148 (custom)",
+            "149": "149 (custom)",
+            "150": "150 (custom)",
+            "151": "151 (custom)",
+            "152": "152 (custom)",
+            "153": "153 (custom)",
+            "154": "154 (custom)",
+            "155": "155 (custom)",
+            "156": "156 (custom)",
+            "157": "157 (custom)",
+            "158": "158 (custom)",
+            "159": "159 (custom)",
+            "160": "160 (custom)",
+            "161": "161 (custom)",
+            "162": "162 (custom)",
+            "163": "163 (custom)",
+            "164": "164 (custom)",
+            "165": "165 (custom)",
+            "166": "166 (custom)",
+            "167": "167 (custom)",
+            "168": "168 (custom)",
+            "169": "169 (custom)",
+            "170": "170 (custom)",
+            "171": "171 (custom)",
+            "172": "172 (custom)",
+            "173": "173 (custom)",
+            "174": "174 (custom)",
+            "175": "175 (custom)",
+            "176": "176 (custom)",
+            "177": "177 (custom)",
+            "178": "178 (custom)",
+            "179": "179 (custom)",
+            "180": "180 (custom)",
+            "181": "181 (custom)",
+            "182": "182 (custom)",
+            "183": "183 (custom)",
+            "184": "184 (custom)",
+            "185": "185 (custom)",
+            "186": "186 (custom)",
+            "187": "187 (custom)",
+            "188": "188 (custom)",
+            "189": "189 (custom)",
+            "190": "190 (custom)",
+            "191": "191 (custom)",
+            "192": "192 (custom)",
+            "193": "193 (custom)",
+            "194": "194 (custom)",
+            "195": "195 (custom)",
+            "196": "196 (custom)",
+            "197": "197 (custom)",
+            "198": "198 (custom)",
+            "199": "199 (custom)",
+            "200": "200 (custom)",
+            "201": "201 (custom)",
+            "202": "202 (custom)",
+            "203": "203 (custom)",
+            "204": "204 (custom)",
+            "205": "205 (custom)",
+            "206": "206 (custom)",
+            "207": "207 (custom)",
+            "208": "208 (custom)",
+            "209": "209 (custom)",
+            "210": "210 (custom)",
+            "211": "211 (custom)",
+            "212": "212 (custom)",
+            "213": "213 (custom)",
+            "214": "214 (custom)",
+            "215": "215 (custom)",
+            "216": "216 (custom)",
+            "217": "217 (custom)",
+            "218": "218 (custom)",
+            "219": "219 (custom)",
+            "220": "220 (custom)",
+            "221": "221 (custom)",
+            "222": "222 (custom)",
+            "223": "223 (custom)",
+            "224": "224 (custom)",
+            "225": "225 (custom)",
+            "226": "226 (custom)",
+            "227": "227 (custom)",
+            "228": "228 (custom)",
+            "229": "229 (custom)",
+            "230": "230 (custom)",
+            "231": "231 (custom)",
+            "232": "232 (custom)",
+            "233": "233 (custom)",
+            "234": "234 (custom)",
+            "235": "235 (custom)",
+            "236": "236 (custom)",
+            "237": "237 (custom)",
+            "238": "238 (custom)",
+            "239": "239 (custom)",
+            "240": "240 (custom)",
+            "241": "241 (custom)",
+            "242": "242 (custom)",
+            "243": "243 (custom)",
+            "244": "244 (custom)",
+            "245": "245 (custom)",
+            "246": "246 (custom)",
+            "247": "247 (custom)",
+            "248": "248 (custom)",
+            "249": "249 (custom)",
+            "250": "250 (custom)",
+            "251": "251 (custom)",
+            "252": "252 (custom)",
+            "253": "253 (custom)",
+            "254": "254 (custom)",
+            "255": "Raw"
+        }
+    },
+    "port": {
+        "id": "port",
+        "type": 5,
+        "name": "Port",
+        "placeholder": "E.g. 3389",
+        "disableExcludeSupport": false,
+        "enableBulkSelection": true,
+        "isSingleValue": false,
+        "allowedCharactersRegex": "^[0-9-,]*$"
+    },
+    "processPath": {
+        "id": "processPath",
+        "type": 1,
+        "name": "Process path",
+        "placeholder": "E.g. process.exe or c:\\process.exe",
+        "disableExcludeSupport": false,
+        "enableBulkSelection": true,
+        "isSingleValue": false
+    },
+    "processId": {
+        "id": "processId",
+        "type": 8,
+        "name": "Process id",
+        "placeholder": "E.g. 12345",
+        "disableExcludeSupport": false,
+        "isSingleValue": false,
+        "allowedCharactersRegex": "^[0-9]+$"
+    },
+    "user": {
+        "id": "user",
+        "type": 1,
+        "name": "Username",
+        "placeholder": "E.g. domain\\username or username",
+        "disableExcludeSupport": false,
+        "enableBulkSelection": true,
+        "isSingleValue": false
+    },
+    "userSid": {
+        "id": "userSid",
+        "type": 1,
+        "name": "User sid",
+        "placeholder": "SID, e.g. S-1-5-32-544",
+        "disableExcludeSupport": false,
+        "aliases": [
+            "user sid"
+        ],
+        "isSingleValue": false
+    },
+    "groupEnv": {
+        "id": "groupEnv",
+        "type": 3,
+        "name": "Assets in the environment",
+        "placeholder": "Select environment group",
+        "disableExcludeSupport": false,
+        "isSingleValue": false,
+        "apiCall": {
+            "apiPath": "/api/v1/groups/environment?_limit=100&_offset=0",
+            "searchParamName": "_search"
+        }
+    },
+    "srcGroupEnv": {
+        "id": "srcGroupEnv",
+        "type": 3,
+        "name": "Source assets in the environment",
+        "placeholder": "Select environment group",
+        "disableExcludeSupport": false,
+        "isSingleValue": false,
+        "apiCall": {
+            "apiPath": "/api/v1/groups/environment?_limit=100&_offset=0",
+            "searchParamName": "_search"
+        }
+    },
+    "dstGroupEnv": {
+        "id": "dstGroupEnv",
+        "type": 3,
+        "name": "Destination assets in the environment",
+        "placeholder": "Select environment group",
+        "disableExcludeSupport": false,
+        "isSingleValue": false,
+        "apiCall": {
+            "apiPath": "/api/v1/groups/environment?_limit=100&_offset=0",
+            "searchParamName": "_search"
+        }
+    },
+    "srcAsset": {
+        "id": "srcAsset",
+        "type": 1,
+        "name": "Source asset",
+        "placeholder": "E.g. work-pc or work-pc.corp.com",
+        "disableExcludeSupport": false,
+        "aliases": [
+            "src asset"
+        ],
+        "enableBulkSelection": true,
+        "isSingleValue": false
+    },
+    "srcIpAddress": {
+        "id": "srcIpAddress",
+        "type": 1,
+        "name": "Source IP",
+        "placeholder": "E.g. 192.168.1.1 or 10.0.0.0/8",
+        "disableExcludeSupport": false,
+        "aliases": [
+            "src IP",
+            "Source address",
+            "src address"
+        ],
+        "enableBulkSelection": true,
+        "isSingleValue": false
+    },
+    "srcPort": {
+        "id": "srcPort",
+        "type": 5,
+        "name": "Source port",
+        "placeholder": "E.g. 3389",
+        "disableExcludeSupport": false,
+        "aliases": [
+            "src port"
+        ],
+        "enableBulkSelection": true,
+        "isSingleValue": false,
+        "allowedCharactersRegex": "^[0-9-,]*$"
+    },
+    "srcProcessPath": {
+        "id": "srcProcessPath",
+        "type": 1,
+        "name": "Source process path",
+        "placeholder": "E.g. process.exe or c:\\process.exe",
+        "disableExcludeSupport": false,
+        "aliases": [
+            "src process path"
+        ],
+        "enableBulkSelection": true,
+        "isSingleValue": false
+    },
+    "srcProcessId": {
+        "id": "srcProcessId",
+        "type": 8,
+        "name": "Source process id",
+        "placeholder": "E.g. 12345",
+        "disableExcludeSupport": false,
+        "aliases": [
+            "src process id"
+        ],
+        "isSingleValue": false,
+        "allowedCharactersRegex": "^[0-9]+$"
+    },
+    "srcUser": {
+        "id": "srcUser",
+        "type": 1,
+        "name": "Source username",
+        "placeholder": "E.g. domain\\username or username",
+        "disableExcludeSupport": false,
+        "aliases": [
+            "src username"
+        ],
+        "isSingleValue": false
+    },
+    "srcUserSid": {
+        "id": "srcUserSid",
+        "type": 1,
+        "name": "Source user sid",
+        "placeholder": "SID, e.g. S-1-5-32-544",
+        "disableExcludeSupport": false,
+        "aliases": [
+            "src user sid"
+        ],
+        "isSingleValue": false
+    },
+    "dstAsset": {
+        "id": "dstAsset",
+        "type": 1,
+        "name": "Destination asset",
+        "placeholder": "E.g. work-pc or work-pc.corp.com",
+        "disableExcludeSupport": false,
+        "aliases": [
+            "dst asset"
+        ],
+        "enableBulkSelection": true,
+        "isSingleValue": false
+    },
+    "dstIpAddress": {
+        "id": "dstIpAddress",
+        "type": 1,
+        "name": "Destination IP",
+        "placeholder": "E.g. 192.168.1.1 or 10.0.0.0/8",
+        "disableExcludeSupport": false,
+        "aliases": [
+            "dst IP",
+            "Destination address",
+            "dst address"
+        ],
+        "enableBulkSelection": true,
+        "isSingleValue": false
+    },
+    "dstPort": {
+        "id": "dstPort",
+        "type": 5,
+        "name": "Destination port",
+        "placeholder": "E.g. 3389",
+        "disableExcludeSupport": false,
+        "aliases": [
+            "dst port"
+        ],
+        "enableBulkSelection": true,
+        "isSingleValue": false,
+        "allowedCharactersRegex": "^[0-9-,]*$"
+    },
+    "dstProcessPath": {
+        "id": "dstProcessPath",
+        "type": 1,
+        "name": "Destination process path",
+        "placeholder": "E.g. process.exe or c:\\process.exe",
+        "disableExcludeSupport": false,
+        "aliases": [
+            "dst process path"
+        ],
+        "enableBulkSelection": true,
+        "isSingleValue": false
+    },
+    "dstProcessId": {
+        "id": "dstProcessId",
+        "type": 8,
+        "name": "Destination process id",
+        "placeholder": "E.g. 12345",
+        "disableExcludeSupport": false,
+        "aliases": [
+            "dst process id"
+        ],
+        "isSingleValue": false,
+        "allowedCharactersRegex": "^[0-9]+$"
+    },
+    "dstUser": {
+        "id": "dstUser",
+        "type": 1,
+        "name": "Destination username",
+        "placeholder": "E.g. domain\\username or username",
+        "disableExcludeSupport": false,
+        "aliases": [
+            "dst username"
+        ],
+        "isSingleValue": false
+    },
+    "dstUserSid": {
+        "id": "dstUserSid",
+        "type": 1,
+        "name": "Destination user sid",
+        "placeholder": "SID, e.g. S-1-5-32-544",
+        "disableExcludeSupport": false,
+        "aliases": [
+            "dst user sid"
+        ],
+        "isSingleValue": false
+    },
+    "state": {
+        "id": "state",
+        "type": 2,
+        "name": "Connection status",
+        "placeholder": "Choose value(s)",
+        "disableExcludeSupport": false,
+        "isSingleValue": false,
+        "selections": [
+            {
+                "id": "1",
+                "name": "Blocked"
+            },
+            {
+                "id": "2",
+                "name": "Requested"
+            },
+            {
+                "id": "3",
+                "name": "Established"
+            },
+            {
+                "id": "4",
+                "name": "Blocked at source"
+            }
+        ],
+        "selectionsByName": {
+            "Blocked": "1",
+            "Requested": "2",
+            "Established": "3",
+            "Blocked at source": "4"
+        },
+        "selectionsById": {
+            "1": "Blocked",
+            "2": "Requested",
+            "3": "Established",
+            "4": "Blocked at source"
+        }
+    },
+    "affectedByThirdParty": {
+        "id": "affectedByThirdParty",
+        "type": 2,
+        "name": "Affected by third party",
+        "placeholder": "Choose value(s)",
+        "disableExcludeSupport": false,
+        "isSingleValue": false,
+        "selections": [
+            {
+                "id": "None",
+                "name": "None"
+            },
+            {
+                "id": "Src",
+                "name": "Source"
+            },
+            {
+                "id": "Dst",
+                "name": "Destination"
+            },
+            {
+                "id": "Any",
+                "name": "Any"
+            }
+        ],
+        "selectionsByName": {
+            "None": "None",
+            "Source": "Src",
+            "Destination": "Dst",
+            "Any": "Any"
+        },
+        "selectionsById": {
+            "None": "None",
+            "Src": "Source",
+            "Dst": "Destination",
+            "Any": "Any"
+        }
+    },
+    "mfaTriggeringBlockDirection": {
+        "id": "mfaTriggeringBlockDirection",
+        "type": 2,
+        "name": "MFA triggering block direction",
+        "placeholder": "Choose value(s)",
+        "disableExcludeSupport": false,
+        "isSingleValue": false,
+        "selections": [
+            {
+                "id": "None",
+                "name": "None"
+            },
+            {
+                "id": "Src",
+                "name": "Source"
+            },
+            {
+                "id": "Dst",
+                "name": "Destination"
+            },
+            {
+                "id": "Any",
+                "name": "Any"
+            }
+        ],
+        "selectionsByName": {
+            "None": "None",
+            "Source": "Src",
+            "Destination": "Dst",
+            "Any": "Any"
+        },
+        "selectionsById": {
+            "None": "None",
+            "Src": "Source",
+            "Dst": "Destination",
+            "Any": "Any"
+        }
+    },
+    "mfaTriggeringBlockType": {
+        "id": "mfaTriggeringBlockType",
+        "type": 2,
+        "name": "MFA triggering block type",
+        "placeholder": "Choose value(s)",
+        "disableExcludeSupport": false,
+        "isSingleValue": false,
+        "selections": [
+            {
+                "id": "InteractiveMfa",
+                "name": "Interactive MFA"
+            },
+            {
+                "id": "MonitoredNoMfa",
+                "name": "Monitored - no MFA"
+            },
+            {
+                "id": "UnmonitoredNoMfa",
+                "name": "Unmonitored - no MFA"
+            }
+        ],
+        "selectionsByName": {
+            "Interactive MFA": "InteractiveMfa",
+            "Monitored - no MFA": "MonitoredNoMfa",
+            "Unmonitored - no MFA": "UnmonitoredNoMfa"
+        },
+        "selectionsById": {
+            "InteractiveMfa": "Interactive MFA",
+            "MonitoredNoMfa": "Monitored - no MFA",
+            "UnmonitoredNoMfa": "Unmonitored - no MFA"
+        }
+    },
+    "trafficType": {
+        "id": "trafficType",
+        "type": 4,
+        "name": "Traffic type",
+        "placeholder": "Choose internal or external",
+        "disableExcludeSupport": true,
+        "isSingleValue": true,
+        "selections": [
+            {
+                "id": "1",
+                "name": "Internal"
+            },
+            {
+                "id": "2",
+                "name": "External"
+            },
+            {
+                "id": "3",
+                "name": "Both"
+            }
+        ],
+        "selectionsByName": {
+            "Internal": "1",
+            "External": "2",
+            "Both": "3"
+        },
+        "selectionsById": {
+            "1": "Internal",
+            "2": "External",
+            "3": "Both"
+        }
+    },
+    "srcAssetType": {
+        "id": "srcAssetType",
+        "type": 2,
+        "name": "Source asset type",
+        "placeholder": "Choose value(s)",
+        "disableExcludeSupport": false,
+        "aliases": [
+            "src asset type"
+        ],
+        "isSingleValue": false,
+        "selections": [
+            {
+                "id": "0",
+                "name": "Undetermined"
+            },
+            {
+                "id": "1",
+                "name": "Client"
+            },
+            {
+                "id": "2",
+                "name": "Server"
+            },
+            {
+                "id": "3",
+                "name": "Virtual cluster"
+            },
+            {
+                "id": "4",
+                "name": "IP camera"
+            },
+            {
+                "id": "5",
+                "name": "Smart TV"
+            },
+            {
+                "id": "6",
+                "name": "Factory controller"
+            },
+            {
+                "id": "7",
+                "name": "Medical device"
+            },
+            {
+                "id": "8",
+                "name": "Printer"
+            },
+            {
+                "id": "9",
+                "name": "Scanner"
+            },
+            {
+                "id": "10",
+                "name": "Smart card reader"
+            },
+            {
+                "id": "11",
+                "name": "Router"
+            },
+            {
+                "id": "12",
+                "name": "Hypervisor"
+            },
+            {
+                "id": "13",
+                "name": "PLC"
+            },
+            {
+                "id": "14",
+                "name": "HMI"
+            },
+            {
+                "id": "15",
+                "name": "Switch"
+            },
+            {
+                "id": "16",
+                "name": "Terminal station"
+            },
+            {
+                "id": "17",
+                "name": "RTU"
+            },
+            {
+                "id": "18",
+                "name": "Wireless access point"
+            },
+            {
+                "id": "19",
+                "name": "Historian"
+            },
+            {
+                "id": "20",
+                "name": "Game console"
+            },
+            {
+                "id": "21",
+                "name": "Fire alarm"
+            },
+            {
+                "id": "22",
+                "name": "UPS"
+            },
+            {
+                "id": "23",
+                "name": "Storage appliance"
+            },
+            {
+                "id": "24",
+                "name": "Virtualization appliance"
+            },
+            {
+                "id": "25",
+                "name": "Firewall appliance"
+            },
+            {
+                "id": "26",
+                "name": "Security scanner"
+            },
+            {
+                "id": "27",
+                "name": "Security controller"
+            },
+            {
+                "id": "28",
+                "name": "Door lock"
+            },
+            {
+                "id": "29",
+                "name": "Biometric scanner"
+            },
+            {
+                "id": "30",
+                "name": "HVAC"
+            },
+            {
+                "id": "31",
+                "name": "Room scheduler"
+            },
+            {
+                "id": "32",
+                "name": "Load Balancer Appliance"
+            },
+            {
+                "id": "33",
+                "name": "WAN Concentrator"
+            },
+            {
+                "id": "34",
+                "name": "IPAM Appliance"
+            },
+            {
+                "id": "35",
+                "name": "Temperature sensor gateways"
+            },
+            {
+                "id": "36",
+                "name": "Power meters"
+            },
+            {
+                "id": "37",
+                "name": "Conveyor systems"
+            },
+            {
+                "id": "38",
+                "name": "Building automation devices"
+            },
+            {
+                "id": "39",
+                "name": "Vision controllers"
+            },
+            {
+                "id": "40",
+                "name": "Manufacturing execution systems"
+            },
+            {
+                "id": "41",
+                "name": "BACnet broadcast management devices (BBMD)"
+            },
+            {
+                "id": "42",
+                "name": "BACnet routers & BBMD"
+            },
+            {
+                "id": "43",
+                "name": "Clocks"
+            },
+            {
+                "id": "44",
+                "name": "RFID"
+            },
+            {
+                "id": "45",
+                "name": "Scales"
+            },
+            {
+                "id": "46",
+                "name": "Mobile printers"
+            },
+            {
+                "id": "47",
+                "name": "IED"
+            },
+            {
+                "id": "48",
+                "name": "CNC mills"
+            },
+            {
+                "id": "49",
+                "name": "Room monitors"
+            },
+            {
+                "id": "50",
+                "name": "Smart speakers"
+            },
+            {
+                "id": "51",
+                "name": "Vending machines"
+            },
+            {
+                "id": "52",
+                "name": "Autonomous vehicles"
+            },
+            {
+                "id": "53",
+                "name": "Fleet management systems"
+            },
+            {
+                "id": "54",
+                "name": "BACnet routers"
+            },
+            {
+                "id": "55",
+                "name": "Motor controllers"
+            },
+            {
+                "id": "56",
+                "name": "OT gateways"
+            },
+            {
+                "id": "57",
+                "name": "Controllers"
+            },
+            {
+                "id": "58",
+                "name": "Building management systems"
+            },
+            {
+                "id": "59",
+                "name": "VoIP phones"
+            },
+            {
+                "id": "60",
+                "name": "Vision sensors"
+            },
+            {
+                "id": "61",
+                "name": "Remote I/O"
+            },
+            {
+                "id": "62",
+                "name": "VoIP servers"
+            },
+            {
+                "id": "63",
+                "name": "Flow meters"
+            },
+            {
+                "id": "64",
+                "name": "Building automation controllers"
+            },
+            {
+                "id": "65",
+                "name": "Security cameras"
+            },
+            {
+                "id": "66",
+                "name": "Digital signs"
+            },
+            {
+                "id": "67",
+                "name": "Remote access gateways"
+            },
+            {
+                "id": "68",
+                "name": "Temperature sensors"
+            },
+            {
+                "id": "69",
+                "name": "RTLS devices"
+            },
+            {
+                "id": "70",
+                "name": "Serial-to-Ethernet devices"
+            },
+            {
+                "id": "71",
+                "name": "Intercoms"
+            },
+            {
+                "id": "72",
+                "name": "Engineering stations"
+            },
+            {
+                "id": "73",
+                "name": "Data logger gateways"
+            },
+            {
+                "id": "74",
+                "name": "Robots"
+            },
+            {
+                "id": "75",
+                "name": "Tablets"
+            },
+            {
+                "id": "76",
+                "name": "SCADA servers"
+            },
+            {
+                "id": "77",
+                "name": "Industrial printers"
+            },
+            {
+                "id": "78",
+                "name": "Vision cameras"
+            },
+            {
+                "id": "79",
+                "name": "Time clocks"
+            },
+            {
+                "id": "80",
+                "name": "Video conference systems"
+            },
+            {
+                "id": "81",
+                "name": "Electrical drives"
+            },
+            {
+                "id": "82",
+                "name": "Access control devices"
+            },
+            {
+                "id": "83",
+                "name": "3D Printer"
+            },
+            {
+                "id": "84",
+                "name": "Access Control Gateway"
+            },
+            {
+                "id": "85",
+                "name": "ATM"
+            },
+            {
+                "id": "86",
+                "name": "Audio Decoder"
+            },
+            {
+                "id": "87",
+                "name": "AV System"
+            },
+            {
+                "id": "88",
+                "name": "BACnet Router & BBMD"
+            },
+            {
+                "id": "89",
+                "name": "Badge Reader"
+            },
+            {
+                "id": "90",
+                "name": "Barcode Scanner"
+            },
+            {
+                "id": "91",
+                "name": "Building Automation Controller Gateway"
+            },
+            {
+                "id": "92",
+                "name": "Building Management Sensor"
+            },
+            {
+                "id": "93",
+                "name": "Building Management Sensor Gateway"
+            },
+            {
+                "id": "94",
+                "name": "Building Management System Gateway"
+            },
+            {
+                "id": "95",
+                "name": "Car"
+            },
+            {
+                "id": "96",
+                "name": "Circuit Monitor"
+            },
+            {
+                "id": "97",
+                "name": "Clinical Mobile Device"
+            },
+            {
+                "id": "98",
+                "name": "Clinical Mobile Device Gateway"
+            },
+            {
+                "id": "99",
+                "name": "Clock Gateway"
+            },
+            {
+                "id": "100",
+                "name": "CNC System"
+            },
+            {
+                "id": "101",
+                "name": "Conference Room"
+            },
+            {
+                "id": "102",
+                "name": "Data Logger"
+            },
+            {
+                "id": "103",
+                "name": "Digital Sign Workstation"
+            },
+            {
+                "id": "104",
+                "name": "Disk Publisher"
+            },
+            {
+                "id": "105",
+                "name": "Dispatcher"
+            },
+            {
+                "id": "106",
+                "name": "Embedded PC"
+            },
+            {
+                "id": "107",
+                "name": "Encoder"
+            },
+            {
+                "id": "108",
+                "name": "EV Charging"
+            },
+            {
+                "id": "109",
+                "name": "Fitness Device"
+            },
+            {
+                "id": "110",
+                "name": "Generic Mobile Device"
+            },
+            {
+                "id": "111",
+                "name": "GPS Navigator"
+            },
+            {
+                "id": "112",
+                "name": "Industrial Barcode Scanner"
+            },
+            {
+                "id": "113",
+                "name": "Industrial Metal Detector"
+            },
+            {
+                "id": "114",
+                "name": "Industrial Network Equipment"
+            },
+            {
+                "id": "115",
+                "name": "Industrial Thin Client"
+            },
+            {
+                "id": "116",
+                "name": "Industrial Thin Client Gateway"
+            },
+            {
+                "id": "117",
+                "name": "Industrial Wireless"
+            },
+            {
+                "id": "118",
+                "name": "Industrial Workstation"
+            },
+            {
+                "id": "119",
+                "name": "Inspection System"
+            },
+            {
+                "id": "120",
+                "name": "Interactive Voice Response"
+            },
+            {
+                "id": "121",
+                "name": "Intercom Gateway"
+            },
+            {
+                "id": "122",
+                "name": "IoT Controller"
+            },
+            {
+                "id": "123",
+                "name": "Lock Box"
+            },
+            {
+                "id": "124",
+                "name": "Machinery Health Analyzer"
+            },
+            {
+                "id": "125",
+                "name": "Mailing System"
+            },
+            {
+                "id": "126",
+                "name": "Media Gateway"
+            },
+            {
+                "id": "127",
+                "name": "Media Player"
+            },
+            {
+                "id": "128",
+                "name": "Media Streamer"
+            },
+            {
+                "id": "129",
+                "name": "Microscope"
+            },
+            {
+                "id": "130",
+                "name": "Mobile Computer"
+            },
+            {
+                "id": "131",
+                "name": "Motor Starter"
+            },
+            {
+                "id": "132",
+                "name": "Musical Instrument"
+            },
+            {
+                "id": "133",
+                "name": "OPC Server"
+            },
+            {
+                "id": "134",
+                "name": "Order Fulfillment System"
+            },
+            {
+                "id": "135",
+                "name": "OT Device"
+            },
+            {
+                "id": "136",
+                "name": "OT Server"
+            },
+            {
+                "id": "137",
+                "name": "PA System"
+            },
+            {
+                "id": "138",
+                "name": "Payment Kiosk"
+            },
+            {
+                "id": "139",
+                "name": "Physical Security Platform"
+            },
+            {
+                "id": "140",
+                "name": "Point-of-Sale"
+            },
+            {
+                "id": "141",
+                "name": "Point-of-Sale Gateway"
+            },
+            {
+                "id": "142",
+                "name": "Power Distribution Unit"
+            },
+            {
+                "id": "143",
+                "name": "Power Distribution Unit Gateway"
+            },
+            {
+                "id": "144",
+                "name": "Power Supply"
+            },
+            {
+                "id": "145",
+                "name": "Print Server"
+            },
+            {
+                "id": "146",
+                "name": "Projector"
+            },
+            {
+                "id": "147",
+                "name": "Radio"
+            },
+            {
+                "id": "148",
+                "name": "Radio Repeater"
+            },
+            {
+                "id": "149",
+                "name": "Recording Server"
+            },
+            {
+                "id": "150",
+                "name": "Reporting Server"
+            },
+            {
+                "id": "151",
+                "name": "Room Automation Station"
+            },
+            {
+                "id": "152",
+                "name": "Room Display"
+            },
+            {
+                "id": "153",
+                "name": "RTLS Gateway"
+            },
+            {
+                "id": "154",
+                "name": "Safety System"
+            },
+            {
+                "id": "155",
+                "name": "SCADA Client"
+            },
+            {
+                "id": "156",
+                "name": "Screen Share"
+            },
+            {
+                "id": "157",
+                "name": "Security X-Ray Scanner"
+            },
+            {
+                "id": "158",
+                "name": "Sensor"
+            },
+            {
+                "id": "159",
+                "name": "Serial-to-Ethernet Gateway"
+            },
+            {
+                "id": "160",
+                "name": "Service Trolley"
+            },
+            {
+                "id": "161",
+                "name": "Smart Board"
+            },
+            {
+                "id": "162",
+                "name": "Smart Home"
+            },
+            {
+                "id": "163",
+                "name": "Smart Light"
+            },
+            {
+                "id": "164",
+                "name": "Smart Light Gateway"
+            },
+            {
+                "id": "165",
+                "name": "Smart Lock Controller"
+            },
+            {
+                "id": "166",
+                "name": "Smartphone"
+            },
+            {
+                "id": "167",
+                "name": "Smartwatch"
+            },
+            {
+                "id": "168",
+                "name": "Solar Energy"
+            },
+            {
+                "id": "169",
+                "name": "Time Clock Gateway"
+            },
+            {
+                "id": "170",
+                "name": "Video Conference Gateway"
+            },
+            {
+                "id": "171",
+                "name": "Video Decoder"
+            },
+            {
+                "id": "172",
+                "name": "Video Encoder"
+            },
+            {
+                "id": "173",
+                "name": "Video Surveillance Device"
+            },
+            {
+                "id": "174",
+                "name": "VoIP Adapter"
+            },
+            {
+                "id": "175",
+                "name": "VoIP Phone Gateway"
+            },
+            {
+                "id": "176",
+                "name": "Water System"
+            },
+            {
+                "id": "177",
+                "name": "Wireless Phone"
+            },
+            {
+                "id": "178",
+                "name": "Wireless Phone Gateway"
+            }
+        ],
+        "selectionsByName": {
+            "Undetermined": "0",
+            "Client": "1",
+            "Server": "2",
+            "Virtual cluster": "3",
+            "IP camera": "4",
+            "Smart TV": "5",
+            "Factory controller": "6",
+            "Medical device": "7",
+            "Printer": "8",
+            "Scanner": "9",
+            "Smart card reader": "10",
+            "Router": "11",
+            "Hypervisor": "12",
+            "PLC": "13",
+            "HMI": "14",
+            "Switch": "15",
+            "Terminal station": "16",
+            "RTU": "17",
+            "Wireless access point": "18",
+            "Historian": "19",
+            "Game console": "20",
+            "Fire alarm": "21",
+            "UPS": "22",
+            "Storage appliance": "23",
+            "Virtualization appliance": "24",
+            "Firewall appliance": "25",
+            "Security scanner": "26",
+            "Security controller": "27",
+            "Door lock": "28",
+            "Biometric scanner": "29",
+            "HVAC": "30",
+            "Room scheduler": "31",
+            "Load Balancer Appliance": "32",
+            "WAN Concentrator": "33",
+            "IPAM Appliance": "34",
+            "Temperature sensor gateways": "35",
+            "Power meters": "36",
+            "Conveyor systems": "37",
+            "Building automation devices": "38",
+            "Vision controllers": "39",
+            "Manufacturing execution systems": "40",
+            "BACnet broadcast management devices (BBMD)": "41",
+            "BACnet routers & BBMD": "42",
+            "Clocks": "43",
+            "RFID": "44",
+            "Scales": "45",
+            "Mobile printers": "46",
+            "IED": "47",
+            "CNC mills": "48",
+            "Room monitors": "49",
+            "Smart speakers": "50",
+            "Vending machines": "51",
+            "Autonomous vehicles": "52",
+            "Fleet management systems": "53",
+            "BACnet routers": "54",
+            "Motor controllers": "55",
+            "OT gateways": "56",
+            "Controllers": "57",
+            "Building management systems": "58",
+            "VoIP phones": "59",
+            "Vision sensors": "60",
+            "Remote I/O": "61",
+            "VoIP servers": "62",
+            "Flow meters": "63",
+            "Building automation controllers": "64",
+            "Security cameras": "65",
+            "Digital signs": "66",
+            "Remote access gateways": "67",
+            "Temperature sensors": "68",
+            "RTLS devices": "69",
+            "Serial-to-Ethernet devices": "70",
+            "Intercoms": "71",
+            "Engineering stations": "72",
+            "Data logger gateways": "73",
+            "Robots": "74",
+            "Tablets": "75",
+            "SCADA servers": "76",
+            "Industrial printers": "77",
+            "Vision cameras": "78",
+            "Time clocks": "79",
+            "Video conference systems": "80",
+            "Electrical drives": "81",
+            "Access control devices": "82",
+            "3D Printer": "83",
+            "Access Control Gateway": "84",
+            "ATM": "85",
+            "Audio Decoder": "86",
+            "AV System": "87",
+            "BACnet Router & BBMD": "88",
+            "Badge Reader": "89",
+            "Barcode Scanner": "90",
+            "Building Automation Controller Gateway": "91",
+            "Building Management Sensor": "92",
+            "Building Management Sensor Gateway": "93",
+            "Building Management System Gateway": "94",
+            "Car": "95",
+            "Circuit Monitor": "96",
+            "Clinical Mobile Device": "97",
+            "Clinical Mobile Device Gateway": "98",
+            "Clock Gateway": "99",
+            "CNC System": "100",
+            "Conference Room": "101",
+            "Data Logger": "102",
+            "Digital Sign Workstation": "103",
+            "Disk Publisher": "104",
+            "Dispatcher": "105",
+            "Embedded PC": "106",
+            "Encoder": "107",
+            "EV Charging": "108",
+            "Fitness Device": "109",
+            "Generic Mobile Device": "110",
+            "GPS Navigator": "111",
+            "Industrial Barcode Scanner": "112",
+            "Industrial Metal Detector": "113",
+            "Industrial Network Equipment": "114",
+            "Industrial Thin Client": "115",
+            "Industrial Thin Client Gateway": "116",
+            "Industrial Wireless": "117",
+            "Industrial Workstation": "118",
+            "Inspection System": "119",
+            "Interactive Voice Response": "120",
+            "Intercom Gateway": "121",
+            "IoT Controller": "122",
+            "Lock Box": "123",
+            "Machinery Health Analyzer": "124",
+            "Mailing System": "125",
+            "Media Gateway": "126",
+            "Media Player": "127",
+            "Media Streamer": "128",
+            "Microscope": "129",
+            "Mobile Computer": "130",
+            "Motor Starter": "131",
+            "Musical Instrument": "132",
+            "OPC Server": "133",
+            "Order Fulfillment System": "134",
+            "OT Device": "135",
+            "OT Server": "136",
+            "PA System": "137",
+            "Payment Kiosk": "138",
+            "Physical Security Platform": "139",
+            "Point-of-Sale": "140",
+            "Point-of-Sale Gateway": "141",
+            "Power Distribution Unit": "142",
+            "Power Distribution Unit Gateway": "143",
+            "Power Supply": "144",
+            "Print Server": "145",
+            "Projector": "146",
+            "Radio": "147",
+            "Radio Repeater": "148",
+            "Recording Server": "149",
+            "Reporting Server": "150",
+            "Room Automation Station": "151",
+            "Room Display": "152",
+            "RTLS Gateway": "153",
+            "Safety System": "154",
+            "SCADA Client": "155",
+            "Screen Share": "156",
+            "Security X-Ray Scanner": "157",
+            "Sensor": "158",
+            "Serial-to-Ethernet Gateway": "159",
+            "Service Trolley": "160",
+            "Smart Board": "161",
+            "Smart Home": "162",
+            "Smart Light": "163",
+            "Smart Light Gateway": "164",
+            "Smart Lock Controller": "165",
+            "Smartphone": "166",
+            "Smartwatch": "167",
+            "Solar Energy": "168",
+            "Time Clock Gateway": "169",
+            "Video Conference Gateway": "170",
+            "Video Decoder": "171",
+            "Video Encoder": "172",
+            "Video Surveillance Device": "173",
+            "VoIP Adapter": "174",
+            "VoIP Phone Gateway": "175",
+            "Water System": "176",
+            "Wireless Phone": "177",
+            "Wireless Phone Gateway": "178"
+        },
+        "selectionsById": {
+            "0": "Undetermined",
+            "1": "Client",
+            "2": "Server",
+            "3": "Virtual cluster",
+            "4": "IP camera",
+            "5": "Smart TV",
+            "6": "Factory controller",
+            "7": "Medical device",
+            "8": "Printer",
+            "9": "Scanner",
+            "10": "Smart card reader",
+            "11": "Router",
+            "12": "Hypervisor",
+            "13": "PLC",
+            "14": "HMI",
+            "15": "Switch",
+            "16": "Terminal station",
+            "17": "RTU",
+            "18": "Wireless access point",
+            "19": "Historian",
+            "20": "Game console",
+            "21": "Fire alarm",
+            "22": "UPS",
+            "23": "Storage appliance",
+            "24": "Virtualization appliance",
+            "25": "Firewall appliance",
+            "26": "Security scanner",
+            "27": "Security controller",
+            "28": "Door lock",
+            "29": "Biometric scanner",
+            "30": "HVAC",
+            "31": "Room scheduler",
+            "32": "Load Balancer Appliance",
+            "33": "WAN Concentrator",
+            "34": "IPAM Appliance",
+            "35": "Temperature sensor gateways",
+            "36": "Power meters",
+            "37": "Conveyor systems",
+            "38": "Building automation devices",
+            "39": "Vision controllers",
+            "40": "Manufacturing execution systems",
+            "41": "BACnet broadcast management devices (BBMD)",
+            "42": "BACnet routers & BBMD",
+            "43": "Clocks",
+            "44": "RFID",
+            "45": "Scales",
+            "46": "Mobile printers",
+            "47": "IED",
+            "48": "CNC mills",
+            "49": "Room monitors",
+            "50": "Smart speakers",
+            "51": "Vending machines",
+            "52": "Autonomous vehicles",
+            "53": "Fleet management systems",
+            "54": "BACnet routers",
+            "55": "Motor controllers",
+            "56": "OT gateways",
+            "57": "Controllers",
+            "58": "Building management systems",
+            "59": "VoIP phones",
+            "60": "Vision sensors",
+            "61": "Remote I/O",
+            "62": "VoIP servers",
+            "63": "Flow meters",
+            "64": "Building automation controllers",
+            "65": "Security cameras",
+            "66": "Digital signs",
+            "67": "Remote access gateways",
+            "68": "Temperature sensors",
+            "69": "RTLS devices",
+            "70": "Serial-to-Ethernet devices",
+            "71": "Intercoms",
+            "72": "Engineering stations",
+            "73": "Data logger gateways",
+            "74": "Robots",
+            "75": "Tablets",
+            "76": "SCADA servers",
+            "77": "Industrial printers",
+            "78": "Vision cameras",
+            "79": "Time clocks",
+            "80": "Video conference systems",
+            "81": "Electrical drives",
+            "82": "Access control devices",
+            "83": "3D Printer",
+            "84": "Access Control Gateway",
+            "85": "ATM",
+            "86": "Audio Decoder",
+            "87": "AV System",
+            "88": "BACnet Router & BBMD",
+            "89": "Badge Reader",
+            "90": "Barcode Scanner",
+            "91": "Building Automation Controller Gateway",
+            "92": "Building Management Sensor",
+            "93": "Building Management Sensor Gateway",
+            "94": "Building Management System Gateway",
+            "95": "Car",
+            "96": "Circuit Monitor",
+            "97": "Clinical Mobile Device",
+            "98": "Clinical Mobile Device Gateway",
+            "99": "Clock Gateway",
+            "100": "CNC System",
+            "101": "Conference Room",
+            "102": "Data Logger",
+            "103": "Digital Sign Workstation",
+            "104": "Disk Publisher",
+            "105": "Dispatcher",
+            "106": "Embedded PC",
+            "107": "Encoder",
+            "108": "EV Charging",
+            "109": "Fitness Device",
+            "110": "Generic Mobile Device",
+            "111": "GPS Navigator",
+            "112": "Industrial Barcode Scanner",
+            "113": "Industrial Metal Detector",
+            "114": "Industrial Network Equipment",
+            "115": "Industrial Thin Client",
+            "116": "Industrial Thin Client Gateway",
+            "117": "Industrial Wireless",
+            "118": "Industrial Workstation",
+            "119": "Inspection System",
+            "120": "Interactive Voice Response",
+            "121": "Intercom Gateway",
+            "122": "IoT Controller",
+            "123": "Lock Box",
+            "124": "Machinery Health Analyzer",
+            "125": "Mailing System",
+            "126": "Media Gateway",
+            "127": "Media Player",
+            "128": "Media Streamer",
+            "129": "Microscope",
+            "130": "Mobile Computer",
+            "131": "Motor Starter",
+            "132": "Musical Instrument",
+            "133": "OPC Server",
+            "134": "Order Fulfillment System",
+            "135": "OT Device",
+            "136": "OT Server",
+            "137": "PA System",
+            "138": "Payment Kiosk",
+            "139": "Physical Security Platform",
+            "140": "Point-of-Sale",
+            "141": "Point-of-Sale Gateway",
+            "142": "Power Distribution Unit",
+            "143": "Power Distribution Unit Gateway",
+            "144": "Power Supply",
+            "145": "Print Server",
+            "146": "Projector",
+            "147": "Radio",
+            "148": "Radio Repeater",
+            "149": "Recording Server",
+            "150": "Reporting Server",
+            "151": "Room Automation Station",
+            "152": "Room Display",
+            "153": "RTLS Gateway",
+            "154": "Safety System",
+            "155": "SCADA Client",
+            "156": "Screen Share",
+            "157": "Security X-Ray Scanner",
+            "158": "Sensor",
+            "159": "Serial-to-Ethernet Gateway",
+            "160": "Service Trolley",
+            "161": "Smart Board",
+            "162": "Smart Home",
+            "163": "Smart Light",
+            "164": "Smart Light Gateway",
+            "165": "Smart Lock Controller",
+            "166": "Smartphone",
+            "167": "Smartwatch",
+            "168": "Solar Energy",
+            "169": "Time Clock Gateway",
+            "170": "Video Conference Gateway",
+            "171": "Video Decoder",
+            "172": "Video Encoder",
+            "173": "Video Surveillance Device",
+            "174": "VoIP Adapter",
+            "175": "VoIP Phone Gateway",
+            "176": "Water System",
+            "177": "Wireless Phone",
+            "178": "Wireless Phone Gateway"
+        }
+    },
+    "srcAssetProtectionState": {
+        "id": "srcAssetProtectionState",
+        "type": 2,
+        "name": "Source asset segmentation state",
+        "placeholder": "Choose value(s)",
+        "disableExcludeSupport": false,
+        "aliases": [
+            "src asset segmentation state"
+        ],
+        "isSingleValue": false,
+        "selections": [
+            {
+                "id": "1",
+                "name": "Not segmented"
+            },
+            {
+                "id": "3",
+                "name": "Segmented"
+            },
+            {
+                "id": "5",
+                "name": "In learning"
+            },
+            {
+                "id": "6",
+                "name": "Not segmented (manual)"
+            },
+            {
+                "id": "8",
+                "name": "Segmented (policy)"
+            },
+            {
+                "id": "10",
+                "name": "In learning (policy)"
+            },
+            {
+                "id": "11",
+                "name": "Learning done"
+            },
+            {
+                "id": "12",
+                "name": "Learning (policy) done"
+            },
+            {
+                "id": "13",
+                "name": "Enforcing block rules"
+            },
+            {
+                "id": "14",
+                "name": "Enforcing block rules (policy)"
+            },
+            {
+                "id": "15",
+                "name": "In learning with blocks"
+            },
+            {
+                "id": "16",
+                "name": "In learning with blocks (policy)"
+            },
+            {
+                "id": "17",
+                "name": "Learning with blocks done"
+            },
+            {
+                "id": "18",
+                "name": "Learning with blocks (policy) done"
+            }
+        ],
+        "selectionsByName": {
+            "Not segmented": "1",
+            "Segmented": "3",
+            "In learning": "5",
+            "Not segmented (manual)": "6",
+            "Segmented (policy)": "8",
+            "In learning (policy)": "10",
+            "Learning done": "11",
+            "Learning (policy) done": "12",
+            "Enforcing block rules": "13",
+            "Enforcing block rules (policy)": "14",
+            "In learning with blocks": "15",
+            "In learning with blocks (policy)": "16",
+            "Learning with blocks done": "17",
+            "Learning with blocks (policy) done": "18"
+        },
+        "selectionsById": {
+            "1": "Not segmented",
+            "3": "Segmented",
+            "5": "In learning",
+            "6": "Not segmented (manual)",
+            "8": "Segmented (policy)",
+            "10": "In learning (policy)",
+            "11": "Learning done",
+            "12": "Learning (policy) done",
+            "13": "Enforcing block rules",
+            "14": "Enforcing block rules (policy)",
+            "15": "In learning with blocks",
+            "16": "In learning with blocks (policy)",
+            "17": "Learning with blocks done",
+            "18": "Learning with blocks (policy) done"
+        }
+    },
+    "dstAssetType": {
+        "id": "dstAssetType",
+        "type": 2,
+        "name": "Destination asset type",
+        "placeholder": "Choose value(s)",
+        "disableExcludeSupport": false,
+        "aliases": [
+            "dst asset type"
+        ],
+        "isSingleValue": false,
+        "selections": [
+            {
+                "id": "0",
+                "name": "Undetermined"
+            },
+            {
+                "id": "1",
+                "name": "Client"
+            },
+            {
+                "id": "2",
+                "name": "Server"
+            },
+            {
+                "id": "3",
+                "name": "Virtual cluster"
+            },
+            {
+                "id": "4",
+                "name": "IP camera"
+            },
+            {
+                "id": "5",
+                "name": "Smart TV"
+            },
+            {
+                "id": "6",
+                "name": "Factory controller"
+            },
+            {
+                "id": "7",
+                "name": "Medical device"
+            },
+            {
+                "id": "8",
+                "name": "Printer"
+            },
+            {
+                "id": "9",
+                "name": "Scanner"
+            },
+            {
+                "id": "10",
+                "name": "Smart card reader"
+            },
+            {
+                "id": "11",
+                "name": "Router"
+            },
+            {
+                "id": "12",
+                "name": "Hypervisor"
+            },
+            {
+                "id": "13",
+                "name": "PLC"
+            },
+            {
+                "id": "14",
+                "name": "HMI"
+            },
+            {
+                "id": "15",
+                "name": "Switch"
+            },
+            {
+                "id": "16",
+                "name": "Terminal station"
+            },
+            {
+                "id": "17",
+                "name": "RTU"
+            },
+            {
+                "id": "18",
+                "name": "Wireless access point"
+            },
+            {
+                "id": "19",
+                "name": "Historian"
+            },
+            {
+                "id": "20",
+                "name": "Game console"
+            },
+            {
+                "id": "21",
+                "name": "Fire alarm"
+            },
+            {
+                "id": "22",
+                "name": "UPS"
+            },
+            {
+                "id": "23",
+                "name": "Storage appliance"
+            },
+            {
+                "id": "24",
+                "name": "Virtualization appliance"
+            },
+            {
+                "id": "25",
+                "name": "Firewall appliance"
+            },
+            {
+                "id": "26",
+                "name": "Security scanner"
+            },
+            {
+                "id": "27",
+                "name": "Security controller"
+            },
+            {
+                "id": "28",
+                "name": "Door lock"
+            },
+            {
+                "id": "29",
+                "name": "Biometric scanner"
+            },
+            {
+                "id": "30",
+                "name": "HVAC"
+            },
+            {
+                "id": "31",
+                "name": "Room scheduler"
+            },
+            {
+                "id": "32",
+                "name": "Load Balancer Appliance"
+            },
+            {
+                "id": "33",
+                "name": "WAN Concentrator"
+            },
+            {
+                "id": "34",
+                "name": "IPAM Appliance"
+            },
+            {
+                "id": "35",
+                "name": "Temperature sensor gateways"
+            },
+            {
+                "id": "36",
+                "name": "Power meters"
+            },
+            {
+                "id": "37",
+                "name": "Conveyor systems"
+            },
+            {
+                "id": "38",
+                "name": "Building automation devices"
+            },
+            {
+                "id": "39",
+                "name": "Vision controllers"
+            },
+            {
+                "id": "40",
+                "name": "Manufacturing execution systems"
+            },
+            {
+                "id": "41",
+                "name": "BACnet broadcast management devices (BBMD)"
+            },
+            {
+                "id": "42",
+                "name": "BACnet routers & BBMD"
+            },
+            {
+                "id": "43",
+                "name": "Clocks"
+            },
+            {
+                "id": "44",
+                "name": "RFID"
+            },
+            {
+                "id": "45",
+                "name": "Scales"
+            },
+            {
+                "id": "46",
+                "name": "Mobile printers"
+            },
+            {
+                "id": "47",
+                "name": "IED"
+            },
+            {
+                "id": "48",
+                "name": "CNC mills"
+            },
+            {
+                "id": "49",
+                "name": "Room monitors"
+            },
+            {
+                "id": "50",
+                "name": "Smart speakers"
+            },
+            {
+                "id": "51",
+                "name": "Vending machines"
+            },
+            {
+                "id": "52",
+                "name": "Autonomous vehicles"
+            },
+            {
+                "id": "53",
+                "name": "Fleet management systems"
+            },
+            {
+                "id": "54",
+                "name": "BACnet routers"
+            },
+            {
+                "id": "55",
+                "name": "Motor controllers"
+            },
+            {
+                "id": "56",
+                "name": "OT gateways"
+            },
+            {
+                "id": "57",
+                "name": "Controllers"
+            },
+            {
+                "id": "58",
+                "name": "Building management systems"
+            },
+            {
+                "id": "59",
+                "name": "VoIP phones"
+            },
+            {
+                "id": "60",
+                "name": "Vision sensors"
+            },
+            {
+                "id": "61",
+                "name": "Remote I/O"
+            },
+            {
+                "id": "62",
+                "name": "VoIP servers"
+            },
+            {
+                "id": "63",
+                "name": "Flow meters"
+            },
+            {
+                "id": "64",
+                "name": "Building automation controllers"
+            },
+            {
+                "id": "65",
+                "name": "Security cameras"
+            },
+            {
+                "id": "66",
+                "name": "Digital signs"
+            },
+            {
+                "id": "67",
+                "name": "Remote access gateways"
+            },
+            {
+                "id": "68",
+                "name": "Temperature sensors"
+            },
+            {
+                "id": "69",
+                "name": "RTLS devices"
+            },
+            {
+                "id": "70",
+                "name": "Serial-to-Ethernet devices"
+            },
+            {
+                "id": "71",
+                "name": "Intercoms"
+            },
+            {
+                "id": "72",
+                "name": "Engineering stations"
+            },
+            {
+                "id": "73",
+                "name": "Data logger gateways"
+            },
+            {
+                "id": "74",
+                "name": "Robots"
+            },
+            {
+                "id": "75",
+                "name": "Tablets"
+            },
+            {
+                "id": "76",
+                "name": "SCADA servers"
+            },
+            {
+                "id": "77",
+                "name": "Industrial printers"
+            },
+            {
+                "id": "78",
+                "name": "Vision cameras"
+            },
+            {
+                "id": "79",
+                "name": "Time clocks"
+            },
+            {
+                "id": "80",
+                "name": "Video conference systems"
+            },
+            {
+                "id": "81",
+                "name": "Electrical drives"
+            },
+            {
+                "id": "82",
+                "name": "Access control devices"
+            },
+            {
+                "id": "83",
+                "name": "3D Printer"
+            },
+            {
+                "id": "84",
+                "name": "Access Control Gateway"
+            },
+            {
+                "id": "85",
+                "name": "ATM"
+            },
+            {
+                "id": "86",
+                "name": "Audio Decoder"
+            },
+            {
+                "id": "87",
+                "name": "AV System"
+            },
+            {
+                "id": "88",
+                "name": "BACnet Router & BBMD"
+            },
+            {
+                "id": "89",
+                "name": "Badge Reader"
+            },
+            {
+                "id": "90",
+                "name": "Barcode Scanner"
+            },
+            {
+                "id": "91",
+                "name": "Building Automation Controller Gateway"
+            },
+            {
+                "id": "92",
+                "name": "Building Management Sensor"
+            },
+            {
+                "id": "93",
+                "name": "Building Management Sensor Gateway"
+            },
+            {
+                "id": "94",
+                "name": "Building Management System Gateway"
+            },
+            {
+                "id": "95",
+                "name": "Car"
+            },
+            {
+                "id": "96",
+                "name": "Circuit Monitor"
+            },
+            {
+                "id": "97",
+                "name": "Clinical Mobile Device"
+            },
+            {
+                "id": "98",
+                "name": "Clinical Mobile Device Gateway"
+            },
+            {
+                "id": "99",
+                "name": "Clock Gateway"
+            },
+            {
+                "id": "100",
+                "name": "CNC System"
+            },
+            {
+                "id": "101",
+                "name": "Conference Room"
+            },
+            {
+                "id": "102",
+                "name": "Data Logger"
+            },
+            {
+                "id": "103",
+                "name": "Digital Sign Workstation"
+            },
+            {
+                "id": "104",
+                "name": "Disk Publisher"
+            },
+            {
+                "id": "105",
+                "name": "Dispatcher"
+            },
+            {
+                "id": "106",
+                "name": "Embedded PC"
+            },
+            {
+                "id": "107",
+                "name": "Encoder"
+            },
+            {
+                "id": "108",
+                "name": "EV Charging"
+            },
+            {
+                "id": "109",
+                "name": "Fitness Device"
+            },
+            {
+                "id": "110",
+                "name": "Generic Mobile Device"
+            },
+            {
+                "id": "111",
+                "name": "GPS Navigator"
+            },
+            {
+                "id": "112",
+                "name": "Industrial Barcode Scanner"
+            },
+            {
+                "id": "113",
+                "name": "Industrial Metal Detector"
+            },
+            {
+                "id": "114",
+                "name": "Industrial Network Equipment"
+            },
+            {
+                "id": "115",
+                "name": "Industrial Thin Client"
+            },
+            {
+                "id": "116",
+                "name": "Industrial Thin Client Gateway"
+            },
+            {
+                "id": "117",
+                "name": "Industrial Wireless"
+            },
+            {
+                "id": "118",
+                "name": "Industrial Workstation"
+            },
+            {
+                "id": "119",
+                "name": "Inspection System"
+            },
+            {
+                "id": "120",
+                "name": "Interactive Voice Response"
+            },
+            {
+                "id": "121",
+                "name": "Intercom Gateway"
+            },
+            {
+                "id": "122",
+                "name": "IoT Controller"
+            },
+            {
+                "id": "123",
+                "name": "Lock Box"
+            },
+            {
+                "id": "124",
+                "name": "Machinery Health Analyzer"
+            },
+            {
+                "id": "125",
+                "name": "Mailing System"
+            },
+            {
+                "id": "126",
+                "name": "Media Gateway"
+            },
+            {
+                "id": "127",
+                "name": "Media Player"
+            },
+            {
+                "id": "128",
+                "name": "Media Streamer"
+            },
+            {
+                "id": "129",
+                "name": "Microscope"
+            },
+            {
+                "id": "130",
+                "name": "Mobile Computer"
+            },
+            {
+                "id": "131",
+                "name": "Motor Starter"
+            },
+            {
+                "id": "132",
+                "name": "Musical Instrument"
+            },
+            {
+                "id": "133",
+                "name": "OPC Server"
+            },
+            {
+                "id": "134",
+                "name": "Order Fulfillment System"
+            },
+            {
+                "id": "135",
+                "name": "OT Device"
+            },
+            {
+                "id": "136",
+                "name": "OT Server"
+            },
+            {
+                "id": "137",
+                "name": "PA System"
+            },
+            {
+                "id": "138",
+                "name": "Payment Kiosk"
+            },
+            {
+                "id": "139",
+                "name": "Physical Security Platform"
+            },
+            {
+                "id": "140",
+                "name": "Point-of-Sale"
+            },
+            {
+                "id": "141",
+                "name": "Point-of-Sale Gateway"
+            },
+            {
+                "id": "142",
+                "name": "Power Distribution Unit"
+            },
+            {
+                "id": "143",
+                "name": "Power Distribution Unit Gateway"
+            },
+            {
+                "id": "144",
+                "name": "Power Supply"
+            },
+            {
+                "id": "145",
+                "name": "Print Server"
+            },
+            {
+                "id": "146",
+                "name": "Projector"
+            },
+            {
+                "id": "147",
+                "name": "Radio"
+            },
+            {
+                "id": "148",
+                "name": "Radio Repeater"
+            },
+            {
+                "id": "149",
+                "name": "Recording Server"
+            },
+            {
+                "id": "150",
+                "name": "Reporting Server"
+            },
+            {
+                "id": "151",
+                "name": "Room Automation Station"
+            },
+            {
+                "id": "152",
+                "name": "Room Display"
+            },
+            {
+                "id": "153",
+                "name": "RTLS Gateway"
+            },
+            {
+                "id": "154",
+                "name": "Safety System"
+            },
+            {
+                "id": "155",
+                "name": "SCADA Client"
+            },
+            {
+                "id": "156",
+                "name": "Screen Share"
+            },
+            {
+                "id": "157",
+                "name": "Security X-Ray Scanner"
+            },
+            {
+                "id": "158",
+                "name": "Sensor"
+            },
+            {
+                "id": "159",
+                "name": "Serial-to-Ethernet Gateway"
+            },
+            {
+                "id": "160",
+                "name": "Service Trolley"
+            },
+            {
+                "id": "161",
+                "name": "Smart Board"
+            },
+            {
+                "id": "162",
+                "name": "Smart Home"
+            },
+            {
+                "id": "163",
+                "name": "Smart Light"
+            },
+            {
+                "id": "164",
+                "name": "Smart Light Gateway"
+            },
+            {
+                "id": "165",
+                "name": "Smart Lock Controller"
+            },
+            {
+                "id": "166",
+                "name": "Smartphone"
+            },
+            {
+                "id": "167",
+                "name": "Smartwatch"
+            },
+            {
+                "id": "168",
+                "name": "Solar Energy"
+            },
+            {
+                "id": "169",
+                "name": "Time Clock Gateway"
+            },
+            {
+                "id": "170",
+                "name": "Video Conference Gateway"
+            },
+            {
+                "id": "171",
+                "name": "Video Decoder"
+            },
+            {
+                "id": "172",
+                "name": "Video Encoder"
+            },
+            {
+                "id": "173",
+                "name": "Video Surveillance Device"
+            },
+            {
+                "id": "174",
+                "name": "VoIP Adapter"
+            },
+            {
+                "id": "175",
+                "name": "VoIP Phone Gateway"
+            },
+            {
+                "id": "176",
+                "name": "Water System"
+            },
+            {
+                "id": "177",
+                "name": "Wireless Phone"
+            },
+            {
+                "id": "178",
+                "name": "Wireless Phone Gateway"
+            }
+        ],
+        "selectionsByName": {
+            "Undetermined": "0",
+            "Client": "1",
+            "Server": "2",
+            "Virtual cluster": "3",
+            "IP camera": "4",
+            "Smart TV": "5",
+            "Factory controller": "6",
+            "Medical device": "7",
+            "Printer": "8",
+            "Scanner": "9",
+            "Smart card reader": "10",
+            "Router": "11",
+            "Hypervisor": "12",
+            "PLC": "13",
+            "HMI": "14",
+            "Switch": "15",
+            "Terminal station": "16",
+            "RTU": "17",
+            "Wireless access point": "18",
+            "Historian": "19",
+            "Game console": "20",
+            "Fire alarm": "21",
+            "UPS": "22",
+            "Storage appliance": "23",
+            "Virtualization appliance": "24",
+            "Firewall appliance": "25",
+            "Security scanner": "26",
+            "Security controller": "27",
+            "Door lock": "28",
+            "Biometric scanner": "29",
+            "HVAC": "30",
+            "Room scheduler": "31",
+            "Load Balancer Appliance": "32",
+            "WAN Concentrator": "33",
+            "IPAM Appliance": "34",
+            "Temperature sensor gateways": "35",
+            "Power meters": "36",
+            "Conveyor systems": "37",
+            "Building automation devices": "38",
+            "Vision controllers": "39",
+            "Manufacturing execution systems": "40",
+            "BACnet broadcast management devices (BBMD)": "41",
+            "BACnet routers & BBMD": "42",
+            "Clocks": "43",
+            "RFID": "44",
+            "Scales": "45",
+            "Mobile printers": "46",
+            "IED": "47",
+            "CNC mills": "48",
+            "Room monitors": "49",
+            "Smart speakers": "50",
+            "Vending machines": "51",
+            "Autonomous vehicles": "52",
+            "Fleet management systems": "53",
+            "BACnet routers": "54",
+            "Motor controllers": "55",
+            "OT gateways": "56",
+            "Controllers": "57",
+            "Building management systems": "58",
+            "VoIP phones": "59",
+            "Vision sensors": "60",
+            "Remote I/O": "61",
+            "VoIP servers": "62",
+            "Flow meters": "63",
+            "Building automation controllers": "64",
+            "Security cameras": "65",
+            "Digital signs": "66",
+            "Remote access gateways": "67",
+            "Temperature sensors": "68",
+            "RTLS devices": "69",
+            "Serial-to-Ethernet devices": "70",
+            "Intercoms": "71",
+            "Engineering stations": "72",
+            "Data logger gateways": "73",
+            "Robots": "74",
+            "Tablets": "75",
+            "SCADA servers": "76",
+            "Industrial printers": "77",
+            "Vision cameras": "78",
+            "Time clocks": "79",
+            "Video conference systems": "80",
+            "Electrical drives": "81",
+            "Access control devices": "82",
+            "3D Printer": "83",
+            "Access Control Gateway": "84",
+            "ATM": "85",
+            "Audio Decoder": "86",
+            "AV System": "87",
+            "BACnet Router & BBMD": "88",
+            "Badge Reader": "89",
+            "Barcode Scanner": "90",
+            "Building Automation Controller Gateway": "91",
+            "Building Management Sensor": "92",
+            "Building Management Sensor Gateway": "93",
+            "Building Management System Gateway": "94",
+            "Car": "95",
+            "Circuit Monitor": "96",
+            "Clinical Mobile Device": "97",
+            "Clinical Mobile Device Gateway": "98",
+            "Clock Gateway": "99",
+            "CNC System": "100",
+            "Conference Room": "101",
+            "Data Logger": "102",
+            "Digital Sign Workstation": "103",
+            "Disk Publisher": "104",
+            "Dispatcher": "105",
+            "Embedded PC": "106",
+            "Encoder": "107",
+            "EV Charging": "108",
+            "Fitness Device": "109",
+            "Generic Mobile Device": "110",
+            "GPS Navigator": "111",
+            "Industrial Barcode Scanner": "112",
+            "Industrial Metal Detector": "113",
+            "Industrial Network Equipment": "114",
+            "Industrial Thin Client": "115",
+            "Industrial Thin Client Gateway": "116",
+            "Industrial Wireless": "117",
+            "Industrial Workstation": "118",
+            "Inspection System": "119",
+            "Interactive Voice Response": "120",
+            "Intercom Gateway": "121",
+            "IoT Controller": "122",
+            "Lock Box": "123",
+            "Machinery Health Analyzer": "124",
+            "Mailing System": "125",
+            "Media Gateway": "126",
+            "Media Player": "127",
+            "Media Streamer": "128",
+            "Microscope": "129",
+            "Mobile Computer": "130",
+            "Motor Starter": "131",
+            "Musical Instrument": "132",
+            "OPC Server": "133",
+            "Order Fulfillment System": "134",
+            "OT Device": "135",
+            "OT Server": "136",
+            "PA System": "137",
+            "Payment Kiosk": "138",
+            "Physical Security Platform": "139",
+            "Point-of-Sale": "140",
+            "Point-of-Sale Gateway": "141",
+            "Power Distribution Unit": "142",
+            "Power Distribution Unit Gateway": "143",
+            "Power Supply": "144",
+            "Print Server": "145",
+            "Projector": "146",
+            "Radio": "147",
+            "Radio Repeater": "148",
+            "Recording Server": "149",
+            "Reporting Server": "150",
+            "Room Automation Station": "151",
+            "Room Display": "152",
+            "RTLS Gateway": "153",
+            "Safety System": "154",
+            "SCADA Client": "155",
+            "Screen Share": "156",
+            "Security X-Ray Scanner": "157",
+            "Sensor": "158",
+            "Serial-to-Ethernet Gateway": "159",
+            "Service Trolley": "160",
+            "Smart Board": "161",
+            "Smart Home": "162",
+            "Smart Light": "163",
+            "Smart Light Gateway": "164",
+            "Smart Lock Controller": "165",
+            "Smartphone": "166",
+            "Smartwatch": "167",
+            "Solar Energy": "168",
+            "Time Clock Gateway": "169",
+            "Video Conference Gateway": "170",
+            "Video Decoder": "171",
+            "Video Encoder": "172",
+            "Video Surveillance Device": "173",
+            "VoIP Adapter": "174",
+            "VoIP Phone Gateway": "175",
+            "Water System": "176",
+            "Wireless Phone": "177",
+            "Wireless Phone Gateway": "178"
+        },
+        "selectionsById": {
+            "0": "Undetermined",
+            "1": "Client",
+            "2": "Server",
+            "3": "Virtual cluster",
+            "4": "IP camera",
+            "5": "Smart TV",
+            "6": "Factory controller",
+            "7": "Medical device",
+            "8": "Printer",
+            "9": "Scanner",
+            "10": "Smart card reader",
+            "11": "Router",
+            "12": "Hypervisor",
+            "13": "PLC",
+            "14": "HMI",
+            "15": "Switch",
+            "16": "Terminal station",
+            "17": "RTU",
+            "18": "Wireless access point",
+            "19": "Historian",
+            "20": "Game console",
+            "21": "Fire alarm",
+            "22": "UPS",
+            "23": "Storage appliance",
+            "24": "Virtualization appliance",
+            "25": "Firewall appliance",
+            "26": "Security scanner",
+            "27": "Security controller",
+            "28": "Door lock",
+            "29": "Biometric scanner",
+            "30": "HVAC",
+            "31": "Room scheduler",
+            "32": "Load Balancer Appliance",
+            "33": "WAN Concentrator",
+            "34": "IPAM Appliance",
+            "35": "Temperature sensor gateways",
+            "36": "Power meters",
+            "37": "Conveyor systems",
+            "38": "Building automation devices",
+            "39": "Vision controllers",
+            "40": "Manufacturing execution systems",
+            "41": "BACnet broadcast management devices (BBMD)",
+            "42": "BACnet routers & BBMD",
+            "43": "Clocks",
+            "44": "RFID",
+            "45": "Scales",
+            "46": "Mobile printers",
+            "47": "IED",
+            "48": "CNC mills",
+            "49": "Room monitors",
+            "50": "Smart speakers",
+            "51": "Vending machines",
+            "52": "Autonomous vehicles",
+            "53": "Fleet management systems",
+            "54": "BACnet routers",
+            "55": "Motor controllers",
+            "56": "OT gateways",
+            "57": "Controllers",
+            "58": "Building management systems",
+            "59": "VoIP phones",
+            "60": "Vision sensors",
+            "61": "Remote I/O",
+            "62": "VoIP servers",
+            "63": "Flow meters",
+            "64": "Building automation controllers",
+            "65": "Security cameras",
+            "66": "Digital signs",
+            "67": "Remote access gateways",
+            "68": "Temperature sensors",
+            "69": "RTLS devices",
+            "70": "Serial-to-Ethernet devices",
+            "71": "Intercoms",
+            "72": "Engineering stations",
+            "73": "Data logger gateways",
+            "74": "Robots",
+            "75": "Tablets",
+            "76": "SCADA servers",
+            "77": "Industrial printers",
+            "78": "Vision cameras",
+            "79": "Time clocks",
+            "80": "Video conference systems",
+            "81": "Electrical drives",
+            "82": "Access control devices",
+            "83": "3D Printer",
+            "84": "Access Control Gateway",
+            "85": "ATM",
+            "86": "Audio Decoder",
+            "87": "AV System",
+            "88": "BACnet Router & BBMD",
+            "89": "Badge Reader",
+            "90": "Barcode Scanner",
+            "91": "Building Automation Controller Gateway",
+            "92": "Building Management Sensor",
+            "93": "Building Management Sensor Gateway",
+            "94": "Building Management System Gateway",
+            "95": "Car",
+            "96": "Circuit Monitor",
+            "97": "Clinical Mobile Device",
+            "98": "Clinical Mobile Device Gateway",
+            "99": "Clock Gateway",
+            "100": "CNC System",
+            "101": "Conference Room",
+            "102": "Data Logger",
+            "103": "Digital Sign Workstation",
+            "104": "Disk Publisher",
+            "105": "Dispatcher",
+            "106": "Embedded PC",
+            "107": "Encoder",
+            "108": "EV Charging",
+            "109": "Fitness Device",
+            "110": "Generic Mobile Device",
+            "111": "GPS Navigator",
+            "112": "Industrial Barcode Scanner",
+            "113": "Industrial Metal Detector",
+            "114": "Industrial Network Equipment",
+            "115": "Industrial Thin Client",
+            "116": "Industrial Thin Client Gateway",
+            "117": "Industrial Wireless",
+            "118": "Industrial Workstation",
+            "119": "Inspection System",
+            "120": "Interactive Voice Response",
+            "121": "Intercom Gateway",
+            "122": "IoT Controller",
+            "123": "Lock Box",
+            "124": "Machinery Health Analyzer",
+            "125": "Mailing System",
+            "126": "Media Gateway",
+            "127": "Media Player",
+            "128": "Media Streamer",
+            "129": "Microscope",
+            "130": "Mobile Computer",
+            "131": "Motor Starter",
+            "132": "Musical Instrument",
+            "133": "OPC Server",
+            "134": "Order Fulfillment System",
+            "135": "OT Device",
+            "136": "OT Server",
+            "137": "PA System",
+            "138": "Payment Kiosk",
+            "139": "Physical Security Platform",
+            "140": "Point-of-Sale",
+            "141": "Point-of-Sale Gateway",
+            "142": "Power Distribution Unit",
+            "143": "Power Distribution Unit Gateway",
+            "144": "Power Supply",
+            "145": "Print Server",
+            "146": "Projector",
+            "147": "Radio",
+            "148": "Radio Repeater",
+            "149": "Recording Server",
+            "150": "Reporting Server",
+            "151": "Room Automation Station",
+            "152": "Room Display",
+            "153": "RTLS Gateway",
+            "154": "Safety System",
+            "155": "SCADA Client",
+            "156": "Screen Share",
+            "157": "Security X-Ray Scanner",
+            "158": "Sensor",
+            "159": "Serial-to-Ethernet Gateway",
+            "160": "Service Trolley",
+            "161": "Smart Board",
+            "162": "Smart Home",
+            "163": "Smart Light",
+            "164": "Smart Light Gateway",
+            "165": "Smart Lock Controller",
+            "166": "Smartphone",
+            "167": "Smartwatch",
+            "168": "Solar Energy",
+            "169": "Time Clock Gateway",
+            "170": "Video Conference Gateway",
+            "171": "Video Decoder",
+            "172": "Video Encoder",
+            "173": "Video Surveillance Device",
+            "174": "VoIP Adapter",
+            "175": "VoIP Phone Gateway",
+            "176": "Water System",
+            "177": "Wireless Phone",
+            "178": "Wireless Phone Gateway"
+        }
+    },
+    "dstAssetProtectionState": {
+        "id": "dstAssetProtectionState",
+        "type": 2,
+        "name": "Destination asset segmentation state",
+        "placeholder": "Choose value(s)",
+        "disableExcludeSupport": false,
+        "aliases": [
+            "dst asset segmentation state"
+        ],
+        "isSingleValue": false,
+        "selections": [
+            {
+                "id": "1",
+                "name": "Not segmented"
+            },
+            {
+                "id": "3",
+                "name": "Segmented"
+            },
+            {
+                "id": "5",
+                "name": "In learning"
+            },
+            {
+                "id": "6",
+                "name": "Not segmented (manual)"
+            },
+            {
+                "id": "8",
+                "name": "Segmented (policy)"
+            },
+            {
+                "id": "10",
+                "name": "In learning (policy)"
+            },
+            {
+                "id": "11",
+                "name": "Learning done"
+            },
+            {
+                "id": "12",
+                "name": "Learning (policy) done"
+            },
+            {
+                "id": "13",
+                "name": "Enforcing block rules"
+            },
+            {
+                "id": "14",
+                "name": "Enforcing block rules (policy)"
+            },
+            {
+                "id": "15",
+                "name": "In learning with blocks"
+            },
+            {
+                "id": "16",
+                "name": "In learning with blocks (policy)"
+            },
+            {
+                "id": "17",
+                "name": "Learning with blocks done"
+            },
+            {
+                "id": "18",
+                "name": "Learning with blocks (policy) done"
+            }
+        ],
+        "selectionsByName": {
+            "Not segmented": "1",
+            "Segmented": "3",
+            "In learning": "5",
+            "Not segmented (manual)": "6",
+            "Segmented (policy)": "8",
+            "In learning (policy)": "10",
+            "Learning done": "11",
+            "Learning (policy) done": "12",
+            "Enforcing block rules": "13",
+            "Enforcing block rules (policy)": "14",
+            "In learning with blocks": "15",
+            "In learning with blocks (policy)": "16",
+            "Learning with blocks done": "17",
+            "Learning with blocks (policy) done": "18"
+        },
+        "selectionsById": {
+            "1": "Not segmented",
+            "3": "Segmented",
+            "5": "In learning",
+            "6": "Not segmented (manual)",
+            "8": "Segmented (policy)",
+            "10": "In learning (policy)",
+            "11": "Learning done",
+            "12": "Learning (policy) done",
+            "13": "Enforcing block rules",
+            "14": "Enforcing block rules (policy)",
+            "15": "In learning with blocks",
+            "16": "In learning with blocks (policy)",
+            "17": "Learning with blocks done",
+            "18": "Learning with blocks (policy) done"
+        }
+    },
+    "inboundRuleMatches": {
+        "id": "inboundRuleMatches",
+        "type": 1,
+        "name": "Inbound rule id",
+        "placeholder": "UUID, e.g. 292b36c8-7cbd-46c6-8ed2-c8bee8db68ef",
+        "disableExcludeSupport": false,
+        "enableBulkSelection": true,
+        "isSingleValue": false
+    },
+    "exclusiveInboundRuleMatches": {
+        "id": "exclusiveInboundRuleMatches",
+        "type": 1,
+        "name": "Exclusive inbound rule id",
+        "placeholder": "UUID, e.g. 292b36c8-7cbd-46c6-8ed2-c8bee8db68ef",
+        "disableExcludeSupport": false,
+        "enableBulkSelection": false,
+        "isSingleValue": false
+    },
+    "outboundRuleMatches": {
+        "id": "outboundRuleMatches",
+        "type": 1,
+        "name": "Outbound rule id",
+        "placeholder": "UUID, e.g. 292b36c8-7cbd-46c6-8ed2-c8bee8db68ef",
+        "disableExcludeSupport": false,
+        "enableBulkSelection": true,
+        "isSingleValue": false
+    },
+    "exclusiveOutboundRuleMatches": {
+        "id": "exclusiveOutboundRuleMatches",
+        "type": 1,
+        "name": "Exclusive outbound rule id",
+        "placeholder": "UUID, e.g. 292b36c8-7cbd-46c6-8ed2-c8bee8db68ef",
+        "disableExcludeSupport": false,
+        "enableBulkSelection": false,
+        "isSingleValue": false
+    },
+    "riskLevel": {
+        "id": "riskLevel",
+        "type": 2,
+        "name": "Risk level",
+        "placeholder": "Choose value(s)",
+        "disableExcludeSupport": false,
+        "aliases": [
+            "connection risk level"
+        ],
+        "isSingleValue": false,
+        "selections": [
+            {
+                "id": "0",
+                "name": "No risk"
+            },
+            {
+                "id": "1",
+                "name": "Medium risk"
+            },
+            {
+                "id": "2",
+                "name": "High risk"
+            }
+        ],
+        "selectionsByName": {
+            "No risk": "0",
+            "Medium risk": "1",
+            "High risk": "2"
+        },
+        "selectionsById": {
+            "0": "No risk",
+            "1": "Medium risk",
+            "2": "High risk"
+        }
+    },
+    "srcRiskLevel": {
+        "id": "srcRiskLevel",
+        "type": 2,
+        "name": "Source risk level",
+        "placeholder": "Choose value(s)",
+        "disableExcludeSupport": false,
+        "aliases": [
+            "src ip risk level"
+        ],
+        "isSingleValue": false,
+        "selections": [
+            {
+                "id": "0",
+                "name": "No risk"
+            },
+            {
+                "id": "1",
+                "name": "Medium risk"
+            },
+            {
+                "id": "2",
+                "name": "High risk"
+            }
+        ],
+        "selectionsByName": {
+            "No risk": "0",
+            "Medium risk": "1",
+            "High risk": "2"
+        },
+        "selectionsById": {
+            "0": "No risk",
+            "1": "Medium risk",
+            "2": "High risk"
+        }
+    },
+    "dstRiskLevel": {
+        "id": "dstRiskLevel",
+        "type": 2,
+        "name": "Destination risk level",
+        "placeholder": "Choose value(s)",
+        "disableExcludeSupport": false,
+        "aliases": [
+            "dst ip risk level"
+        ],
+        "isSingleValue": false,
+        "selections": [
+            {
+                "id": "0",
+                "name": "No risk"
+            },
+            {
+                "id": "1",
+                "name": "Medium risk"
+            },
+            {
+                "id": "2",
+                "name": "High risk"
+            }
+        ],
+        "selectionsByName": {
+            "No risk": "0",
+            "Medium risk": "1",
+            "High risk": "2"
+        },
+        "selectionsById": {
+            "0": "No risk",
+            "1": "Medium risk",
+            "2": "High risk"
+        }
+    },
+    "srcFilterName": {
+        "id": "srcFilterName",
+        "type": 1,
+        "name": "Source wfp filter Name",
+        "placeholder": "Filter name",
+        "disableExcludeSupport": false,
+        "aliases": [
+            "src wfp filter Name"
+        ],
+        "enableBulkSelection": true,
+        "isSingleValue": false
+    },
+    "srcFilterSublayer": {
+        "id": "srcFilterSublayer",
+        "type": 1,
+        "name": "Source wfp filter sublayer",
+        "placeholder": "Filter sublayer",
+        "disableExcludeSupport": false,
+        "aliases": [
+            "src wfp filter sublayer"
+        ],
+        "enableBulkSelection": true,
+        "isSingleValue": false
+    },
+    "dstFilterName": {
+        "id": "dstFilterName",
+        "type": 1,
+        "name": "Destination wfp filter Name",
+        "placeholder": "Filter name",
+        "disableExcludeSupport": false,
+        "aliases": [
+            "dst wfp filter Name"
+        ],
+        "enableBulkSelection": true,
+        "isSingleValue": false
+    },
+    "dstFilterSublayer": {
+        "id": "dstFilterSublayer",
+        "type": 1,
+        "name": "Destination wfp filter sublayer",
+        "placeholder": "Filter sublayer",
+        "disableExcludeSupport": false,
+        "aliases": [
+            "dst wfp filter sublayer"
+        ],
+        "enableBulkSelection": true,
+        "isSingleValue": false
+    },
+    "assetsInGroup": {
+        "id": "assetsInGroup",
+        "type": 3,
+        "name": "Assets in group",
+        "placeholder": "Type any group name",
+        "disableExcludeSupport": true,
+        "isSingleValue": true,
+        "apiCall": {
+            "apiPath": "api/v1/groups?excluded_sources=[5,27]&_limit=100&_offset=0",
+            "searchParamName": "_search"
+        }
+    },
+    "srcAssetsInGroup": {
+        "id": "srcAssetsInGroup",
+        "type": 3,
+        "name": "Source assets in group",
+        "placeholder": "Type any group name",
+        "disableExcludeSupport": true,
+        "isSingleValue": true,
+        "apiCall": {
+            "apiPath": "api/v1/groups?excluded_sources=[5,27]&_limit=100&_offset=0",
+            "searchParamName": "_search"
+        }
+    },
+    "dstAssetsInGroup": {
+        "id": "dstAssetsInGroup",
+        "type": 3,
+        "name": "Destination assets in group",
+        "placeholder": "Type any group name",
+        "disableExcludeSupport": true,
+        "isSingleValue": true,
+        "apiCall": {
+            "apiPath": "api/v1/groups?excluded_sources=[5,27]&_limit=100&_offset=0",
+            "searchParamName": "_search"
+        }
+    },
+    "switchId": {
+        "id": "switchId",
+        "type": 3,
+        "name": "Switch",
+        "placeholder": "Select switch",
+        "disableExcludeSupport": false,
+        "isSingleValue": false,
+        "apiCall": {
+            "apiPath": "/api/v1/assets/switches?_limit=100&_offset=0",
+            "searchParamName": "_search"
+        }
+    },
+    "srcSwitchId": {
+        "id": "srcSwitchId",
+        "type": 3,
+        "name": "Source switch",
+        "placeholder": "Select switch",
+        "disableExcludeSupport": false,
+        "aliases": [
+            "src switch"
+        ],
+        "isSingleValue": false,
+        "apiCall": {
+            "apiPath": "/api/v1/assets/switches?_limit=100&_offset=0",
+            "searchParamName": "_search"
+        }
+    },
+    "dstSwitchId": {
+        "id": "dstSwitchId",
+        "type": 3,
+        "name": "Destination switch",
+        "placeholder": "Select switch",
+        "disableExcludeSupport": false,
+        "aliases": [
+            "dst switch"
+        ],
+        "isSingleValue": false,
+        "apiCall": {
+            "apiPath": "/api/v1/assets/switches?_limit=100&_offset=0",
+            "searchParamName": "_search"
+        }
+    },
+    "interfaceName": {
+        "id": "interfaceName",
+        "type": 1,
+        "name": "Switch interface",
+        "placeholder": "E.g. GigabitEthernet1/0/1",
+        "disableExcludeSupport": false,
+        "enableBulkSelection": true,
+        "isSingleValue": false
+    },
+    "srcInterfaceName": {
+        "id": "srcInterfaceName",
+        "type": 1,
+        "name": "Source switch interface",
+        "placeholder": "E.g. GigabitEthernet1/0/1",
+        "disableExcludeSupport": false,
+        "aliases": [
+            "src switch interface"
+        ],
+        "enableBulkSelection": true,
+        "isSingleValue": false
+    },
+    "dstInterfaceName": {
+        "id": "dstInterfaceName",
+        "type": 1,
+        "name": "Destination switch interface",
+        "placeholder": "E.g. GigabitEthernet1/0/1",
+        "disableExcludeSupport": false,
+        "aliases": [
+            "dst switch interface"
+        ],
+        "enableBulkSelection": true,
+        "isSingleValue": false
+    },
+    "clusterId": {
+        "id": "clusterId",
+        "type": 3,
+        "name": "K8s cluster",
+        "placeholder": "Select cluster",
+        "disableExcludeSupport": false,
+        "isSingleValue": false,
+        "apiCall": {
+            "apiPath": "/api/v1/k8s/clusters?_limit=100&_offset=0",
+            "searchParamName": "_search"
+        }
+    },
+    "srcClusterId": {
+        "id": "srcClusterId",
+        "type": 3,
+        "name": "Source k8s cluster",
+        "placeholder": "Select cluster",
+        "disableExcludeSupport": false,
+        "aliases": [
+            "src k8s cluster"
+        ],
+        "isSingleValue": false,
+        "apiCall": {
+            "apiPath": "/api/v1/k8s/clusters?_limit=100&_offset=0",
+            "searchParamName": "_search"
+        }
+    },
+    "dstClusterId": {
+        "id": "dstClusterId",
+        "type": 3,
+        "name": "Destination k8s cluster",
+        "placeholder": "Select cluster",
+        "disableExcludeSupport": false,
+        "aliases": [
+            "dst k8s cluster"
+        ],
+        "isSingleValue": false,
+        "apiCall": {
+            "apiPath": "/api/v1/k8s/clusters?_limit=100&_offset=0",
+            "searchParamName": "_search"
+        }
+    },
+    "namespaceName": {
+        "id": "namespaceName",
+        "type": 1,
+        "name": "K8s namespace",
+        "placeholder": "Namespace",
+        "disableExcludeSupport": false,
+        "enableBulkSelection": true,
+        "isSingleValue": false
+    },
+    "srcNamespaceName": {
+        "id": "srcNamespaceName",
+        "type": 1,
+        "name": "Source k8s namespace",
+        "placeholder": "Namespace",
+        "disableExcludeSupport": false,
+        "aliases": [
+            "src k8s namespace"
+        ],
+        "enableBulkSelection": true,
+        "isSingleValue": false
+    },
+    "dstNamespaceName": {
+        "id": "dstNamespaceName",
+        "type": 1,
+        "name": "Destination k8s namespace",
+        "placeholder": "Namespace",
+        "disableExcludeSupport": false,
+        "aliases": [
+            "dst k8s namespace"
+        ],
+        "enableBulkSelection": true,
+        "isSingleValue": false
+    },
+    "workloadName": {
+        "id": "workloadName",
+        "type": 1,
+        "name": "K8s workload",
+        "placeholder": "Workload",
+        "disableExcludeSupport": false,
+        "enableBulkSelection": true,
+        "isSingleValue": false
+    },
+    "srcWorkloadName": {
+        "id": "srcWorkloadName",
+        "type": 1,
+        "name": "Source k8s workload",
+        "placeholder": "Workload",
+        "disableExcludeSupport": false,
+        "aliases": [
+            "src k8s workload"
+        ],
+        "enableBulkSelection": true,
+        "isSingleValue": false
+    },
+    "dstWorkloadName": {
+        "id": "dstWorkloadName",
+        "type": 1,
+        "name": "Destination k8s workload",
+        "placeholder": "Workload",
+        "disableExcludeSupport": false,
+        "aliases": [
+            "dst k8s workload"
+        ],
+        "enableBulkSelection": true,
+        "isSingleValue": false
+    },
+    "nodeName": {
+        "id": "nodeName",
+        "type": 1,
+        "name": "K8s node",
+        "placeholder": "K8s node",
+        "disableExcludeSupport": false,
+        "enableBulkSelection": true,
+        "isSingleValue": false
+    },
+    "srcNodeName": {
+        "id": "srcNodeName",
+        "type": 1,
+        "name": "Source k8s node",
+        "placeholder": "K8s node",
+        "disableExcludeSupport": false,
+        "aliases": [
+            "src k8s node"
+        ],
+        "enableBulkSelection": true,
+        "isSingleValue": false
+    },
+    "dstNodeName": {
+        "id": "dstNodeName",
+        "type": 1,
+        "name": "Destination k8s node",
+        "placeholder": "K8s node",
+        "disableExcludeSupport": false,
+        "aliases": [
+            "dst k8s node"
+        ],
+        "enableBulkSelection": true,
+        "isSingleValue": false
+    },
+    "k8sApplicationName": {
+        "id": "k8sApplicationName",
+        "type": 1,
+        "name": "K8s application",
+        "placeholder": "Application",
+        "disableExcludeSupport": false,
+        "enableBulkSelection": true,
+        "isSingleValue": false
+    },
+    "srcK8sApplicationName": {
+        "id": "srcK8sApplicationName",
+        "type": 1,
+        "name": "Source k8s application",
+        "placeholder": "Application",
+        "disableExcludeSupport": false,
+        "aliases": [
+            "src k8s application"
+        ],
+        "enableBulkSelection": true,
+        "isSingleValue": false
+    },
+    "dstK8sApplicationName": {
+        "id": "dstK8sApplicationName",
+        "type": 1,
+        "name": "Destination k8s application",
+        "placeholder": "Application",
+        "disableExcludeSupport": false,
+        "aliases": [
+            "dst k8s application"
+        ],
+        "enableBulkSelection": true,
+        "isSingleValue": false
+    }
+}

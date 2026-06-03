@@ -1,0 +1,31 @@
+[
+    {
+        "src": null,
+        "dst": {
+            "assetId": "yyyyy",
+            "networkProtectionState": 3,
+            "identityProtectionState": 1,
+            "assetSrc": 3,
+            "assetType": 2,
+            "fqdn": "a.sample.com"
+        },
+        "failureReason": 6,
+        "eventType": 1,
+        "logonType": 3,
+        "processName": "process.exe",
+        "processId": "1111",
+        "authenticationPackageName": "Kerberos",
+        "logonProvider": "Authz",
+        "targetUser": {
+            "name": "-\\"
+        },
+        "subjectUser": {
+            "sid": "S-1-5-18",
+            "name": "NT AUTHORITY\\SYSTEM"
+        },
+        "timestamp": 1771178109374,
+        "recordId": 32323232,
+        "ruleMatches": [],
+        "ipSpace": 0
+    }
+]

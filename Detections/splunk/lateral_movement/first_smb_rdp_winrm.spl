@@ -1,0 +1,72 @@
+`comment("
+Title         : ZN - First SMB / RDP / WinRM from Workstation
+Description   : Fires the first time a workstation initiates a lateral movement protocol
+                (SMB 445/139, RDP 3389, WinRM 5985/5986, SSH 22, RPC 135, LDAP 389/636)
+                to any destination. Baseline anti-joins on (src_asset_id, dst_port).
+Version       : 1.0.0
+Last modified : 2026-04-22
+Author        : Zero Networks
+MITRE ATT&CK  : T1021.001 (RDP), T1021.002 (SMB), T1021.006 (WinRM)
+Severity      : High (established), Medium (blocked/requested), Low (blocked_at_source)
+Data source   : index=zeronetworks sourcetype=zn:network
+Requires      : KV Store lookup 'zn_known_workstation_ports' (built by companion baseline search).
+")`
+index=zeronetworks sourcetype="zn:network" earliest=-1h@h latest=now
+| spath output=traffic_type    path="TrafficType"
+| spath output=conn_status     path="ConnectionStatus"
+| spath output=src_asset_id    path="Src.AssetID"
+| spath output=src_asset_type  path="Src.AssetType"
+| spath output=src_fqdn        path="Src.Fqdn"
+| spath output=src_ip          path="Src.IP"
+| spath output=src_seg_state   path="Src.AssetNetworkSegmentationState"
+| spath output=src_process     path="Src.ProcessPath"
+| spath output=src_user        path="Src.UserName"
+| spath output=dst_asset_id    path="Dst.AssetID"
+| spath output=dst_fqdn        path="Dst.Fqdn"
+| spath output=dst_ip          path="Dst.IP"
+| spath output=dst_port        path="Dst.Port"
+| spath output=dst_asset_type  path="Dst.AssetType"
+| spath output=protocol_type   path="ProtocolType"
+| where traffic_type="Internal"
+    AND src_asset_type="Workstation"
+    AND isnotnull(src_asset_id) AND src_asset_id!=""
+    AND dst_port IN("22", "135", "139", "389", "445", "636", "3389", "5985", "5986")
+| lookup zn_known_workstation_ports src_asset_id dst_port OUTPUT src_asset_id AS known_src
+| where isnull(known_src)
+| eval
+    lateral_protocol=case(
+        dst_port="445" OR dst_port="139", "SMB",
+        dst_port="3389",                  "RDP",
+        dst_port="5985" OR dst_port="5986", "WinRM",
+        dst_port="22",                    "SSH",
+        dst_port="135",                   "RPC",
+        dst_port="389" OR dst_port="636", "LDAP",
+        true(), "Unknown"),
+    alert_severity=case(
+        conn_status="established",       "High",
+        conn_status="blocked",           "Medium",
+        conn_status="requested",         "Medium",
+        conn_status="blocked_at_source", "Low",
+        true(),                          "Medium"),
+    src_display=if(isnotnull(src_fqdn) AND src_fqdn!="", src_fqdn, src_ip),
+    dst_display=if(isnotnull(dst_fqdn) AND dst_fqdn!="", dst_fqdn, dst_ip),
+    alert_name="First ".lateral_protocol." from workstation: ".src_display." -> ".dst_display.":".dst_port
+| table _time alert_name alert_severity lateral_protocol conn_status
+    src_asset_id src_fqdn src_ip src_seg_state src_process src_user
+    dst_asset_id dst_fqdn dst_ip dst_port dst_asset_type protocol_type
+| sort - _time
+
+`comment("
+--- BASELINE BUILDER (schedule every 24h, lookback=14d) ---
+index=zeronetworks sourcetype=zn:network earliest=-14d@d latest=now
+| spath output=traffic_type   path=TrafficType
+| spath output=src_asset_id   path=Src.AssetID
+| spath output=src_asset_type path=Src.AssetType
+| spath output=dst_port       path=Dst.Port
+| where traffic_type=Internal AND src_asset_type=Workstation
+    AND isnotnull(src_asset_id) AND src_asset_id!=''
+    AND dst_port IN('22','135','139','389','445','636','3389','5985','5986')
+| stats count by src_asset_id dst_port
+| table src_asset_id dst_port
+| outputlookup zn_known_workstation_ports
+")`

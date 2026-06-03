@@ -1,0 +1,40 @@
+`comment("
+Title         : ZN - Multi-Machine Authentication Spread
+Description   : Detects a single account authenticating to 10+ distinct machines in a
+                1-hour window. Indicates Pass-the-Hash/Ticket attacks, credential stuffing,
+                or automated compromise tooling.
+Version       : 1.0.0
+Last modified : 2026-05-05
+Author        : Zero Networks
+MITRE ATT&CK  : T1550.002 (Pass the Hash), T1550.003 (Pass the Ticket), T1078 (Valid Accounts)
+Severity      : High
+Data source   : index=zeronetworks sourcetype=zn:identity
+")`
+index=zeronetworks sourcetype="zn:identity" earliest=-1h@h latest=now
+| spath output=failure_reason      path="failureReason"
+| spath output=subject_user_name   path="subjectUser.name"
+| spath output=subject_user_sid    path="subjectUser.sid"
+| spath output=auth_pkg            path="authenticationPackageName"
+| spath output=dst_asset_id        path="dst.assetId"
+| spath output=dst_fqdn            path="dst.fqdn"
+| where failure_reason=0
+    AND isnotnull(subject_user_name) AND subject_user_name!=""
+    AND isnotnull(dst_asset_id) AND dst_asset_id!=""
+`comment("Suppress machine accounts (COMPUTER$) that authenticate widely in normal Kerberos")`
+| where NOT (match(subject_user_name, "\$$") AND NOT match(subject_user_name, "\\\\"))
+| stats
+    dc(dst_asset_id)         AS distinct_machines
+    values(dst_fqdn)         AS target_machines
+    values(dst_asset_id)     AS target_asset_ids
+    values(auth_pkg)         AS auth_packages
+    min(_time)               AS first_seen
+    max(_time)               AS last_seen
+    BY subject_user_name subject_user_sid
+| where distinct_machines >= 10
+| eval
+    alert_name="Multi-machine auth: ".subject_user_name." -> ".distinct_machines." machines in 1h",
+    alert_severity="High"
+| table first_seen last_seen alert_name alert_severity distinct_machines
+    subject_user_name subject_user_sid
+    target_machines target_asset_ids auth_packages
+| sort - distinct_machines

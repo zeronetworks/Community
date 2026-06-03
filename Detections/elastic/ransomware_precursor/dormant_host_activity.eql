@@ -1,0 +1,47 @@
+// -- Title         : ZN - Dormant Host Reactivation
+// -- Description   : Detects an internal asset resuming network activity after 30+ days of
+// --                 silence. Requires an external baseline index for dormant asset tracking.
+// -- Version       : 1.0.0
+// -- Last modified : 2026-05-03
+// -- Author        : Zero Networks
+// -- MITRE ATT&CK  : T1078 (Valid Accounts), T1021 (Remote Services)
+// -- Severity      : Medium
+// -- Index         : logs-zn.network-*
+// --
+// -- DEPLOYMENT: Use "custom_query" rule type with enrich processor.
+// --
+// -- Implementation approach:
+// --   1. Create a scheduled Transform that runs daily and writes to index
+// --      zn-dormant-candidates:
+// --
+// --      Source query (runs over last 45 days):
+// --        GET logs-zn.network-*/_search
+// --        { "aggs": { "by_src": { "terms": { "field": "Src.AssetID" },
+// --          "aggs": {
+// --            "last_seen": { "max": { "field": "@timestamp" } },
+// --            "seen_recently": { "filter": { "range": { "@timestamp":
+// --              { "gte": "now-30d" } } } }
+// --          } } } }
+// --      Filter to: seen_recently.doc_count == 0 AND last_seen < now-30d
+// --      Write asset IDs to zn-dormant-candidates index.
+// --
+// --   2. Detection rule (custom_query) uses enrich policy keyed on Src.AssetID:
+// --
+// -- KQL filter (paste into Kibana rule query):
+//
+//    TrafficType: "Internal"
+//    AND Src.AssetID: *
+//
+// -- The enrich processor adds a "zn_dormant" field when the source is in the dormant index.
+// -- Add a filter condition: zn_dormant.is_dormant: true
+// --
+// -- EQL query (for testing, without enrich):
+
+any where
+    event.dataset == "zn.network"
+    and TrafficType == "Internal"
+    and Src.AssetID != null and Src.AssetID != ""
+
+// -- NOTE: Dormant host detection requires external baseline state. The EQL query above
+// -- is a placeholder for field validation. Production deployment requires the enrich
+// -- processor setup described in the deployment comments above.

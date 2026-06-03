@@ -1,0 +1,50 @@
+`comment("
+Title         : ZN - High Outbound Connection Volume
+Description   : Detects an internal host establishing an unusually high number of connections
+                to the same external endpoint in a 1-hour window. Connection count serves as
+                a data-volume proxy when byte-level fields are unavailable.
+Version       : 1.0.0
+Last modified : 2026-05-03
+Author        : Zero Networks
+MITRE ATT&CK  : T1041 (Exfiltration Over C2 Channel), T1048 (Exfiltration Over Alt Protocol)
+Severity      : Medium
+Data source   : index=zeronetworks sourcetype=zn:network
+")`
+index=zeronetworks sourcetype="zn:network" earliest=-1h@h latest=now
+| spath output=traffic_type   path="TrafficType"
+| spath output=conn_status    path="ConnectionStatus"
+| spath output=src_asset_id   path="Src.AssetID"
+| spath output=dst_ip         path="Dst.IP"
+| spath output=src_fqdn       path="Src.Fqdn"
+| spath output=src_ip         path="Src.IP"
+| spath output=src_asset_type path="Src.AssetType"
+| spath output=src_user       path="Src.UserName"
+| spath output=src_process    path="Src.ProcessPath"
+| spath output=src_seg_state  path="Src.AssetNetworkSegmentationState"
+| spath output=dst_fqdn       path="Dst.Fqdn"
+| spath output=dst_port       path="Dst.Port"
+| spath output=dst_iso_code   path="Dst.IsoCode"
+| spath output=dst_threat     path="Dst.IPThreatScore"
+| where traffic_type="External"
+    AND conn_status="established"
+    AND isnotnull(src_asset_id) AND src_asset_id!=""
+    AND isnotnull(dst_ip) AND dst_ip!=""
+| stats
+    count            AS total_connections
+    first(dst_fqdn)  AS dst_fqdn
+    values(dst_port) AS dst_ports
+    first(dst_iso_code) AS dst_iso_code
+    max(dst_threat)  AS dst_threat_score
+    min(_time)       AS first_seen
+    max(_time)       AS last_seen
+    BY src_asset_id src_fqdn src_ip src_asset_type src_user src_process src_seg_state dst_ip
+| where total_connections >= 50
+| eval
+    src_display=if(isnotnull(src_fqdn) AND src_fqdn!="", src_fqdn, src_ip),
+    alert_name="High outbound volume: ".src_display." -> ".dst_ip
+        ." (".total_connections." connections in 1h)",
+    alert_severity="Medium"
+| table first_seen last_seen alert_name alert_severity total_connections
+    src_asset_id src_fqdn src_ip src_asset_type src_user src_process src_seg_state
+    dst_ip dst_fqdn dst_ports dst_iso_code dst_threat_score
+| sort - total_connections

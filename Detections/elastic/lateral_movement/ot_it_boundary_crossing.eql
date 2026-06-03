@@ -1,0 +1,50 @@
+// -- Title         : ZN - OT/IT Boundary Crossing
+// -- Description   : Detects communication that crosses the OT/IT network boundary.
+// --                 An OT asset is identified by a non-empty Src.OTSwitchID or Dst.OTSwitchID.
+// --                 Fires when exactly one side of the connection is an OT asset.
+// -- Version       : 1.0.0
+// -- Last modified : 2026-04-22
+// -- Author        : Zero Networks
+// -- MITRE ATT&CK  : T1599 (Network Boundary Bridging)
+// -- Severity      : High (established), Medium (blocked/requested), Low (blocked_at_source)
+// -- Index         : logs-zn.network-*
+// --
+// -- DEPLOYMENT: Use the "custom_query" rule type in Kibana Detection Engine.
+// --             No baseline needed - any OT/IT crossing is immediately suspicious.
+// --
+// -- custom_query rule configuration:
+// --   rule_type  : custom_query
+// --   index      : logs-zn.network-*
+// --   interval   : 5m
+// --   from       : now-10m
+// --   language   : eql
+// --   query      : see EQL below
+// --
+// -- KQL equivalent (for non-EQL rule types):
+//
+//    TrafficType: "Internal"
+//    AND (
+//      (Src.OTSwitchID: * AND NOT Dst.OTSwitchID: *)
+//      OR
+//      (Dst.OTSwitchID: * AND NOT Src.OTSwitchID: *)
+//    )
+
+// EQL query:
+any where
+    event.dataset == "zn.network"
+    and TrafficType == "Internal"
+    and (
+        // OT -> IT: source is OT, destination is IT
+        (Src.OTSwitchID != null and Src.OTSwitchID != ""
+         and (Dst.OTSwitchID == null or Dst.OTSwitchID == ""))
+        or
+        // IT -> OT: destination is OT, source is IT
+        (Dst.OTSwitchID != null and Dst.OTSwitchID != ""
+         and (Src.OTSwitchID == null or Src.OTSwitchID == ""))
+    )
+
+// -- Runtime field suggestions (add via Kibana index pattern or ingest pipeline):
+// --   crossing_direction: if(Src.OTSwitchID != null, "OT->IT", "IT->OT")
+// --   ot_switch_id: coalesce(Src.OTSwitchID, Dst.OTSwitchID)
+// --   alert_severity: if(ConnectionStatus == "established", "High",
+// --                    if(ConnectionStatus in ("blocked","requested"), "Medium", "Low"))

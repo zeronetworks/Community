@@ -1,0 +1,79 @@
+// Copyright 2026 Zero Networks. All rights reserved.
+//
+// -- Title         : ZN - OT/IT Boundary Crossing
+// -- Description   : Detects communication that crosses the OT/IT network boundary.
+// --                 An OT asset is identified by a non-empty OTSwitchID field. Fires when
+// --                 exactly one side of the connection is an OT asset (XOR logic).
+// --                 Pure OT-to-OT traffic is excluded. Both OT->IT and IT->OT alerted.
+// -- Version       : 1.0.0
+// -- Last modified : 2026-04-22
+// -- Author        : Zero Networks
+// -- MITRE ATT&CK  : TA0005 (Defense Evasion), T1599 (Network Boundary Bridging)
+// -- Severity      : HIGH (established), MEDIUM (blocked/requested), LOW (blocked_at_source)
+// -- Log type      : ZN_NETWORK
+// --
+// -- Notes: No baseline needed - any OT/IT boundary crossing is immediately suspicious.
+// --        The ZN parser must populate:
+// --          additional.fields["SrcOTSwitchID"] from Src.OTSwitchID
+// --          additional.fields["DstOTSwitchID"] from Dst.OTSwitchID
+// --          additional.fields["SrcOTInterface"] from Src.OTSwitchInterfaceName
+// --          additional.fields["DstOTInterface"] from Dst.OTSwitchInterfaceName
+
+rule zn_ot_it_boundary_crossing {
+  meta:
+    author              = "Zero Networks"
+    description         = "Communication crossing the OT/IT boundary - one side has OTSwitchID, the other does not."
+    severity            = "HIGH"
+    priority            = "CRITICAL"
+    mitre_attack_tactic = "TA0005"
+    mitre_attack_technique = "T1599"
+    version             = "1.0.0"
+    last_modified       = "2026-04-22"
+
+  events:
+    $e.metadata.log_type = "ZN_NETWORK"
+    $e.additional.fields["TrafficType"] = "Internal"
+
+    // OT side: source is OT, destination is IT (OT->IT direction)
+    (
+        $e.additional.fields["SrcOTSwitchID"] != "" and
+        $e.additional.fields["SrcOTSwitchID"] != null and
+        ($e.additional.fields["DstOTSwitchID"] = "" or
+         $e.additional.fields["DstOTSwitchID"] = null)
+    )
+    or
+    // IT side: destination is OT, source is IT (IT->OT direction)
+    (
+        $e.additional.fields["DstOTSwitchID"] != "" and
+        $e.additional.fields["DstOTSwitchID"] != null and
+        ($e.additional.fields["SrcOTSwitchID"] = "" or
+         $e.additional.fields["SrcOTSwitchID"] = null)
+    )
+
+  outcome:
+    $conn_status      = array_first($e.additional.fields["ConnectionStatus"])
+    $severity         = if(
+        $conn_status = "established", "HIGH",
+        if($conn_status = "blocked" or $conn_status = "requested", "MEDIUM", "LOW"))
+    $crossing_dir     = if(
+        $e.additional.fields["SrcOTSwitchID"] != "" and
+        $e.additional.fields["SrcOTSwitchID"] != null,
+        "OT->IT", "IT->OT")
+    $ot_switch_id     = if(
+        $crossing_dir = "OT->IT",
+        array_first($e.additional.fields["SrcOTSwitchID"]),
+        array_first($e.additional.fields["DstOTSwitchID"]))
+    $ot_interface     = if(
+        $crossing_dir = "OT->IT",
+        array_first($e.additional.fields["SrcOTInterface"]),
+        array_first($e.additional.fields["DstOTInterface"]))
+    $src_fqdn         = $e.principal.hostname
+    $src_ip           = $e.principal.ip
+    $src_user         = $e.principal.user.userid
+    $dst_fqdn         = $e.target.hostname
+    $dst_ip           = $e.target.ip
+    $dst_port         = $e.target.port
+
+  condition:
+    $e
+}

@@ -1,0 +1,45 @@
+// -- Title         : ZN - SMB Share Fanout
+// -- Description   : Detects a single internal source connecting to 5+ distinct SMB/NetBIOS
+// --                 destinations in a 5-minute window.
+// -- Version       : 1.0.0
+// -- Last modified : 2026-05-03
+// -- Author        : Zero Networks
+// -- MITRE ATT&CK  : T1021.002 (SMB/Windows Admin Shares), T1083 (File and Directory Discovery)
+// -- Severity      : High
+// -- Index         : logs-zn.network-*
+// --
+// -- DEPLOYMENT: Use the "threshold" rule type in Kibana Detection Engine.
+// --
+// -- threshold rule configuration:
+// --   rule_type        : threshold
+// --   index            : logs-zn.network-*
+// --   interval         : 5m
+// --   from             : now-6m
+// --   threshold.field  : ["Src.AssetID"]
+// --   threshold.value  : 1
+// --   threshold.cardinality:
+// --     - field: Dst.AssetID
+// --       value: 5
+// --   query (KQL)      : see below
+// --
+// -- KQL filter:
+//
+//    TrafficType: "Internal"
+//    AND Dst.Port: (445 OR 139)
+//    AND Src.AssetID: *
+//    AND Dst.AssetID: *
+//
+// -- ES|QL equivalent (for detection via Dashboard or ESQL rule):
+
+FROM logs-zn.network-*
+| WHERE TrafficType == "Internal"
+    AND Dst.Port IN (445, 139)
+    AND Src.AssetID IS NOT NULL AND Src.AssetID != ""
+    AND Dst.AssetID IS NOT NULL AND Dst.AssetID != ""
+    AND @timestamp > NOW() - 5 minutes
+| STATS distinct_shares = COUNT_DISTINCT(Dst.AssetID),
+         total_conns    = COUNT(),
+         dst_fqdns      = VALUES(Dst.Fqdn)
+    BY Src.AssetID, Src.Fqdn, Src.IP, Src.AssetType, Src.UserName, Src.ProcessPath
+| WHERE distinct_shares >= 5
+| SORT distinct_shares DESC

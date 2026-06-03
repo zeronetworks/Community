@@ -1,0 +1,316 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "description": "Azure side of the Zero Networks -> Microsoft Sentinel log ingestion pipeline: a Data Collection Endpoint, four custom Log Analytics tables, a Data Collection Rule bound to the DCE, and a Monitoring Metrics Publisher role assignment on the DCR. The Entra app + client secret are created by the deploy.sh / deploy.ps1 wrapper BEFORE this template runs; the wrapper passes the app's service principal object ID in via the servicePrincipalObjectId parameter. Deploy this template AT the resource group that contains your Sentinel workspace."
+  },
+  "parameters": {
+    "workspaceName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the EXISTING Sentinel / Log Analytics workspace (in this resource group) that the custom tables and DCR will write to."
+      }
+    },
+    "servicePrincipalObjectId": {
+      "type": "string",
+      "metadata": {
+        "description": "Object ID of the Entra application's SERVICE PRINCIPAL (not the app/client ID). Supplied by the wrapper, which creates the app first. Used as the principal for the Monitoring Metrics Publisher role assignment on the DCR."
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Region for the DCE and DCR. Defaults to the resource group's location."
+      }
+    },
+    "dceName": {
+      "type": "string",
+      "defaultValue": "dce-zeronetworks",
+      "metadata": {
+        "description": "Name for the Data Collection Endpoint."
+      }
+    },
+    "dcrName": {
+      "type": "string",
+      "defaultValue": "dcr-zeronetworks",
+      "metadata": {
+        "description": "Name for the Data Collection Rule."
+      }
+    },
+    "tableRetentionDays": {
+      "type": "int",
+      "defaultValue": 90,
+      "metadata": {
+        "description": "Interactive retention (in days) for the custom tables."
+      }
+    }
+  },
+  "variables": {
+    "monitoringMetricsPublisherRoleId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '3913510d-42f4-4e42-8a64-420c390055eb')]",
+    "workspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]",
+    "dceResourceId": "[resourceId('Microsoft.Insights/dataCollectionEndpoints', parameters('dceName'))]",
+    "dcrResourceId": "[resourceId('Microsoft.Insights/dataCollectionRules', parameters('dcrName'))]",
+    "laDestinationName": "sentinelWorkspace"
+  },
+  "resources": [
+    {
+      "comments": "Custom table: Zero Networks Audit.",
+      "type": "Microsoft.OperationalInsights/workspaces/tables",
+      "apiVersion": "2023-09-01",
+      "name": "[format('{0}/{1}', parameters('workspaceName'), 'ZeroNetworksAudit_CL')]",
+      "properties": {
+        "schema": {
+          "name": "ZeroNetworksAudit_CL",
+          "columns": [
+            { "name": "TimeGenerated", "type": "datetime" },
+            { "name": "TimestampEpoch", "type": "long" },
+            { "name": "TimestampIso8601", "type": "datetime" },
+            { "name": "AuditType", "type": "string" },
+            { "name": "Platform", "type": "string" },
+            { "name": "InitiatedBy", "type": "dynamic" },
+            { "name": "AffectedEntity", "type": "dynamic" },
+            { "name": "Details", "type": "string" },
+            { "name": "ReportedObjectId", "type": "string" },
+            { "name": "ParentObjectId", "type": "string" }
+          ]
+        },
+        "retentionInDays": "[parameters('tableRetentionDays')]",
+        "totalRetentionInDays": "[parameters('tableRetentionDays')]"
+      }
+    },
+    {
+      "comments": "Custom table: Zero Networks Network Activity.",
+      "type": "Microsoft.OperationalInsights/workspaces/tables",
+      "apiVersion": "2023-09-01",
+      "name": "[format('{0}/{1}', parameters('workspaceName'), 'ZeroNetworksNetworkActivity_CL')]",
+      "properties": {
+        "schema": {
+          "name": "ZeroNetworksNetworkActivity_CL",
+          "columns": [
+            { "name": "TimeGenerated", "type": "datetime" },
+            { "name": "TimestampEpoch", "type": "long" },
+            { "name": "TimestampIso8601", "type": "datetime" },
+            { "name": "ProtocolType", "type": "int" },
+            { "name": "ConnectionStatus", "type": "string" },
+            { "name": "TrafficType", "type": "string" },
+            { "name": "InboundRuleIds", "type": "dynamic" },
+            { "name": "OutboundRuleIds", "type": "dynamic" },
+            { "name": "src", "type": "dynamic" },
+            { "name": "dst", "type": "dynamic" }
+          ]
+        },
+        "retentionInDays": "[parameters('tableRetentionDays')]",
+        "totalRetentionInDays": "[parameters('tableRetentionDays')]"
+      }
+    },
+    {
+      "comments": "Custom table: Zero Networks Identity Activity.",
+      "type": "Microsoft.OperationalInsights/workspaces/tables",
+      "apiVersion": "2023-09-01",
+      "name": "[format('{0}/{1}', parameters('workspaceName'), 'ZeroNetworksIdentityActivity_CL')]",
+      "properties": {
+        "schema": {
+          "name": "ZeroNetworksIdentityActivity_CL",
+          "columns": [
+            { "name": "TimeGenerated", "type": "datetime" },
+            { "name": "TimestampEpoch", "type": "long" },
+            { "name": "TimestampIso8601", "type": "datetime" },
+            { "name": "LogonStatus", "type": "string" },
+            { "name": "LogonType", "type": "string" },
+            { "name": "FailureReason", "type": "string" },
+            { "name": "AuthenticationPackageName", "type": "string" },
+            { "name": "LogonProvider", "type": "string" },
+            { "name": "ImpersonationLevel", "type": "int" },
+            { "name": "EventRecordID", "type": "long" },
+            { "name": "LmPackageName", "type": "string" },
+            { "name": "RuleIds", "type": "dynamic" },
+            { "name": "src", "type": "dynamic" },
+            { "name": "dst", "type": "dynamic" },
+            { "name": "SubjectUser", "type": "dynamic" },
+            { "name": "TargetUser", "type": "dynamic" }
+          ]
+        },
+        "retentionInDays": "[parameters('tableRetentionDays')]",
+        "totalRetentionInDays": "[parameters('tableRetentionDays')]"
+      }
+    },
+    {
+      "comments": "Custom table: Zero Networks RPC Activity.",
+      "type": "Microsoft.OperationalInsights/workspaces/tables",
+      "apiVersion": "2023-09-01",
+      "name": "[format('{0}/{1}', parameters('workspaceName'), 'ZeroNetworksRpcActivity_CL')]",
+      "properties": {
+        "schema": {
+          "name": "ZeroNetworksRpcActivity_CL",
+          "columns": [
+            { "name": "TimeGenerated", "type": "datetime" },
+            { "name": "TimestampEpoch", "type": "long" },
+            { "name": "TimestampIso8601", "type": "datetime" },
+            { "name": "Status", "type": "string" },
+            { "name": "TrafficType", "type": "string" },
+            { "name": "ProtocolType", "type": "int" },
+            { "name": "Interface", "type": "dynamic" },
+            { "name": "Operation", "type": "dynamic" },
+            { "name": "User", "type": "dynamic" },
+            { "name": "RuleIds", "type": "dynamic" },
+            { "name": "src", "type": "dynamic" },
+            { "name": "dst", "type": "dynamic" }
+          ]
+        },
+        "retentionInDays": "[parameters('tableRetentionDays')]",
+        "totalRetentionInDays": "[parameters('tableRetentionDays')]"
+      }
+    },
+    {
+      "comments": "Data Collection Endpoint. Exposes the Logs Ingestion endpoint URL used by Zero Networks.",
+      "type": "Microsoft.Insights/dataCollectionEndpoints",
+      "apiVersion": "2023-03-11",
+      "name": "[parameters('dceName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "networkAcls": {
+          "publicNetworkAccess": "Enabled"
+        }
+      }
+    },
+    {
+      "comments": "Data Collection Rule bound to the DCE above. streamDeclarations mirror the incoming JSON for each log type (TimeGenerated is NOT sent by Zero Networks). Each data flow's transformKql adds TimeGenerated = now() before writing to the matching custom table.",
+      "type": "Microsoft.Insights/dataCollectionRules",
+      "apiVersion": "2023-03-11",
+      "name": "[parameters('dcrName')]",
+      "location": "[parameters('location')]",
+      "dependsOn": [
+        "[variables('dceResourceId')]",
+        "[resourceId('Microsoft.OperationalInsights/workspaces/tables', parameters('workspaceName'), 'ZeroNetworksAudit_CL')]",
+        "[resourceId('Microsoft.OperationalInsights/workspaces/tables', parameters('workspaceName'), 'ZeroNetworksNetworkActivity_CL')]",
+        "[resourceId('Microsoft.OperationalInsights/workspaces/tables', parameters('workspaceName'), 'ZeroNetworksIdentityActivity_CL')]",
+        "[resourceId('Microsoft.OperationalInsights/workspaces/tables', parameters('workspaceName'), 'ZeroNetworksRpcActivity_CL')]"
+      ],
+      "properties": {
+        "dataCollectionEndpointId": "[variables('dceResourceId')]",
+        "streamDeclarations": {
+          "Custom-ZeroNetworksAudit_CL": {
+            "columns": [
+              { "name": "TimestampEpoch", "type": "long" },
+              { "name": "TimestampIso8601", "type": "datetime" },
+              { "name": "AuditType", "type": "string" },
+              { "name": "Platform", "type": "string" },
+              { "name": "InitiatedBy", "type": "dynamic" },
+              { "name": "AffectedEntity", "type": "dynamic" },
+              { "name": "Details", "type": "string" },
+              { "name": "ReportedObjectId", "type": "string" },
+              { "name": "ParentObjectId", "type": "string" }
+            ]
+          },
+          "Custom-ZeroNetworksNetworkActivity_CL": {
+            "columns": [
+              { "name": "TimestampEpoch", "type": "long" },
+              { "name": "TimestampIso8601", "type": "datetime" },
+              { "name": "ProtocolType", "type": "int" },
+              { "name": "ConnectionStatus", "type": "string" },
+              { "name": "TrafficType", "type": "string" },
+              { "name": "InboundRuleIds", "type": "dynamic" },
+              { "name": "OutboundRuleIds", "type": "dynamic" },
+              { "name": "src", "type": "dynamic" },
+              { "name": "dst", "type": "dynamic" }
+            ]
+          },
+          "Custom-ZeroNetworksIdentityActivity_CL": {
+            "columns": [
+              { "name": "TimestampEpoch", "type": "long" },
+              { "name": "TimestampIso8601", "type": "datetime" },
+              { "name": "LogonStatus", "type": "string" },
+              { "name": "LogonType", "type": "string" },
+              { "name": "FailureReason", "type": "string" },
+              { "name": "AuthenticationPackageName", "type": "string" },
+              { "name": "LogonProvider", "type": "string" },
+              { "name": "ImpersonationLevel", "type": "int" },
+              { "name": "EventRecordID", "type": "long" },
+              { "name": "LmPackageName", "type": "string" },
+              { "name": "RuleIds", "type": "dynamic" },
+              { "name": "src", "type": "dynamic" },
+              { "name": "dst", "type": "dynamic" },
+              { "name": "SubjectUser", "type": "dynamic" },
+              { "name": "TargetUser", "type": "dynamic" }
+            ]
+          },
+          "Custom-ZeroNetworksRpcActivity_CL": {
+            "columns": [
+              { "name": "TimestampEpoch", "type": "long" },
+              { "name": "TimestampIso8601", "type": "datetime" },
+              { "name": "Status", "type": "string" },
+              { "name": "TrafficType", "type": "string" },
+              { "name": "ProtocolType", "type": "int" },
+              { "name": "Interface", "type": "dynamic" },
+              { "name": "Operation", "type": "dynamic" },
+              { "name": "User", "type": "dynamic" },
+              { "name": "RuleIds", "type": "dynamic" },
+              { "name": "src", "type": "dynamic" },
+              { "name": "dst", "type": "dynamic" }
+            ]
+          }
+        },
+        "destinations": {
+          "logAnalytics": [
+            {
+              "name": "[variables('laDestinationName')]",
+              "workspaceResourceId": "[variables('workspaceResourceId')]"
+            }
+          ]
+        },
+        "dataFlows": [
+          {
+            "streams": [ "Custom-ZeroNetworksAudit_CL" ],
+            "destinations": [ "[variables('laDestinationName')]" ],
+            "transformKql": "source | extend TimeGenerated = now()",
+            "outputStream": "Custom-ZeroNetworksAudit_CL"
+          },
+          {
+            "streams": [ "Custom-ZeroNetworksNetworkActivity_CL" ],
+            "destinations": [ "[variables('laDestinationName')]" ],
+            "transformKql": "source | extend TimeGenerated = now()",
+            "outputStream": "Custom-ZeroNetworksNetworkActivity_CL"
+          },
+          {
+            "streams": [ "Custom-ZeroNetworksIdentityActivity_CL" ],
+            "destinations": [ "[variables('laDestinationName')]" ],
+            "transformKql": "source | extend TimeGenerated = now()",
+            "outputStream": "Custom-ZeroNetworksIdentityActivity_CL"
+          },
+          {
+            "streams": [ "Custom-ZeroNetworksRpcActivity_CL" ],
+            "destinations": [ "[variables('laDestinationName')]" ],
+            "transformKql": "source | extend TimeGenerated = now()",
+            "outputStream": "Custom-ZeroNetworksRpcActivity_CL"
+          }
+        ]
+      }
+    },
+    {
+      "comments": "Grants the app's service principal the Monitoring Metrics Publisher role, scoped to the DCR, so it can publish to the ingestion endpoint. Requires the deployer to hold Owner or User Access Administrator on this resource group. principalType=ServicePrincipal lets ARM tolerate AAD replication delay on a freshly created SP.",
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "name": "[guid(variables('dcrResourceId'), parameters('servicePrincipalObjectId'), variables('monitoringMetricsPublisherRoleId'))]",
+      "scope": "[format('Microsoft.Insights/dataCollectionRules/{0}', parameters('dcrName'))]",
+      "dependsOn": [
+        "[variables('dcrResourceId')]"
+      ],
+      "properties": {
+        "roleDefinitionId": "[variables('monitoringMetricsPublisherRoleId')]",
+        "principalId": "[parameters('servicePrincipalObjectId')]",
+        "principalType": "ServicePrincipal"
+      }
+    }
+  ],
+  "outputs": {
+    "logIngestionEndpoint": {
+      "type": "string",
+      "value": "[reference(variables('dceResourceId')).logsIngestion.endpoint]"
+    },
+    "dcrImmutableId": {
+      "type": "string",
+      "value": "[reference(variables('dcrResourceId')).immutableId]"
+    }
+  }
+}

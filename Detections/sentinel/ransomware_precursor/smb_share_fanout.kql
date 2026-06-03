@@ -1,0 +1,55 @@
+// -- Title         : ZN - SMB Share Fanout
+// -- Description   : Detects a single internal source connecting to an unusually large number
+// --                 of distinct SMB/NetBIOS file-share destinations in a short window.
+// --                 Indicates ransomware staging, worm propagation, or mass share enumeration.
+// -- Version       : 1.0.0
+// -- Last modified : 2026-05-03
+// -- Author        : Zero Networks
+// -- MITRE ATT&CK  : T1021.002 (SMB/Windows Admin Shares), T1083 (File and Directory Discovery)
+// -- Severity      : High
+// -- Data source   : ZNNetworkActivity_CL
+// -- Tuning        : Lower _fanoutThreshold for sensitive environments; exclude backup agents
+// --                 and SCCM distribution points via Src_AssetID_s exclusion watchlist.
+
+let _windowMinutes   = 5;   // rolling window for fanout counting
+let _fanoutThreshold = 5;   // distinct SMB destinations before alerting
+
+ZNNetworkActivity_CL
+| where TimeGenerated >= ago(totimespan(strcat(tostring(_windowMinutes), "m")))
+| where TrafficType_s == "Internal"
+| where Dst_Port_d in (445, 139)
+| where isnotempty(Src_AssetID_s) and isnotempty(Dst_AssetID_s)
+| summarize
+    DistinctShareCount = dcount(Dst_AssetID_s),
+    DstAssetIDs        = make_set(Dst_AssetID_s, 100),
+    DstFqdns           = make_set(Dst_Fqdn_s, 100),
+    ConnectionStatuses = make_set(ConnectionStatus_s, 10),
+    FirstSeen          = min(TimeGenerated),
+    LastSeen           = max(TimeGenerated),
+    TotalConnections   = count()
+    by Src_AssetID_s, Src_Fqdn_s, Src_IP_s, Src_AssetType_s,
+       Src_UserName_s, Src_ProcessPath_s, Src_AssetNetworkSegmentationState_s
+| where DistinctShareCount >= _fanoutThreshold
+| extend AlertName = strcat(
+    "SMB share fanout: ",
+    iff(isnotempty(Src_Fqdn_s), Src_Fqdn_s, Src_IP_s),
+    " -> ", tostring(DistinctShareCount), " shares in ",
+    tostring(_windowMinutes), "m")
+| project
+    FirstSeen,
+    LastSeen,
+    AlertName,
+    AlertSeverity      = "High",
+    TotalConnections,
+    DistinctShareCount,
+    SrcAssetID         = Src_AssetID_s,
+    SrcFqdn            = Src_Fqdn_s,
+    SrcIP              = Src_IP_s,
+    SrcAssetType       = Src_AssetType_s,
+    SrcUserName        = Src_UserName_s,
+    SrcProcessPath     = Src_ProcessPath_s,
+    SrcSegState        = Src_AssetNetworkSegmentationState_s,
+    DstAssetIDs,
+    DstFqdns,
+    ConnectionStatuses
+| sort by DistinctShareCount desc

@@ -1,0 +1,52 @@
+`comment("
+Title         : ZN - Beaconing Pattern (External)
+Description   : Detects an internal host making repeated established connections to the same
+                external destination at regular intervals over a 24-hour window. The pair must
+                appear in 6+ distinct hourly time buckets to qualify as beaconing.
+Version       : 1.0.0
+Last modified : 2026-05-03
+Author        : Zero Networks
+MITRE ATT&CK  : T1071.001 (Web Protocols), T1071.004 (DNS), T1132 (Data Encoding)
+Severity      : Medium
+Data source   : index=zeronetworks sourcetype=zn:network
+")`
+index=zeronetworks sourcetype="zn:network" earliest=-24h@h latest=now
+| spath output=traffic_type  path="TrafficType"
+| spath output=conn_status   path="ConnectionStatus"
+| spath output=src_asset_id  path="Src.AssetID"
+| spath output=dst_ip        path="Dst.IP"
+| spath output=src_fqdn      path="Src.Fqdn"
+| spath output=src_ip        path="Src.IP"
+| spath output=src_asset_type path="Src.AssetType"
+| spath output=src_user      path="Src.UserName"
+| spath output=src_process   path="Src.ProcessPath"
+| spath output=dst_fqdn      path="Dst.Fqdn"
+| spath output=dst_port      path="Dst.Port"
+| spath output=dst_iso_code  path="Dst.IsoCode"
+| spath output=dst_threat    path="Dst.IPThreatScore"
+| where traffic_type="External"
+    AND conn_status="established"
+    AND isnotnull(src_asset_id) AND src_asset_id!=""
+    AND isnotnull(dst_ip) AND dst_ip!=""
+| bin span=1h _time as hour_bucket
+| stats
+    dc(hour_bucket)      AS distinct_buckets
+    count                AS total_connections
+    first(dst_fqdn)      AS dst_fqdn
+    first(dst_port)      AS dst_port
+    first(dst_iso_code)  AS dst_iso_code
+    max(dst_threat)      AS dst_threat_score
+    min(_time)           AS first_seen
+    max(_time)           AS last_seen
+    BY src_asset_id src_fqdn src_ip src_asset_type src_user src_process dst_ip
+| where distinct_buckets >= 6
+| eval
+    avg_interval_min=round((last_seen - first_seen) / 60 / distinct_buckets, 1),
+    src_display=if(isnotnull(src_fqdn) AND src_fqdn!="", src_fqdn, src_ip),
+    alert_name="Beaconing pattern: ".src_display." -> ".dst_ip
+        ." (".distinct_buckets." hourly buckets / ".total_connections." connections)",
+    alert_severity="Medium"
+| table first_seen last_seen alert_name alert_severity distinct_buckets total_connections
+    avg_interval_min src_asset_id src_fqdn src_ip src_asset_type src_user src_process
+    dst_ip dst_fqdn dst_port dst_iso_code dst_threat_score
+| sort - distinct_buckets

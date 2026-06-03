@@ -1,0 +1,88 @@
+// -- Title         : ZN - First SMB / RDP / WinRM from Workstation
+// -- Description   : Fires the first time a workstation initiates a lateral movement protocol
+// --                 (SMB, RDP, WinRM, SSH, RPC endpoint mapper, LDAP) to any destination.
+// --                 Baseline anti-joins on (Src.AssetID, Dst.Port) to suppress known-good paths.
+// -- Version       : 1.0.0
+// -- Last modified : 2026-04-22
+// -- Author        : Zero Networks
+// -- MITRE ATT&CK  : T1021.001 (RDP), T1021.002 (SMB/Admin Shares), T1021.006 (WinRM)
+// -- Severity      : High (established), Medium (blocked/requested), Low (blocked_at_source)
+// -- Data source   : ZNNetworkActivity_CL
+
+let _lookbackDays       = 14d;
+let _detectionWindowMin = 60;
+let _lateralPorts       = dynamic([22, 135, 139, 389, 445, 636, 3389, 5985, 5986]);
+
+let _detectionStart = ago(totimespan(strcat(tostring(_detectionWindowMin), "m")));
+let _baselineStart  = ago(_lookbackDays);
+
+// Baseline: (workstation src, lateral port) combinations already seen in lookback window
+let KnownWorkstationPorts = materialize(
+    ZNNetworkActivity_CL
+    | where TimeGenerated between (_baselineStart .. _detectionStart)
+    | where TrafficType_s == "Internal"
+    | where Src_AssetType_s == "Workstation"
+    | where Dst_Port_d in (_lateralPorts)
+    | where isnotempty(Src_AssetID_s)
+    | summarize by Src_AssetID_s, Dst_Port_d
+);
+
+// Detection: workstation hits a lateral port it has never used before
+ZNNetworkActivity_CL
+| where TimeGenerated >= _detectionStart
+| where TrafficType_s == "Internal"
+| where Src_AssetType_s == "Workstation"
+| where Dst_Port_d in (_lateralPorts)
+| where isnotempty(Src_AssetID_s)
+| join kind=leftanti KnownWorkstationPorts
+    on Src_AssetID_s, Dst_Port_d
+| extend
+    LateralProtocol = case(
+        Dst_Port_d == 445 or Dst_Port_d == 139, "SMB",
+        Dst_Port_d == 3389,                     "RDP",
+        Dst_Port_d == 5985 or Dst_Port_d == 5986, "WinRM",
+        Dst_Port_d == 22,                       "SSH",
+        Dst_Port_d == 135,                      "RPC",
+        Dst_Port_d == 389 or Dst_Port_d == 636, "LDAP",
+        "Unknown"),
+    AlertSeverity = case(
+        ConnectionStatus_s == "established",       "High",
+        ConnectionStatus_s == "blocked",           "Medium",
+        ConnectionStatus_s == "requested",         "Medium",
+        ConnectionStatus_s == "blocked_at_source", "Low",
+        "Medium"),
+    AlertName = strcat(
+        "First ",
+        case(
+            Dst_Port_d == 445 or Dst_Port_d == 139, "SMB",
+            Dst_Port_d == 3389,                     "RDP",
+            Dst_Port_d == 5985 or Dst_Port_d == 5986, "WinRM",
+            Dst_Port_d == 22,                       "SSH",
+            Dst_Port_d == 135,                      "RPC",
+            Dst_Port_d == 389 or Dst_Port_d == 636, "LDAP",
+            "lateral"),
+        " from workstation: ",
+        iff(isnotempty(Src_Fqdn_s), Src_Fqdn_s, Src_IP_s),
+        " -> ",
+        iff(isnotempty(Dst_Fqdn_s), Dst_Fqdn_s, Dst_IP_s),
+        ":",
+        tostring(toint(Dst_Port_d)))
+| project
+    TimeGenerated,
+    AlertName,
+    AlertSeverity,
+    LateralProtocol,
+    ConnectionStatus    = ConnectionStatus_s,
+    SrcAssetID          = Src_AssetID_s,
+    SrcFqdn             = Src_Fqdn_s,
+    SrcIP               = Src_IP_s,
+    SrcSegState         = Src_AssetNetworkSegmentationState_s,
+    SrcProcessPath      = Src_ProcessPath_s,
+    SrcUserName         = Src_UserName_s,
+    DstAssetID          = Dst_AssetID_s,
+    DstFqdn             = Dst_Fqdn_s,
+    DstIP               = Dst_IP_s,
+    DstPort             = Dst_Port_d,
+    DstAssetType        = Dst_AssetType_s,
+    ProtocolType        = ProtocolType_d
+| sort by TimeGenerated desc

@@ -1,0 +1,56 @@
+// -- Title         : ZN - DCSync / Account Enumeration (Any Source)
+// -- Description   : Detects drsuapi (DCSync) or samr (account enumeration) RPC operations
+// --                 from a non-domain-controller source. Unlike rpc_new_pair, this rule fires
+// --                 on EVERY occurrence - it does not require the pair to be new. drsuapi
+// --                 from a non-DC is always malicious (credential dumping). samr from a
+// --                 workstation indicates active directory enumeration.
+// -- Version       : 1.0.0
+// -- Last modified : 2026-05-03
+// -- Author        : Zero Networks
+// -- MITRE ATT&CK  : T1003.006 (OS Credential Dumping: DCSync), T1087.002 (Account Discovery)
+// -- Severity      : Critical (drsuapi), High (samr from Workstation), Medium (samr from Server)
+// -- Data source   : ZNRPCActivity_CL
+
+ZNRPCActivity_CL
+| where TimeGenerated >= ago(1h)
+| where Operation_Name_s in ("drsuapi", "samr")
+| where isnotempty(Src_AssetID_s) and isnotempty(Dst_AssetID_s)
+// drsuapi is only legitimate from Domain Controllers; suppress DC-to-DC replication
+| where not(Operation_Name_s == "drsuapi" and Src_AssetType_s == "Domain Controller")
+| extend
+    AlertSeverity = case(
+        Operation_Name_s == "drsuapi",                                  "Critical",
+        Operation_Name_s == "samr" and Src_AssetType_s == "Workstation", "High",
+        "Medium"),
+    MitreTechnique = iff(Operation_Name_s == "drsuapi", "T1003.006", "T1087.002"),
+    AlertName = strcat(
+        iff(Operation_Name_s == "drsuapi", "DCSync attempt", "samr enumeration"),
+        ": ",
+        iff(isnotempty(Src_Fqdn_s), Src_Fqdn_s, Src_IP_s),
+        " (", Src_AssetType_s, ") -> ",
+        iff(isnotempty(Dst_Fqdn_s), Dst_Fqdn_s, Dst_IP_s))
+| project
+    TimeGenerated,
+    AlertName,
+    AlertSeverity,
+    MitreTechnique,
+    RPCOperation        = Operation_Name_s,
+    RPCOperationNumber  = Operation_Number_d,
+    Status              = Status_s,
+    InterfaceUUID       = Interface_UUID_s,
+    SrcAssetID          = Src_AssetID_s,
+    SrcFqdn             = Src_Fqdn_s,
+    SrcIP               = Src_IP_s,
+    SrcAssetType        = Src_AssetType_s,
+    SrcSegState         = Src_AssetRPCSegmentationState_s,
+    SrcProcessPath      = Src_ProcessPath_s,
+    UserName            = User_Name_s,
+    UserSID             = User_SID_s,
+    DstAssetID          = Dst_AssetID_s,
+    DstFqdn             = Dst_Fqdn_s,
+    DstIP               = Dst_IP_s,
+    DstPort             = Dst_Port_d,
+    DstAssetType        = Dst_AssetType_s
+| sort by
+    iff(AlertSeverity == "Critical", 0, iff(AlertSeverity == "High", 1, 2)) asc,
+    TimeGenerated desc

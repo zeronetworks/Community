@@ -1,0 +1,71 @@
+// -- Title         : ZN - New Internal Asset Pair
+// -- Description   : Fires when two internal ZN-managed assets communicate for the first time
+// --                 (pair not seen in the baseline window). Covers established connections
+// --                 (confirmed lateral movement) and blocked/requested attempts.
+// -- Version       : 1.0.0
+// -- Last modified : 2026-04-22
+// -- Author        : Zero Networks
+// -- MITRE ATT&CK  : T1021.001 (RDP), T1021.002 (SMB), T1021.006 (WinRM), T1021 (general)
+// -- Severity      : High (established), Medium (blocked/requested), Low (blocked_at_source)
+// -- Data source   : ZNNetworkActivity_CL
+// -- Field notes   : Assumes Sentinel Custom Log ingestion (MMA/DCR) with type suffixes:
+// --                 strings → _s, numbers → _d, nested a.b → a_b_<type>.
+// --                 Adjust suffixes if using DCR with explicit column mappings.
+
+let _lookbackDays       = 14d;  // baseline window - extend to 30d for stable environments
+let _detectionWindowMin = 60;   // how far back the alert query looks (minutes)
+
+let _detectionStart = ago(totimespan(strcat(tostring(_detectionWindowMin), "m")));
+let _baselineStart  = ago(_lookbackDays);
+
+// Baseline: all (src, dst) asset ID pairs observed in the lookback window
+let KnownPairs = materialize(
+    ZNNetworkActivity_CL
+    | where TimeGenerated between (_baselineStart .. _detectionStart)
+    | where TrafficType_s == "Internal"
+    | where isnotempty(Src_AssetID_s) and isnotempty(Dst_AssetID_s)
+    | summarize by Src_AssetID_s, Dst_AssetID_s
+);
+
+// Detection: new pairs in the current window not present in the baseline
+ZNNetworkActivity_CL
+| where TimeGenerated >= _detectionStart
+| where TrafficType_s == "Internal"
+| where isnotempty(Src_AssetID_s) and isnotempty(Dst_AssetID_s)
+| join kind=leftanti KnownPairs
+    on $left.Src_AssetID_s == $right.Src_AssetID_s
+    and $left.Dst_AssetID_s == $right.Dst_AssetID_s
+| extend
+    AlertSeverity = case(
+        ConnectionStatus_s == "established",       "High",
+        ConnectionStatus_s == "blocked",           "Medium",
+        ConnectionStatus_s == "requested",         "Medium",
+        ConnectionStatus_s == "blocked_at_source", "Low",
+        "Medium"),
+    AlertName = strcat(
+        "New internal asset pair: ",
+        iff(isnotempty(Src_Fqdn_s), Src_Fqdn_s, Src_IP_s),
+        " -> ",
+        iff(isnotempty(Dst_Fqdn_s), Dst_Fqdn_s, Dst_IP_s))
+| project
+    TimeGenerated,
+    AlertName,
+    AlertSeverity,
+    ConnectionStatus    = ConnectionStatus_s,
+    SrcAssetID          = Src_AssetID_s,
+    SrcFqdn             = Src_Fqdn_s,
+    SrcIP               = Src_IP_s,
+    SrcAssetType        = Src_AssetType_s,
+    SrcSegState         = Src_AssetNetworkSegmentationState_s,
+    SrcProcessPath      = Src_ProcessPath_s,
+    SrcUserName         = Src_UserName_s,
+    DstAssetID          = Dst_AssetID_s,
+    DstFqdn             = Dst_Fqdn_s,
+    DstIP               = Dst_IP_s,
+    DstPort             = Dst_Port_d,
+    DstAssetType        = Dst_AssetType_s,
+    DstSegState         = Dst_AssetNetworkSegmentationState_s,
+    ProtocolType        = ProtocolType_d,
+    InboundRuleIds      = InboundRuleIds_s,
+    OutboundRuleIds     = OutboundRuleIds_s
+| sort by TimeGenerated desc

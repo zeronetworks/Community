@@ -1,0 +1,7 @@
+*.txt
+*.log
+*.code-workspace
+.vscode
+CLAUDE.md
+.claude
+resources

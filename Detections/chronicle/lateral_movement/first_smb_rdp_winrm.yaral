@@ -1,0 +1,70 @@
+// Copyright 2026 Zero Networks. All rights reserved.
+//
+// -- Title         : ZN - First SMB / RDP / WinRM from Workstation
+// -- Description   : Fires the first time a workstation initiates a lateral movement protocol
+// --                 (SMB 445/139, RDP 3389, WinRM 5985/5986, SSH 22, RPC 135, LDAP 389/636).
+// --                 Uses a reference list of known (src_asset_id:port) pairs to suppress
+// --                 known-good behavior. Update reference list via scheduled baseline export.
+// -- Version       : 1.0.0
+// -- Last modified : 2026-04-22
+// -- Author        : Zero Networks
+// -- MITRE ATT&CK  : TA0008, T1021.001 (RDP), T1021.002 (SMB), T1021.006 (WinRM)
+// -- Severity      : HIGH (established), MEDIUM (blocked/requested), LOW (blocked_at_source)
+// -- Log type      : ZN_NETWORK
+// --
+// -- Prerequisites:
+// --   Reference list 'zn_known_workstation_ports' populated before enabling.
+// --   Format: one "src_asset_id:port" string per line (e.g., "abc123:3389").
+
+rule zn_first_smb_rdp_winrm {
+  meta:
+    author              = "Zero Networks"
+    description         = "First lateral movement protocol use from a workstation."
+    severity            = "HIGH"
+    priority            = "HIGH"
+    mitre_attack_tactic = "TA0008"
+    mitre_attack_technique = "T1021.001, T1021.002, T1021.006"
+    version             = "1.0.0"
+    last_modified       = "2026-04-22"
+
+  events:
+    $e.metadata.log_type = "ZN_NETWORK"
+    $e.additional.fields["TrafficType"] = "Internal"
+    $e.principal.labels["AssetType"] = "Workstation"
+
+    $src_id = $e.principal.asset.asset_id
+    $src_id != ""
+
+    // Lateral movement ports: SMB, RDP, WinRM, SSH, RPC, LDAP
+    $dst_port = $e.target.port
+    $dst_port in (22, 135, 139, 389, 445, 636, 3389, 5985, 5986)
+
+    // Exclude known (workstation, port) combinations - format: "src_asset_id:port"
+    not strings.concat($src_id, ":", string($dst_port)) in %zn_known_workstation_ports
+
+  match:
+    $src_id, $dst_port over 1h
+
+  outcome:
+    $conn_status    = array_first($e.additional.fields["ConnectionStatus"])
+    $severity       = if(
+        $conn_status = "established", "HIGH",
+        if($conn_status = "blocked" or $conn_status = "requested", "MEDIUM", "LOW"))
+    $lateral_protocol = if($dst_port = 445 or $dst_port = 139, "SMB",
+                        if($dst_port = 3389, "RDP",
+                        if($dst_port = 5985 or $dst_port = 5986, "WinRM",
+                        if($dst_port = 22, "SSH",
+                        if($dst_port = 135, "RPC",
+                        if($dst_port = 389 or $dst_port = 636, "LDAP", "Unknown"))))))
+    $src_fqdn       = $e.principal.hostname
+    $src_ip         = $e.principal.ip
+    $src_user       = $e.principal.user.userid
+    $src_process    = $e.principal.process.file.full_path
+    $src_seg_state  = array_first($e.additional.fields["SrcSegState"])
+    $dst_fqdn       = $e.target.hostname
+    $dst_ip         = $e.target.ip
+    $dst_asset_type = $e.target.labels["AssetType"]
+
+  condition:
+    $e
+}

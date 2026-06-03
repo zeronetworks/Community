@@ -1,0 +1,21 @@
+# Ignore certain python files/directories
+pyproject.toml
+.venv
+*.pyc
+__pycache__
+.pylintrc
+
+# Ignore certain file types
+*.log
+*.csv
+*.yaml
+.env
+
+# Ignore log directories
+logs
+
+# Ignore IDE dirs/files
+.vscode/
+.idea/
+.pytest_cache/
+__pycache__/

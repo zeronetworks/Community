@@ -1,0 +1,60 @@
+// Copyright 2026 Zero Networks. All rights reserved.
+//
+// -- Title         : ZN - First External Destination
+// -- Description   : Fires when an internal source connects to an external IP not present in
+// --                 the zn_known_external_pairs reference list.
+// -- Version       : 1.0.0
+// -- Last modified : 2026-05-03
+// -- Author        : Zero Networks
+// -- MITRE ATT&CK  : TA0011, T1071 (Application Layer Protocol), T1041
+// -- Severity      : HIGH (established), MEDIUM (blocked/requested), LOW (blocked_at_source)
+// -- Log type      : ZN_NETWORK
+// --
+// -- Prerequisites:
+// --   Reference list 'zn_known_external_pairs' populated before enabling.
+// --   Format: "src_asset_id:dst_ip" (one per line).
+// --   Populate via scheduled 14-day baseline export.
+
+rule zn_first_external_destination {
+  meta:
+    author              = "Zero Networks"
+    description         = "First-ever outbound connection to an external IP not seen in baseline."
+    severity            = "HIGH"
+    priority            = "HIGH"
+    mitre_attack_tactic = "TA0011"
+    mitre_attack_technique = "T1071"
+    version             = "1.0.0"
+    last_modified       = "2026-05-03"
+
+  events:
+    $e.metadata.log_type = "ZN_NETWORK"
+    $e.additional.fields["TrafficType"] = "External"
+
+    $src_id = $e.principal.asset.asset_id
+    $dst_ip = $e.target.ip
+    $src_id != ""
+    $dst_ip != ""
+
+    not strings.concat($src_id, ":", $dst_ip) in %zn_known_external_pairs
+
+  match:
+    $src_id, $dst_ip over 1h
+
+  outcome:
+    $conn_status     = array_first($e.additional.fields["ConnectionStatus"])
+    $severity        = if(
+        $conn_status = "established", "HIGH",
+        if($conn_status = "blocked" or $conn_status = "requested", "MEDIUM", "LOW"))
+    $src_fqdn        = $e.principal.hostname
+    $src_ip          = $e.principal.ip
+    $src_user        = $e.principal.user.userid
+    $src_process     = $e.principal.process.file.full_path
+    $src_seg_state   = array_first($e.additional.fields["SrcSegState"])
+    $dst_fqdn        = $e.target.hostname
+    $dst_port        = $e.target.port
+    $dst_iso_code    = array_first($e.additional.fields["DstIsoCode"])
+    $dst_threat      = array_first($e.additional.fields["DstIPThreatScore"])
+
+  condition:
+    $e
+}

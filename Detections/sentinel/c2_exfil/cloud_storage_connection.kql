@@ -1,0 +1,89 @@
+// -- Title         : ZN - Connection to Cloud Storage Service
+// -- Description   : Detects internal hosts connecting to known cloud storage and file-sharing
+// --                 services (Dropbox, MEGA, Google Drive, OneDrive, Box, WeTransfer). These
+// --                 services are commonly abused for data exfiltration as traffic blends with
+// --                 legitimate employee usage. Fires on first-ever (src, provider) pair.
+// -- Version       : 1.0.0
+// -- Last modified : 2026-05-03
+// -- Author        : Zero Networks
+// -- MITRE ATT&CK  : T1567.002 (Exfiltration to Cloud Storage), T1048 (Exfiltration Over Alt Protocol)
+// -- Severity      : Medium (server source), Low (workstation source)
+// -- Data source   : ZNNetworkActivity_CL
+// -- Tuning        : Add approved source assets to an exclusion watchlist keyed on
+// --                 (Src_AssetID_s, CloudProvider). Scope to servers only for low-noise
+// --                 environments by adding: | where Src_AssetType_s == "Server"
+
+let _lookbackDays       = 14d;
+let _detectionWindowMin = 60;
+
+let _cloudDomains = dynamic([
+    "dropbox.com", "www.dropbox.com", "dl.dropboxusercontent.com",
+    "mega.nz", "mega.co.nz",
+    "drive.google.com", "docs.google.com", "storage.googleapis.com",
+    "onedrive.live.com", "1drv.ms", "sharepoint.com",
+    "box.com", "app.box.com",
+    "wetransfer.com", "we.tl",
+    "send.firefox.com", "gofile.io", "anonfiles.com"
+]);
+
+let _detectionStart = ago(totimespan(strcat(tostring(_detectionWindowMin), "m")));
+let _baselineStart  = ago(_lookbackDays);
+
+let KnownCloudPairs = materialize(
+    ZNNetworkActivity_CL
+    | where TimeGenerated between (_baselineStart .. _detectionStart)
+    | where TrafficType_s == "External"
+    | where isnotempty(Src_AssetID_s) and isnotempty(Dst_Fqdn_s)
+    | where Dst_Fqdn_s has_any (_cloudDomains)
+    | extend CloudProvider = case(
+        Dst_Fqdn_s has "dropbox",                           "Dropbox",
+        Dst_Fqdn_s has "mega",                             "MEGA",
+        Dst_Fqdn_s has "google",                           "Google Drive",
+        Dst_Fqdn_s has "onedrive" or Dst_Fqdn_s has "1drv", "OneDrive",
+        Dst_Fqdn_s has "sharepoint",                       "SharePoint",
+        Dst_Fqdn_s has "box.com",                          "Box",
+        Dst_Fqdn_s has "wetransfer" or Dst_Fqdn_s has "we.tl", "WeTransfer",
+        "Other Cloud Storage")
+    | summarize by Src_AssetID_s, CloudProvider
+);
+
+ZNNetworkActivity_CL
+| where TimeGenerated >= _detectionStart
+| where TrafficType_s == "External"
+| where isnotempty(Src_AssetID_s) and isnotempty(Dst_Fqdn_s)
+| where Dst_Fqdn_s has_any (_cloudDomains)
+| extend CloudProvider = case(
+    Dst_Fqdn_s has "dropbox",                           "Dropbox",
+    Dst_Fqdn_s has "mega",                             "MEGA",
+    Dst_Fqdn_s has "google",                           "Google Drive",
+    Dst_Fqdn_s has "onedrive" or Dst_Fqdn_s has "1drv", "OneDrive",
+    Dst_Fqdn_s has "sharepoint",                       "SharePoint",
+    Dst_Fqdn_s has "box.com",                          "Box",
+    Dst_Fqdn_s has "wetransfer" or Dst_Fqdn_s has "we.tl", "WeTransfer",
+    "Other Cloud Storage")
+| join kind=leftanti KnownCloudPairs
+    on $left.Src_AssetID_s  == $right.Src_AssetID_s
+    and $left.CloudProvider == $right.CloudProvider
+| extend
+    AlertSeverity = iff(Src_AssetType_s == "Server", "Medium", "Low"),
+    AlertName = strcat(
+        "Cloud storage connection: ",
+        iff(isnotempty(Src_Fqdn_s), Src_Fqdn_s, Src_IP_s),
+        " -> ", CloudProvider, " (", Dst_Fqdn_s, ")")
+| project
+    TimeGenerated,
+    AlertName,
+    AlertSeverity,
+    CloudProvider,
+    ConnectionStatus    = ConnectionStatus_s,
+    SrcAssetID          = Src_AssetID_s,
+    SrcFqdn             = Src_Fqdn_s,
+    SrcIP               = Src_IP_s,
+    SrcAssetType        = Src_AssetType_s,
+    SrcSegState         = Src_AssetNetworkSegmentationState_s,
+    SrcUserName         = Src_UserName_s,
+    SrcProcessPath      = Src_ProcessPath_s,
+    DstFqdn             = Dst_Fqdn_s,
+    DstIP               = Dst_IP_s,
+    DstPort             = Dst_Port_d
+| sort by TimeGenerated desc

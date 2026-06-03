@@ -1,0 +1,54 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Schema for Zero Networks baseline watchlists used by lateral movement detections.",
+  "watchlists": [
+    {
+      "name": "ZN_KnownAssetPairs",
+      "description": "Known internal (src, dst) asset ID pairs observed in the baseline window. Used by new_internal_asset_pair.kql to suppress known-good lateral traffic.",
+      "usedBy": ["new_internal_asset_pair.kql"],
+      "refreshCadence": "Daily (14d lookback)",
+      "searchAlias": "ZN_KnownAssetPairs",
+      "keyField": "SrcAssetID",
+      "columns": [
+        {"name": "SrcAssetID",  "type": "string", "description": "ZN source asset identifier"},
+        {"name": "DstAssetID",  "type": "string", "description": "ZN destination asset identifier"},
+        {"name": "SrcFqdn",     "type": "string", "description": "Source FQDN (informational)"},
+        {"name": "DstFqdn",     "type": "string", "description": "Destination FQDN (informational)"},
+        {"name": "LastSeen",    "type": "datetime", "description": "Last observed timestamp"},
+        {"name": "EventCount",  "type": "int", "description": "Observation count in lookback window"}
+      ]
+    },
+    {
+      "name": "ZN_KnownWorkstationPorts",
+      "description": "Known (workstation src, lateral port) combinations observed in the baseline window. Used by first_smb_rdp_winrm.kql.",
+      "usedBy": ["first_smb_rdp_winrm.kql"],
+      "refreshCadence": "Daily (14d lookback)",
+      "searchAlias": "ZN_KnownWorkstationPorts",
+      "keyField": "SrcAssetID",
+      "columns": [
+        {"name": "SrcAssetID",  "type": "string", "description": "ZN workstation asset identifier"},
+        {"name": "DstPort",     "type": "int",    "description": "Destination port"},
+        {"name": "SrcFqdn",     "type": "string", "description": "Workstation FQDN (informational)"},
+        {"name": "LastSeen",    "type": "datetime", "description": "Last observed timestamp"},
+        {"name": "EventCount",  "type": "int", "description": "Observation count in lookback window"}
+      ]
+    },
+    {
+      "name": "ZN_KnownRPCPairs",
+      "description": "Known (src, dst, rpc_operation) triples for dangerous RPC interfaces observed in the baseline window. Used by rpc_new_pair.kql.",
+      "usedBy": ["rpc_new_pair.kql"],
+      "refreshCadence": "Daily (14d lookback)",
+      "searchAlias": "ZN_KnownRPCPairs",
+      "keyField": "SrcAssetID",
+      "columns": [
+        {"name": "SrcAssetID",    "type": "string", "description": "ZN source asset identifier"},
+        {"name": "DstAssetID",    "type": "string", "description": "ZN destination asset identifier"},
+        {"name": "OperationName", "type": "string", "description": "RPC operation name"},
+        {"name": "SrcFqdn",       "type": "string", "description": "Source FQDN (informational)"},
+        {"name": "DstFqdn",       "type": "string", "description": "Destination FQDN (informational)"},
+        {"name": "LastSeen",      "type": "datetime", "description": "Last observed timestamp"},
+        {"name": "EventCount",    "type": "int", "description": "Observation count in lookback window"}
+      ]
+    }
+  ]
+}

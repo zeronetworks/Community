@@ -1,0 +1,27 @@
+# Zero Networks - Cloud Storage Domain Reference List
+# Used by: chronicle/c2_exfil/cloud_storage_connection.yaral
+# Format: domain fragment (matched with re.regex)
+# Last updated: 2026-05-03
+#
+# Add organisation-approved cloud storage domains below if you want to exclude them
+# from the rule (not currently supported in YARA-L reference list matching - use
+# rule exclusion logic instead).
+
+dropbox.com
+www.dropbox.com
+dl.dropboxusercontent.com
+mega.nz
+mega.co.nz
+drive.google.com
+docs.google.com
+storage.googleapis.com
+onedrive.live.com
+1drv.ms
+sharepoint.com
+box.com
+app.box.com
+wetransfer.com
+we.tl
+send.firefox.com
+gofile.io
+anonfiles.com

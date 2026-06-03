@@ -1,0 +1,16 @@
+# Zero Networks - Chronicle Reference List: Lateral Movement Ports
+# List name: zn_lateral_movement_ports
+# Description: Well-known ports used for lateral movement. Used by chronicle detection
+#              rules to match against Dst.Port / target.port values.
+# Last modified: 2026-04-22
+# Import via: Chronicle UI > Reference Lists > Create > paste this content (lines starting
+#             with # are ignored by Chronicle if "Comment" type is set).
+22
+135
+139
+389
+445
+636
+3389
+5985
+5986

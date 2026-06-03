@@ -1,0 +1,71 @@
+// Copyright 2026 Zero Networks. All rights reserved.
+//
+// -- Title         : ZN - Off-Hours Domain Controller Access
+// -- Description   : Detects Kerberos or LDAP activity targeting a Domain Controller outside
+// --                 business hours (before 07:00 or after 20:00 UTC, or on weekends).
+// -- Version       : 1.0.0
+// -- Last modified : 2026-05-03
+// -- Author        : Zero Networks
+// -- MITRE ATT&CK  : TA0006, T1558 (Steal or Forge Kerberos Tickets), T1087.002
+// -- Severity      : HIGH (auth failure), MEDIUM (success)
+// -- Log type      : ZN_IDENTITY
+// --
+// -- UDM field mapping (from ZN Chronicle parser):
+// --   subjectUser.name          -> additional.fields["SubjectUserName"]
+// --   subjectUser.sid           -> additional.fields["SubjectUserSID"]
+// --   failureReason             -> additional.fields["FailureReason"] (stringified int; "0" = success)
+// --   authenticationPackageName -> additional.fields["AuthPackage"]
+// --   dst.assetId               -> target.asset.asset_id
+// --   dst.fqdn                  -> target.hostname
+// --   dst.assetType             -> additional.fields["DstAssetType"] (stringified int; "2" = SERVER)
+// --
+// -- IMPORTANT: Domain Controllers have no dedicated assetType (SERVER = 2 includes DCs).
+// -- Populate the %zn_dc_asset_ids reference list with DC asset IDs from ZN inventory.
+
+rule zn_off_hours_dc_access {
+  meta:
+    author              = "Zero Networks"
+    description         = "Authentication to Domain Controller outside business hours (before 07:00 or after 20:00 UTC, weekends)."
+    severity            = "MEDIUM"
+    priority            = "MEDIUM"
+    mitre_attack_tactic = "TA0006"
+    mitre_attack_technique = "T1558"
+    version             = "1.0.0"
+    last_modified       = "2026-05-05"
+
+  events:
+    $e.metadata.log_type = "ZN_IDENTITY"
+    $e.additional.fields["DstAssetType"] = "2"   // SERVER (DCs are SERVER type; see %zn_dc_asset_ids)
+    $e.target.asset.asset_id in %zn_dc_asset_ids  // reference list of known DC asset IDs
+
+    $user_name = $e.additional.fields["SubjectUserName"]
+    $dst_id    = $e.target.asset.asset_id
+    $user_name != ""
+    $dst_id    != ""
+
+    // Off-hours: before 07:00 UTC or at/after 20:00 UTC, or weekend (1=Sun, 7=Sat)
+    (
+        timestamp.get_hour($e.metadata.event_timestamp, "UTC") < 7 or
+        timestamp.get_hour($e.metadata.event_timestamp, "UTC") >= 20 or
+        timestamp.get_day_of_week($e.metadata.event_timestamp, "UTC") = 1 or  // Sunday
+        timestamp.get_day_of_week($e.metadata.event_timestamp, "UTC") = 7     // Saturday
+    )
+
+  match:
+    $user_name, $dst_id over 1h
+
+  outcome:
+    $failure_reason  = array_first($e.additional.fields["FailureReason"])
+    $severity        = if($failure_reason != "0", "HIGH", "MEDIUM")
+    $auth_pkg        = array_first($e.additional.fields["AuthPackage"])
+    $hour_of_day     = timestamp.get_hour($e.metadata.event_timestamp, "UTC")
+    $user_sid        = array_first($e.additional.fields["SubjectUserSID"])
+    $dst_fqdn        = $e.target.hostname
+    $dst_ip          = $e.target.ip
+    $dst_asset_type  = array_first($e.additional.fields["DstAssetType"])
+    $event_type      = array_first($e.additional.fields["EventType"])
+    $logon_type      = array_first($e.additional.fields["LogonType"])
+
+  condition:
+    $e
+}

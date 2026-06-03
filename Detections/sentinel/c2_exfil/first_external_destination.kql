@@ -1,0 +1,64 @@
+// -- Title         : ZN - First External Destination
+// -- Description   : Fires when an internal source makes an outbound connection to an external
+// --                 IP that has never been seen before from that source. Covers established
+// --                 connections (active C2/exfil) and blocked attempts (failed C2 or policy).
+// -- Version       : 1.0.0
+// -- Last modified : 2026-05-03
+// -- Author        : Zero Networks
+// -- MITRE ATT&CK  : T1071 (Application Layer Protocol), T1041 (Exfiltration Over C2 Channel)
+// -- Severity      : High (established), Medium (blocked/requested), Low (blocked_at_source)
+// -- Data source   : ZNNetworkActivity_CL
+
+let _lookbackDays       = 14d;
+let _detectionWindowMin = 60;
+
+let _detectionStart = ago(totimespan(strcat(tostring(_detectionWindowMin), "m")));
+let _baselineStart  = ago(_lookbackDays);
+
+// Baseline: known (src_asset_id, dst_ip) external pairs
+let KnownExternalPairs = materialize(
+    ZNNetworkActivity_CL
+    | where TimeGenerated between (_baselineStart .. _detectionStart)
+    | where TrafficType_s == "External"
+    | where isnotempty(Src_AssetID_s) and isnotempty(Dst_IP_s)
+    | summarize by Src_AssetID_s, Dst_IP_s
+);
+
+ZNNetworkActivity_CL
+| where TimeGenerated >= _detectionStart
+| where TrafficType_s == "External"
+| where isnotempty(Src_AssetID_s) and isnotempty(Dst_IP_s)
+| join kind=leftanti KnownExternalPairs
+    on $left.Src_AssetID_s == $right.Src_AssetID_s
+    and $left.Dst_IP_s     == $right.Dst_IP_s
+| extend
+    AlertSeverity = case(
+        ConnectionStatus_s == "established",       "High",
+        ConnectionStatus_s == "blocked",           "Medium",
+        ConnectionStatus_s == "requested",         "Medium",
+        ConnectionStatus_s == "blocked_at_source", "Low",
+        "Medium"),
+    AlertName = strcat(
+        "First external destination: ",
+        iff(isnotempty(Src_Fqdn_s), Src_Fqdn_s, Src_IP_s),
+        " -> ", Dst_IP_s,
+        iff(isnotempty(Dst_Fqdn_s), strcat(" (", Dst_Fqdn_s, ")"), ""))
+| project
+    TimeGenerated,
+    AlertName,
+    AlertSeverity,
+    ConnectionStatus    = ConnectionStatus_s,
+    SrcAssetID          = Src_AssetID_s,
+    SrcFqdn             = Src_Fqdn_s,
+    SrcIP               = Src_IP_s,
+    SrcAssetType        = Src_AssetType_s,
+    SrcSegState         = Src_AssetNetworkSegmentationState_s,
+    SrcProcessPath      = Src_ProcessPath_s,
+    SrcUserName         = Src_UserName_s,
+    DstIP               = Dst_IP_s,
+    DstFqdn             = Dst_Fqdn_s,
+    DstPort             = Dst_Port_d,
+    DstIsoCode          = Dst_IsoCode_s,
+    DstIPThreatScore    = Dst_IPThreatScore_d,
+    ProtocolType        = ProtocolType_d
+| sort by TimeGenerated desc
