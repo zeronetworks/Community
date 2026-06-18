@@ -44,7 +44,7 @@ If `$env:ZNApiKey` is not set the script exits with an authentication error.
 | `-FromDays` | no | `30` | How many days of activity history to scan (`1`–`365`). |
 | `-OutputPath` | no | `./CommonGroups_<dest>_<timestamp>.csv` | Output CSV path. |
 | `-IncludeSourceUsers` | no | off | Switch. Adds a `SourceUsers` column to the CSV listing the member display names per group. Off by default — groups containing thousands of users make the column very noisy. `SourceUserCount` is always present. |
-| `-MaxParallel` | no | `8` | Max concurrent group-membership lookups (`1`–`16`). Used only on PowerShell 7+ and only once there are at least 20 resolved users to amortize runspace startup. Set to `1` to force sequential, lower if the tenant returns HTTP 429. Ignored on Windows PowerShell 5.1. |
+| `-MaxParallel` | no | `8` | Max concurrent per-user resolve + group-membership lookups (`1`–`64`). Used only on PowerShell 7+ and only once there are at least 20 source users to amortize runspace startup. Raise (e.g. `24`–`32`) for very large destinations with thousands of source users; set `1` to force sequential, or lower if the tenant returns HTTP 429. Ignored on Windows PowerShell 5.1. |
 
 `-DestinationFQDN` and `-DestinationIP` are mutually exclusive — supply exactly one. Running the script with neither prints usage and exits.
 
@@ -57,13 +57,17 @@ If `$env:ZNApiKey` is not set the script exits with an authentication error.
 3. **Collects distinct source users** in one of two ways:
    - **Fast path (primary):** calls `/activities/network/distinctField/srcUser`, which returns the de-duplicated set of source users (with per-user hit counts) in a single request. This avoids paging through tens of thousands of activity rows on busy destinations.
    - **Fallback:** if the `distinctField` endpoint is unavailable (older tenant), the script pages `/activities/network` and de-duplicates client-side.
-4. Pages through `Get-ZNUser` to build a SID → user and PrincipalName → user lookup, so activity SIDs that don't match ZN user IDs (e.g. Entra synthetic SIDs) can still be resolved.
-5. **Resolves** each distinct source user against that lookup (SID first, then PrincipalName). If two source entries map to the same ZN user (case-variant `userName`, or multiple SIDs for one identity) the user is counted **once**. Unresolvable system/machine accounts are skipped and reported.
-6. **Retrieves group memberships** for each resolved user:
-   - On **PowerShell 7+** with ≥ 20 resolved users, the script fans out to `-MaxParallel` concurrent runspaces (default 8) calling `/users/{id}/ancestors` directly — this avoids the per-runspace cost of re-importing the ZN module.
-   - On **Windows PowerShell 5.1**, on PS 7+ with fewer than 20 resolved users, or when `-MaxParallel 1` is supplied, the script runs sequentially via `Get-ZNUserMemberOf`.
-   - All API calls (distinctField, activity pages, `Get-ZNUser`, membership lookups) are wrapped with retry + exponential backoff + jitter on transient failures (HTTP 429 / 5xx and transport errors). `Retry-After` headers are honoured.
-7. Merges memberships into a group → users map (sequential, race-free), filters out groups below `-MinUserCount`, sorts by member count desc, writes the CSV, and prints the top 10 to the console.
+4. **Resolves + retrieves groups per user, on demand.** Rather than enumerating the whole ZN directory (which can be 100k+ users on a large tenant), each source user is looked up individually:
+   - `GET /users/searchIdByPrincipalName?principalName=DOMAIN\user` (fast path's `userName`)
+   - `GET /users/searchIdBySid?sid=<sid>` (used by the activity-scan fallback when only a SID is available)
+   - `HTTP 404` is treated as "not a ZN user" (system/machine/unknown account) and skipped silently — those users won't have AD groups anyway.
+   - Once resolved, `GET /users/{id}/ancestors` returns the user's groups in one call.
+5. **Parallel vs sequential:**
+   - On **PowerShell 7+** with ≥ 20 source users, resolve-and-fetch runs in `-MaxParallel` concurrent runspaces (default 8). Each runspace uses raw REST — no per-runspace module import. Results stream back to the main thread with live progress + ETA.
+   - On **Windows PowerShell 5.1**, on PS 7+ with fewer than 20 source users, or when `-MaxParallel 1` is supplied, the script runs sequentially.
+   - All API calls (distinctField, activity pages, resolve, ancestors) are wrapped with retry + exponential backoff + jitter on transient failures (HTTP 429 / 5xx and transport errors). `Retry-After` headers are honoured. `HTTP 404` from the resolver short-circuits without retrying.
+6. **Merges** the per-user results into a group → users map (sequential, race-free) and **dedupes by ZN user id**, so case-variant `userName`s or multiple SIDs that resolve to the same ZN user are counted **once**. Unresolvable users are reported as a skipped count.
+7. Filters out groups below `-MinUserCount`, sorts by member count desc, writes the CSV, and prints the top 10 to the console.
 
 ### Output
 
@@ -113,7 +117,7 @@ Get-Help .\Find-CommonGroupsForDestination.ps1 -Full
 
 ### Notes & caveats
 
-- The fast path (`distinctField/srcUser`) returns only `userName` (`DOMAIN\user`), so users are resolved by `PrincipalName`. The fallback activity-scan path also captures the SID and tries SID first. Either way, well-known/system/machine accounts (`SYSTEM`, `LOCAL SERVICE`, `*$`, etc.) won't resolve to a ZN user and are skipped — the count of unresolved users is reported.
+- The fast path (`distinctField/srcUser`) returns only `userName` (`DOMAIN\user`), so users are resolved via `searchIdByPrincipalName`. The fallback activity-scan path also captures the SID, in which case `searchIdBySid` is used. Well-known/system/machine accounts (`SYSTEM`, `LOCAL SERVICE`, `*$`, etc.) return `HTTP 404` and are skipped — the count of unresolved users is reported.
 - Only activities that include source-user information are considered. Service-to-service or agentless flows without a resolvable user contribute nothing to the report.
 - If two source entries map to the same ZN user, the user is counted **once** per group (no double-counting from SID/name variants).
 - The activity-feed fallback path uses cursor pagination at `_limit=400`; very long lookbacks on busy destinations will take longer and consume more API calls. The fast path is unaffected.

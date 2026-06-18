@@ -40,10 +40,11 @@
     contain thousands of users; the 'SourceUserCount' column is always present.
 
 .PARAMETER MaxParallel
-    Max concurrent group-membership lookups (1-16, default 8). Parallelism is used on
-    PowerShell 7+; on Windows PowerShell 5.1 lookups run sequentially regardless.
-    Lower this if the tenant returns HTTP 429 (rate limiting). All API calls already
-    retry with exponential backoff.
+    Max concurrent user-resolution / group-membership lookups (1-64, default 8).
+    Parallelism is used on PowerShell 7+ once there are >= 20 source users; on Windows
+    PowerShell 5.1 lookups always run sequentially. Raise it (e.g. 24-32) for very large
+    destinations with thousands of source users; lower it (or set 1) if the tenant
+    returns HTTP 429 (rate limiting). All API calls already retry with exponential backoff.
 
 .EXAMPLE
     .\Find-CommonGroupsForDestination.ps1 -DestinationFQDN "fileserver.corp.local" -MinUserCount 3 -FromDays 7
@@ -75,7 +76,7 @@ param(
     [switch]$IncludeSourceUsers,
 
     [Parameter()]
-    [ValidateRange(1, 16)]
+    [ValidateRange(1, 64)]
     [int]$MaxParallel = 8
 )
 
@@ -105,6 +106,7 @@ OPTIONS
   -FromDays     <int>   Days of activity history to scan (1-365).        Default: 30
   -OutputPath   <string> CSV output path.  Default: .\CommonGroups_<dest>_<timestamp>.csv
   -IncludeSourceUsers   Add a 'SourceUsers' column listing member names.  Default: off (noisy at scale)
+  -MaxParallel  <int>   Concurrent lookups on PS7+ (1-64).  Default: 8  (raise for huge dests; 1 = sequential)
 
 PREREQUISITE (authentication required)
   The script reads the API key from `$env:ZNApiKey`. Set it first using either:
@@ -310,147 +312,174 @@ if ($sourceUsers.Count -eq 0) {
 }
 
 # ---------------------------------------------------------------------------
-# 3b. Build a SID/PrincipalName -> ZN user lookup from the directory
+# 4. Resolve each distinct source user to a ZN user id and fetch its groups.
 #
-#    Activity SIDs do not always match user.Sid (e.g. Entra synthetic SIDs),
-#    so we resolve by SID first, then fall back to src.userName == PrincipalName.
+#    We do NOT enumerate the whole directory (a large tenant can have 100k+
+#    users). Instead each distinct source user is resolved on demand:
+#       name -> GET /users/searchIdByPrincipalName?principalName=<DOMAIN\user>
+#       sid  -> GET /users/searchIdBySid?sid=<sid>   (activity-scan fallback only)
+#    HTTP 404 = not a ZN user (system/machine/unknown account) -> skipped.
+#    Then GET /users/{id}/ancestors returns that user's groups.
+#
+#    Runs in parallel on PowerShell 7+ (capped by -MaxParallel) once there are
+#    enough users to amortize runspace startup; sequential otherwise. Each call
+#    is retry-wrapped. Case-variant names / multiple SIDs can resolve to the same
+#    ZN id -> deduped at merge so each user is counted once.
 # ---------------------------------------------------------------------------
-Write-Host "`nBuilding user directory map..." -ForegroundColor Cyan
+$work = @($sourceUsers.Values)
+Write-Host "`nResolving $($work.Count) source user(s) and retrieving group memberships..." -ForegroundColor Cyan
 
-$bySid = @{}; $byPrincipal = @{}
-$offset = 0
-do {
-    Write-Debug "Get-ZNUser -Limit 400 -Offset $offset"
-    $offsetLocal = $offset
-    $uPage = Invoke-WithRetry -Description "Get-ZNUser offset $offsetLocal" -Action {
-        Get-ZNUser -Limit 400 -Offset $offsetLocal -Verbose:$false -Debug:$false
+# Sequential resolver+fetcher (uses raw REST so behaviour matches the parallel path).
+function Get-UserGroupsForSource {
+    param($Src)
+    $name = if ($Src.Name) { $Src.Name } else { $Src.Sid }
+    $uid  = $null
+    try {
+        if ($Src.Name) {
+            $enc = [uri]::EscapeDataString($Src.Name)
+            $uid = (Invoke-WithRetry -Description "resolve $name" -Action {
+                Invoke-RestMethod -Uri "$baseUrl/users/searchIdByPrincipalName?principalName=$enc" -Headers $headers -Verbose:$false }).userId
+        } elseif ($Src.Sid) {
+            $enc = [uri]::EscapeDataString($Src.Sid)
+            $uid = (Invoke-WithRetry -Description "resolve $name" -Action {
+                Invoke-RestMethod -Uri "$baseUrl/users/searchIdBySid?sid=$enc" -Headers $headers -Verbose:$false }).userId
+        }
+    } catch {
+        $st = $null; try { $st = [int]$_.Exception.Response.StatusCode } catch {}
+        if ($st -ne 404) { Write-Warning "Resolve failed for '$name': $_" }
     }
-    $uItems = @($uPage.Items)
-    foreach ($u in $uItems) {
-        if ($u.Sid)           { $bySid[$u.Sid] = $u }
-        if ($u.PrincipalName) { $byPrincipal[$u.PrincipalName.ToLowerInvariant()] = $u }
-    }
-    $offset += $uItems.Count
-    Write-Verbose "Directory page fetched: $($uItems.Count) users (total indexed: $offset)."
-} while ($uItems.Count -eq 400)
+    if (-not $uid) { return [pscustomobject]@{ Name = $name; UserId = $null; Groups = @() } }
 
-Write-Host "  Directory users indexed    : $($bySid.Count) by SID, $($byPrincipal.Count) by principal name" -ForegroundColor DarkGray
-
-# ---------------------------------------------------------------------------
-# 4a. Resolve each distinct source user to a unique ZN user id.
-#     (SID first, then userName == PrincipalName; dedupe by ZN id.)
-# ---------------------------------------------------------------------------
-Write-Host "`nResolving users..." -ForegroundColor Cyan
-
-$resolvedUsers = [System.Collections.Generic.List[object]]::new()  # @{ Id; Name }
-$unresolved    = [System.Collections.Generic.List[string]]::new()
-$processedIds  = [System.Collections.Generic.HashSet[string]]::new()
-
-foreach ($kvp in $sourceUsers.GetEnumerator()) {
-    $src      = $kvp.Value
-    $userName = if ($src.Name) { $src.Name } else { $src.Sid }
-
-    $znUser = $null; $resolvedVia = $null
-    if ($src.Sid -and $bySid.ContainsKey($src.Sid)) {
-        $znUser = $bySid[$src.Sid]; $resolvedVia = 'SID'
-    } elseif ($src.Name -and $byPrincipal.ContainsKey($src.Name.ToLowerInvariant())) {
-        $znUser = $byPrincipal[$src.Name.ToLowerInvariant()]; $resolvedVia = 'PrincipalName'
-    }
-
-    if (-not $znUser) {
-        # Typically well-known/system/machine accounts (SYSTEM, LOCAL SERVICE, *$) - no AD groups.
-        $unresolved.Add($userName)
-        Write-Verbose "Unresolved source user '$userName' (sid='$($src.Sid)') - skipped."
-        continue
-    }
-    # Case-variant userNames / multiple SIDs can map to one ZN user; count once.
-    if (-not $processedIds.Add($znUser.Id)) {
-        Write-Debug "Duplicate -> ZN user $($znUser.Id) already processed; skipping '$userName'."
-        continue
-    }
-    $resolvedUsers.Add([pscustomobject]@{ Id = $znUser.Id; Name = $znUser.Name })
-    Write-Debug "Resolved '$userName' via $resolvedVia -> ZN user $($znUser.Id)"
+    $groups = @()
+    try {
+        $groups = @((Invoke-WithRetry -Description "ancestors $uid" -Action {
+            Invoke-RestMethod -Uri "$baseUrl/users/$uid/ancestors" -Headers $headers -Verbose:$false }).items)
+    } catch { Write-Warning "Group lookup failed for '$name' ($uid): $_" }
+    [pscustomobject]@{ Name = $name; UserId = $uid; Groups = $groups }
 }
 
-Write-Host "  Source users resolved      : $($resolvedUsers.Count) / $($sourceUsers.Count)" -ForegroundColor DarkGray
-if ($unresolved.Count -gt 0) {
-    Write-Host "  Unresolved (skipped)       : $($unresolved.Count) (e.g. $((($unresolved | Select-Object -First 3) -join ', ')))" -ForegroundColor DarkGray
-}
-
-# ---------------------------------------------------------------------------
-# 4b. Retrieve each resolved user's group memberships.
-#     Parallel on PowerShell 7+ (capped by -MaxParallel); sequential on 5.1.
-#     Each call is retry-wrapped. Returns @{ Name; Groups }.
-# ---------------------------------------------------------------------------
-Write-Host "Retrieving group memberships for $($resolvedUsers.Count) user(s)..." -ForegroundColor Cyan
-
-# Parallelism only pays off once there are enough users to amortize runspace
-# startup cost; below the threshold, sequential is faster. Tune via -MaxParallel.
 $parallelThreshold = 20
-$useParallel = ($PSVersionTable.PSVersion.Major -ge 7) -and ($MaxParallel -gt 1) -and ($resolvedUsers.Count -ge $parallelThreshold)
-Write-Verbose ("Membership lookup mode: {0} ({1} users, PS {2})." -f `
+$useParallel = ($PSVersionTable.PSVersion.Major -ge 7) -and ($MaxParallel -gt 1) -and ($work.Count -ge $parallelThreshold)
+Write-Verbose ("Lookup mode: {0} ({1} source users, PS {2})." -f `
     $(if ($useParallel) {"parallel, throttle $MaxParallel"} else {"sequential (< $parallelThreshold users or PS<7 or -MaxParallel 1)"}), `
-    $resolvedUsers.Count, $PSVersionTable.PSVersion)
+    $work.Count, $PSVersionTable.PSVersion)
+
+# Progress + ETA, updated as each user completes (works for both paths).
+$progressActivity = "Resolving users + groups"
+$swPhase = [System.Diagnostics.Stopwatch]::StartNew()
+function Show-LookupProgress {
+    param([int]$Done, [int]$Total, [System.Diagnostics.Stopwatch]$Sw)
+    if ($Total -le 0) { return }
+    $status = "$Done / $Total users"
+    if ($Done -gt 0 -and $Done -lt $Total) {
+        $etaSec = [int](($Sw.Elapsed.TotalSeconds / $Done) * ($Total - $Done))
+        $rate   = [math]::Round($Done / [math]::Max($Sw.Elapsed.TotalSeconds, 0.001), 1)
+        $status += "  (~{0} left, {1}/s)" -f ([TimeSpan]::FromSeconds($etaSec).ToString('mm\:ss')), $rate
+    }
+    Write-Progress -Activity $progressActivity -Status $status -PercentComplete ([int](($Done / $Total) * 100))
+}
 
 if ($useParallel) {
-    # Call the REST endpoint that Get-ZNUserMemberOf wraps (GET /users/{id}/ancestors)
-    # directly, so parallel runspaces do NOT each pay the (heavy) Import-Module cost.
+    # Raw REST in each runspace so they don't each pay the heavy Import-Module cost.
     $apiKey = $env:ZNApiKey
     $base   = $baseUrl
-    $membershipResults = $resolvedUsers | ForEach-Object -ThrottleLimit $MaxParallel -Parallel {
-        $u   = $_
+    $collected = [System.Collections.Generic.List[object]]::new()
+    $work | ForEach-Object -ThrottleLimit $MaxParallel -Parallel {
+        $src = $_
         $hdr = @{ Authorization = $using:apiKey }
-        $uri = "$using:base/users/$($u.Id)/ancestors"
-        $groups = $null
-        for ($attempt = 1; $attempt -le 4; $attempt++) {
-            try {
-                $groups = (Invoke-RestMethod -Uri $uri -Headers $hdr -Verbose:$false).items
-                break
-            } catch {
-                $status = $null; try { $status = [int]$_.Exception.Response.StatusCode } catch {}
-                $transient = ($status -in 429,500,502,503,504) -or ($null -eq $status)
-                if (-not $transient -or $attempt -eq 4) {
-                    Write-Warning "  Could not retrieve groups for $($u.Name) ($($u.Id)): $_"
-                    break
+        $base = $using:base
+        $name = if ($src.Name) { $src.Name } else { $src.Sid }
+
+        function Invoke-Req($uri) {
+            for ($a = 1; $a -le 4; $a++) {
+                try { return Invoke-RestMethod -Uri $uri -Headers $hdr -Verbose:$false }
+                catch {
+                    $st = $null; try { $st = [int]$_.Exception.Response.StatusCode } catch {}
+                    if ($st -eq 404) { throw }
+                    $transient = ($st -in 429,500,502,503,504) -or ($null -eq $st)
+                    if (-not $transient -or $a -eq 4) { throw }
+                    Start-Sleep -Milliseconds ([int](1000 * [math]::Pow(2, $a-1) + (Get-Random -Maximum 250)))
                 }
-                Start-Sleep -Milliseconds ([int](1000 * [math]::Pow(2, $attempt-1) + (Get-Random -Maximum 250)))
             }
         }
-        [pscustomobject]@{ Name = $u.Name; Groups = @($groups) }
-    }
-} else {
-    $membershipResults = foreach ($u in $resolvedUsers) {
-        $groups = $null
+
+        $uid = $null
         try {
-            $groups = Invoke-WithRetry -Description "Get-ZNUserMemberOf $($u.Id)" -Action {
-                (Get-ZNUserMemberOf -UserId $u.Id -Verbose:$false -Debug:$false).Items
+            if ($src.Name) {
+                $enc = [uri]::EscapeDataString($src.Name)
+                $uid = (Invoke-Req "$base/users/searchIdByPrincipalName?principalName=$enc").userId
+            } elseif ($src.Sid) {
+                $enc = [uri]::EscapeDataString($src.Sid)
+                $uid = (Invoke-Req "$base/users/searchIdBySid?sid=$enc").userId
             }
         } catch {
-            Write-Warning "  Could not retrieve groups for $($u.Name) ($($u.Id)): $_"
+            $st = $null; try { $st = [int]$_.Exception.Response.StatusCode } catch {}
+            if ($st -ne 404) { Write-Warning "Resolve failed for '$name': $_" }
         }
-        Write-Verbose "User '$($u.Name)' ($($u.Id)) is a member of $(@($groups).Count) group(s)."
-        [pscustomobject]@{ Name = $u.Name; Groups = @($groups) }
+        if (-not $uid) {
+            [pscustomobject]@{ Name = $name; UserId = $null; Groups = @() }
+        } else {
+            $g = @()
+            try { $g = @((Invoke-Req "$base/users/$uid/ancestors").items) }
+            catch { Write-Warning "Group lookup failed for '$name' ($uid): $_" }
+            [pscustomobject]@{ Name = $name; UserId = $uid; Groups = $g }
+        }
+    } | ForEach-Object {
+        # Runs on the main thread as each parallel result streams back.
+        $collected.Add($_)
+        Show-LookupProgress -Done $collected.Count -Total $work.Count -Sw $swPhase
+    }
+    $rawResults = $collected
+} else {
+    $done = 0
+    $rawResults = foreach ($src in $work) {
+        $done++
+        Show-LookupProgress -Done $done -Total $work.Count -Sw $swPhase
+        Get-UserGroupsForSource -Src $src
     }
 }
+Write-Progress -Activity $progressActivity -Completed
+Write-Verbose ("Lookup phase completed in {0:n1}s." -f $swPhase.Elapsed.TotalSeconds)
 
 # ---------------------------------------------------------------------------
-# 4c. Merge memberships into the group -> users map (sequential; no races).
+# 4b. Merge results into the group -> users map (sequential; dedupe by user id).
 # ---------------------------------------------------------------------------
-# groupId -> @{ Name; Id; Users (list of display names) }
-$groupUserMap = [ordered]@{}
-foreach ($res in $membershipResults) {
-    foreach ($g in $res.Groups) {
+$groupUserMap = [ordered]@{}                                        # groupId -> @{ Name; Id; Users }
+$processedIds = [System.Collections.Generic.HashSet[string]]::new()
+$unresolved   = [System.Collections.Generic.List[string]]::new()
+$resolvedCount = 0
+
+foreach ($r in $rawResults) {
+    if (-not $r) { continue }
+    if (-not $r.UserId) {
+        $unresolved.Add($r.Name)
+        Write-Verbose "Unresolved source user '$($r.Name)' - skipped (not a ZN user)."
+        continue
+    }
+    if (-not $processedIds.Add($r.UserId)) {
+        Write-Debug "Duplicate -> ZN user $($r.UserId) ('$($r.Name)') already counted; skipping."
+        continue
+    }
+    $resolvedCount++
+    Write-Verbose "User '$($r.Name)' ($($r.UserId)) is a member of $(@($r.Groups).Count) group(s)."
+
+    foreach ($g in $r.Groups) {
         if (-not $g) { continue }
-        $gid = $g.Id
+        $gid = $g.id
         if (-not $groupUserMap.Contains($gid)) {
             $groupUserMap[$gid] = @{
-                Name  = $g.Name
+                Name  = $g.name
                 Id    = $gid
                 Users = [System.Collections.Generic.List[string]]::new()
             }
         }
-        $groupUserMap[$gid].Users.Add($res.Name)
+        $groupUserMap[$gid].Users.Add($r.Name)
     }
+}
+
+Write-Host "  Source users resolved      : $resolvedCount / $($work.Count)" -ForegroundColor DarkGray
+if ($unresolved.Count -gt 0) {
+    Write-Host "  Unresolved (skipped)       : $($unresolved.Count) (e.g. $((($unresolved | Select-Object -First 3) -join ', ')))" -ForegroundColor DarkGray
 }
 
 # ---------------------------------------------------------------------------
