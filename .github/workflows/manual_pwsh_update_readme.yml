@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Github repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
       - name: Check to see if documentation.json exists
         shell: pwsh
         run: |
@@ -30,6 +30,10 @@ jobs:
           Get-Content "$($basePath)/.github/templates/header.md" -Encoding UTF8 | Out-File "$($basePath)/README.md"
           function Add-LineFileInfo {
               param($readmePath, $file, $relativePath, $prefix = "&nbsp;")
+              # Skip silently when the caller passed a null/empty file (e.g. a
+              # subfolder containing no .ps1 files). Get-Help would otherwise
+              # throw "argument is null or empty" and abort the whole workflow.
+              if (-not $file -or [string]::IsNullOrEmpty($file.FullName)) { return }
               # Check for synopsis
               if ((Get-Help $file.Fullname).Synopsis) {
                   $description = (Get-Help $file.Fullname).Synopsis
@@ -66,13 +70,16 @@ jobs:
                   }
 
                   ## If subfolder only has one script, add it to the others.
-                  else {
+                  ## Subfolders with zero .ps1 files (e.g. README-only utility folders)
+                  ## fall through and are skipped — otherwise $singleScripts ends up
+                  ## with file=$null entries that crash Add-LineFileInfo.
+                  elseif ((Get-ChildItem $subfolder.FullName -Recurse -File -Filter '*.ps1').Count -eq 1) {
                       $singleScripts += [PSCustomObject]@{
                           file = Get-ChildItem $subfolder.FullName -File -Filter '*.ps1' -Recurse
                           relativePath = "$($folder.Name)/$($subfolder.Name)"
                           prefix = $subfolder.Name
                       }
-                    }           
+                    }
               }
 
               # add scripts
@@ -97,24 +104,33 @@ jobs:
           Add-Content -Path "$($basePath)/README.md" -Value "`n<br><br>`n![generated_image](https://img.shields.io/badge/generated%20date-$((Get-Date).ToString().Replace(' ','%20'))-blue)"
 
 
-      ## Configure github user settings 
+      ## The steps below mutate the repo (regenerated README.md). They only make
+      ## sense on direct pushes to master, since PRs (especially from forks) lack
+      ## the write permission needed to push and the regeneration step above is
+      ## what we want to validate on PRs anyway.
+      ## Configure github user settings
       - name: Configure Github Settings
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         run: |
           git config user.name github-actions
           git config user.email github-actions@github.com
 
       ## Check for changes prior to pushing
       - name: Check for changes
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         run: git status
 
       ## Add files for changes
       - name: Stage changed files
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         run: git add .
 
-      ## Commit changes
+      ## Commit changes (skip cleanly when README.md regenerated identically).
       - name: Commit changed files
-        run: git commit -m "Updating README.md"
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        run: git diff --cached --quiet || git commit -m "Updating README.md"
 
       ## push updates
       - name: Push changes
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         run: git push
