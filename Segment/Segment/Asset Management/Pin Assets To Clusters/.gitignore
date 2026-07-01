@@ -2,3 +2,8 @@
 .env
 .env.ps1
 AssetDetailsFieldMappings.json
+subnet-pinning.md
+plan.md
+test-plan.md
+ZeroNetworksApi.yaml
+testing/
