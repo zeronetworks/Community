@@ -10,6 +10,7 @@ A PowerShell script for pinning (assigning) or unpinning (unassigning) assets to
 ## Features
 
 - Pin or unpin assets to deployment clusters via asset ID, CSV file, Active Directory OU path, or IPv4 subnet (CIDR)
+- Target clusters by human-readable name (`-DeploymentClusterName`), resolved via a local per-tenant name cache file (see [Deployment Cluster Name Resolution](#deployment-cluster-name-resolution))
 - Bulk operations via CSV file, AD OU path, or IPv4 subnet
 - Automatic batching for large asset lists (50 assets per batch)
 - Dry run mode to preview changes without applying them (`-DryRun`)
@@ -34,14 +35,14 @@ You can only pin assets that meet the following criterion:
 
 The script supports six different use cases:
 
-### 1. Pinning/Unpinning Asset by Asset ID & Deployment ID (Default)
-Pin or unpin a single asset to a deployment cluster. You can use the `-ListDeploymentClusters` use case to get the Deployment Cluster ID.
+### 1. Pinning/Unpinning Asset by Asset ID & Deployment Cluster Name (Default)
+Pin or unpin a single asset to a deployment cluster. You can use the `-ListDeploymentClusters` use case to get the deployment cluster name.
 
 ```powershell
 .\Pin-AssetsToClusters.ps1 `
     -ApiKey "your-api-key" `
     -AssetId "your-asset-id" `
-    -DeploymentClusterId "your-deployment-cluster-id" `
+    -DeploymentClusterName "your-deployment-cluster-name" `
     -PortalUrl "https://yourportal-admin.zeronetworks.com"
 ```
 
@@ -51,7 +52,7 @@ See the [Quick start](#quick-start) section for more examples.
 **Required Parameters:**
 - `-ApiKey` - Your Zero Networks API key
 - `-AssetId` - The asset ID to pin/unpin
-- `-DeploymentClusterId` - The deployment cluster ID
+- `-DeploymentClusterName` - The deployment cluster name (resolved to a cluster ID via the local name cache file - see [Deployment Cluster Name Resolution](#deployment-cluster-name-resolution))
 - `-PortalUrl` - Portal URL (e.g., `https://yourportal-admin.zeronetworks.com`)
 
 **Optional Parameters:**
@@ -68,7 +69,7 @@ Pin or unpin all assets within a specified Active Directory Organizational Unit 
 .\Pin-AssetsToClusters.ps1 `
     -ApiKey "your-api-key" `
     -OUPath "OU=Your,DC=Company,DC=com" `
-    -DeploymentClusterId "your-deployment-cluster-id" `
+    -DeploymentClusterName "your-deployment-cluster-name" `
     -PortalUrl "https://yourportal-admin.zeronetworks.com"
 ```
 
@@ -78,7 +79,7 @@ See the [Quick start](#quick-start) section for more examples.
 **Required Parameters:**
 - `-ApiKey` - Your Zero Networks API key
 - `-OUPath` - The OU path (e.g., "OU=Computers,DC=domain,DC=com")
-- `-DeploymentClusterId` - The deployment cluster ID
+- `-DeploymentClusterName` - The deployment cluster name (resolved to a cluster ID via the local name cache file - see [Deployment Cluster Name Resolution](#deployment-cluster-name-resolution))
 - `-PortalUrl` - Portal URL (e.g., `https://yourportal-admin.zeronetworks.com`)
 
 **Optional Parameters:**
@@ -113,7 +114,7 @@ Pin or unpin all monitored assets whose last known IP address falls within a spe
 .\Pin-AssetsToClusters.ps1 `
     -ApiKey "your-api-key" `
     -TargetSubnet "10.200.200.0/24" `
-    -DeploymentClusterId "your-deployment-cluster-id" `
+    -DeploymentClusterName "your-deployment-cluster-name" `
     -PortalUrl "https://yourportal-admin.zeronetworks.com"
 ```
 
@@ -127,7 +128,7 @@ The script expands the CIDR range into individual host addresses (including netw
 **Required Parameters:**
 - `-ApiKey` - Your Zero Networks API key
 - `-TargetSubnet` - IPv4 CIDR subnet to pin/unpin assets within (e.g., `10.200.200.0/24`)
-- `-DeploymentClusterId` - The deployment cluster ID
+- `-DeploymentClusterName` - The deployment cluster name (resolved to a cluster ID via the local name cache file - see [Deployment Cluster Name Resolution](#deployment-cluster-name-resolution))
 - `-PortalUrl` - Portal URL (e.g., `https://yourportal-admin.zeronetworks.com`)
 
 **Optional Parameters:**
@@ -166,8 +167,8 @@ Export a CSV template file for bulk operations.
 - Enable the **Asset ID** column in the table of assets
 - Copy the **Asset ID** to a text document to be referenced later
 
-#### 2. Run script with -ListDeploymentClusters parameter to get Cluster ID
-Run the script with the `-ListDeploymentClusters` parameter. This will output information about all clusters in the tenant to your console.
+#### 2. Run script with -ListDeploymentClusters parameter to get Cluster Name
+Run the script with the `-ListDeploymentClusters` parameter. This will output information about all clusters in the tenant to your console, and will also create/refresh the local `<envName>-DeploymentClusters.json` name cache file next to the script (see [Deployment Cluster Name Resolution](#deployment-cluster-name-resolution)).
 
 *The data below is actual output, but specific identifying information has been changed for secrecy.*
 ```powershell
@@ -223,17 +224,17 @@ Segment server deployments assigned to this cluster:
 Finished writing deployment clusters information to console
 ```
 
-#### 3. Extract cluster ID(s) from output
-Analyze the output from the script ran with `-ListDeploymentClusters`. Make note of each **Cluster ID(s)** you wish to pin the asset(s) to. E.g ```C:d:8PghlCty```
+#### 3. Extract cluster name(s) from output
+Analyze the output from the script ran with `-ListDeploymentClusters`. Make note of each **Cluster Name** (the `Deployment cluster: ...` line) you wish to pin the asset(s) to. E.g ```EU Cluster```
 
 #### 4. Pin the asset to the cluster
-Run the script in single asset mode, specifying a particular asset and cluster ID. This will pin this asset to the specified cluster.
+Run the script in single asset mode, specifying a particular asset and cluster name. This will pin this asset to the specified cluster.
 
 ```powershell
 .\Pin-AssetsToClusters.ps1 `
     -ApiKey "your-api-key" `
     -AssetId "a:a:123456tn" `
-    -DeploymentClusterId "C:d:1234569f" `
+    -DeploymentClusterName "Production Cluster" `
     -PortalUrl "https://yourportal-admin.zeronetworks.com"
 ```
 
@@ -244,7 +245,7 @@ Run the script in single asset mode, specifying a particular asset and cluster I
 - You can find OU paths using Active Directory tools or PowerShell
 
 #### 2. List deployment clusters
-Follow the steps [2. Run script with -ListDeploymentClusters parameter to get Cluster ID](#2-run-script-with--listdeploymentclusters-parameter-to-get-cluster-id) and [3. Extract cluster ID(s) from output](#3-extract-cluster-ids-from-output) from the [Single asset pinning](#single-asset-pinning) section above to obtain the Cluster ID.
+Follow the steps [2. Run script with -ListDeploymentClusters parameter to get Cluster Name](#2-run-script-with--listdeploymentclusters-parameter-to-get-cluster-name) and [3. Extract cluster name(s) from output](#3-extract-cluster-names-from-output) from the [Single asset pinning](#single-asset-pinning) section above to obtain the Cluster Name.
 
 #### 3. Pin assets in the OU to the cluster
 Run the script with the OU path and cluster ID. By default, the script will process assets in nested OUs as well.
@@ -253,7 +254,7 @@ Run the script with the OU path and cluster ID. By default, the script will proc
 .\Pin-AssetsToClusters.ps1 `
     -ApiKey "your-api-key" `
     -OUPath "OU=Computers,DC=domain,DC=com" `
-    -DeploymentClusterId "C:d:1234569f" `
+    -DeploymentClusterName "Production Cluster" `
     -PortalUrl "https://yourportal-admin.zeronetworks.com"
 ```
 
@@ -263,7 +264,7 @@ To process only direct members of the OU (excluding nested OUs), use the `-Disab
 .\Pin-AssetsToClusters.ps1 `
     -ApiKey "your-api-key" `
     -OUPath "OU=Computers,DC=domain,DC=com" `
-    -DeploymentClusterId "C:d:1234569f" `
+    -DeploymentClusterName "Production Cluster" `
     -DisableNestedOuResolution $true
 ```
 
@@ -274,7 +275,7 @@ To process only direct members of the OU (excluding nested OUs), use the `-Disab
 - Determine the IPv4 CIDR subnet (e.g., `10.200.200.0/24`) covering the assets you want to pin/unpin. Assets are matched based on their last known IP address in the portal.
 
 #### 2. List deployment clusters
-Follow the steps [2. Run script with -ListDeploymentClusters parameter to get Cluster ID](#2-run-script-with--listdeploymentclusters-parameter-to-get-cluster-id) and [3. Extract cluster ID(s) from output](#3-extract-cluster-ids-from-output) from the [Single asset pinning](#single-asset-pinning) section above to obtain the Cluster ID.
+Follow the steps [2. Run script with -ListDeploymentClusters parameter to get Cluster Name](#2-run-script-with--listdeploymentclusters-parameter-to-get-cluster-name) and [3. Extract cluster name(s) from output](#3-extract-cluster-names-from-output) from the [Single asset pinning](#single-asset-pinning) section above to obtain the Cluster Name.
 
 #### 3. Pin assets in the subnet to the cluster
 Run the script with the target subnet and cluster ID.
@@ -283,7 +284,7 @@ Run the script with the target subnet and cluster ID.
 .\Pin-AssetsToClusters.ps1 `
     -ApiKey "your-api-key" `
     -TargetSubnet "10.200.200.0/24" `
-    -DeploymentClusterId "C:d:1234569f" `
+    -DeploymentClusterName "Production Cluster" `
     -PortalUrl "https://yourportal-admin.zeronetworks.com"
 ```
 
@@ -299,19 +300,19 @@ Run the script with the target subnet and cluster ID.
 To facilitate ease of use, the script, when ran with the `-ExportCsvTemplate` parameter, will export a CSV template at `./pin-assets-to-clusters-template.csv`
 
 #### 3. List deployment clusters
-Follow the steps [2. Run script with -ListDeploymentClusters parameter to get Cluster ID](#2-run-script-with--listdeploymentclusters-parameter-to-get-cluster-id) and [3. Extract cluster ID(s) from output](#3-extract-cluster-ids-from-output) from the [Single asset pinning](#single-asset-pinning) section above to obtain a list of relevant Cluster IDs.
+Follow the steps [2. Run script with -ListDeploymentClusters parameter to get Cluster Name](#2-run-script-with--listdeploymentclusters-parameter-to-get-cluster-name) and [3. Extract cluster name(s) from output](#3-extract-cluster-names-from-output) from the [Single asset pinning](#single-asset-pinning) section above to obtain a list of relevant Cluster names.
 
 #### 4. Populate CSV template
-Copy the asset IDs and asset names into the CSV template previously generated. Copy and paste the cluster ID (for which you wish to pin that asset to) in the *DeploymentClusterId* column of the CSV for each asset.
+Copy the asset IDs and asset names into the CSV template previously generated. Copy and paste the cluster name (for which you wish to pin that asset to) in the *DeploymentClusterName* column of the CSV for each asset.
 
-**Required CSV Columns:** AssetName, AssetId, DeploymentClusterId
+**Required CSV Columns:** AssetName, AssetId, DeploymentClusterName
 
 Your CSV should look similar to:
 ```csv
-AssetName,AssetId,DeploymentClusterId
-Server-01,a:a:123456tn,C:d:1234569f
-Server-02,a:a:abc123,C:d:1234569f
-Server-03,a:a:def456,C:d:00fd409g
+AssetName,AssetId,DeploymentClusterName
+Server-01,a:a:123456tn,Production Cluster
+Server-02,a:a:abc123,Production Cluster
+Server-03,a:a:def456,EU Cluster
 ```
 
 To review the required columns in the CSV, please read [CSV file format](#csv-file-format).
@@ -334,7 +335,7 @@ Finally, run the script, passing it the path to your CSV.
 .\Pin-AssetsToClusters.ps1 `
     -ApiKey "your-api-key" `
     -AssetId "a:a:123456tn" `
-    -DeploymentClusterId "C:d:1234569f" `
+    -DeploymentClusterName "Production Cluster" `
     -PortalUrl "https://yourportal-admin.zeronetworks.com"
 ```
 
@@ -344,7 +345,7 @@ Finally, run the script, passing it the path to your CSV.
 .\Pin-AssetsToClusters.ps1 `
     -ApiKey "your-api-key" `
     -AssetId "a:a:123456tn" `
-    -DeploymentClusterId "C:d:1234569f" `
+    -DeploymentClusterName "Production Cluster" `
     -Unpin
 ```
 
@@ -372,7 +373,7 @@ Finally, run the script, passing it the path to your CSV.
 .\Pin-AssetsToClusters.ps1 `
     -ApiKey "your-api-key" `
     -OUPath "OU=Computers,DC=domain,DC=com" `
-    -DeploymentClusterId "C:d:1234569f" `
+    -DeploymentClusterName "Production Cluster" `
     -PortalUrl "https://yourportal-admin.zeronetworks.com"
 ```
 
@@ -382,7 +383,7 @@ Finally, run the script, passing it the path to your CSV.
 .\Pin-AssetsToClusters.ps1 `
     -ApiKey "your-api-key" `
     -OUPath "OU=Computers,DC=domain,DC=com" `
-    -DeploymentClusterId "C:d:1234569f" `
+    -DeploymentClusterName "Production Cluster" `
     -Unpin
 ```
 
@@ -392,7 +393,7 @@ Finally, run the script, passing it the path to your CSV.
 .\Pin-AssetsToClusters.ps1 `
     -ApiKey "your-api-key" `
     -OUPath "OU=Computers,DC=domain,DC=com" `
-    -DeploymentClusterId "C:d:1234569f" `
+    -DeploymentClusterName "Production Cluster" `
     -DisableNestedOuResolution $true
 ```
 
@@ -402,7 +403,7 @@ Finally, run the script, passing it the path to your CSV.
 .\Pin-AssetsToClusters.ps1 `
     -ApiKey "your-api-key" `
     -TargetSubnet "10.200.200.0/24" `
-    -DeploymentClusterId "C:d:1234569f" `
+    -DeploymentClusterName "Production Cluster" `
     -PortalUrl "https://yourportal-admin.zeronetworks.com"
 ```
 
@@ -412,7 +413,7 @@ Finally, run the script, passing it the path to your CSV.
 .\Pin-AssetsToClusters.ps1 `
     -ApiKey "your-api-key" `
     -TargetSubnet "10.200.200.0/24" `
-    -DeploymentClusterId "C:d:1234569f" `
+    -DeploymentClusterName "Production Cluster" `
     -Unpin
 ```
 
@@ -422,7 +423,7 @@ Finally, run the script, passing it the path to your CSV.
 .\Pin-AssetsToClusters.ps1 `
     -ApiKey "your-api-key" `
     -TargetSubnet "10.200.0.0/20" `
-    -DeploymentClusterId "C:d:1234569f" `
+    -DeploymentClusterName "Production Cluster" `
     -MaxConcurrentBatches 10
 ```
 
@@ -434,7 +435,7 @@ Use `-SkipAssetHealthValidation` if a transient or stale unhealthy status in the
 .\Pin-AssetsToClusters.ps1 `
     -ApiKey "your-api-key" `
     -AssetId "a:a:123456tn" `
-    -DeploymentClusterId "C:d:1234569f" `
+    -DeploymentClusterName "Production Cluster" `
     -SkipAssetHealthValidation
 ```
 
@@ -478,16 +479,27 @@ The CSV file must contain the following columns:
 
 - **AssetId** (required) - The asset ID to pin/unpin
 - **AssetName** (required) - Asset name for reference and validation
-- **DeploymentClusterId** (required) - The deployment cluster ID
+- **DeploymentClusterName** (required) - The deployment cluster name (resolved to a cluster ID via the local name cache file - see [Deployment Cluster Name Resolution](#deployment-cluster-name-resolution))
 
 Example CSV:
 
 ```csv
-AssetName,AssetId,DeploymentClusterId
-Server-01,a:a:123456tn,C:d:1234569f
-Server-02,a:a:abc123,C:d:1234569f
-Server-03,a:a:def456,C:d:00fd409g
+AssetName,AssetId,DeploymentClusterName
+Server-01,a:a:123456tn,Production Cluster
+Server-02,a:a:abc123,Production Cluster
+Server-03,a:a:def456,EU Cluster
 ```
+
+## Deployment Cluster Name Resolution
+
+All parameter sets that target a deployment cluster (`-AssetId`, `-OUPath`, `-TargetSubnet`, and CSV rows) take a `-DeploymentClusterName`/`DeploymentClusterName` value instead of a raw cluster ID. Names are resolved to cluster IDs using a local JSON cache file:
+
+- The cache file is named `<envName>-DeploymentClusters.json`, where `envName` is derived from the `-PortalUrl` host (e.g. `https://mycompany-admin.zeronetworks.com` → `mycompany-admin-DeploymentClusters.json`).
+- The cache file is stored **next to the script** (not the current working directory), and is a flat JSON object mapping cluster name to cluster ID.
+- If the cache file doesn't exist, the script creates it automatically the first time it's needed - this happens on every run that has `-ApiKey`/`-PortalUrl` (i.e. every parameter set except `-ExportCsvTemplate`).
+- The cache file is **not** refreshed automatically on every run. If a cluster is renamed or a new cluster is added, run `-ListDeploymentClusters` to refresh the cache file (it always overwrites the cache with fresh data from the API).
+- If a supplied `-DeploymentClusterName` isn't found in the cache file, the script fails immediately with an error listing the known cluster names from the file.
+- The cache file is gitignored (`*-DeploymentClusters.json`) since it contains tenant-specific cluster IDs and shouldn't be committed.
 
 ## Validation
 
@@ -539,6 +551,9 @@ Use the `-DryRun` switch to preview what changes would be made without actually 
 - The script uses `$ErrorActionPreference = "Stop"` to ensure errors are handled properly
 
 ## Troubleshooting
+
+### "Deployment cluster name '...' not found in cache file '...'"
+The cluster name doesn't match any entry in the local `<envName>-DeploymentClusters.json` cache file (the error message lists the known names). Run `-ListDeploymentClusters` to refresh the cache if the cluster was recently added or renamed, then double-check the spelling.
 
 ### "Asset is not monitored by a Segment Server"
 The asset must be using a Segment Server, not Cloud Connector or Lightweight Agent.
