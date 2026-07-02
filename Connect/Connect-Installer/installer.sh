@@ -23,13 +23,24 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# --- Tool check ---
-for tool in curl unzip sudo; do
-  if ! command -v "$tool" &>/dev/null; then
-    echo "[ERROR] Missing required tool: $tool"
+# --- Ensure unzip is installed ---
+if ! command -v unzip &>/dev/null; then
+  echo "[INFO] 'unzip' not found. Attempting to install..."
+
+  if [[ $EUID -ne 0 ]]; then
+    echo "[INFO] Requesting sudo access to install 'unzip'..."
+    sudo apt update -y
+    sudo apt install -y unzip
+  else
+    apt update -y
+    apt install -y unzip
+  fi
+
+  if ! command -v unzip &>/dev/null; then
+    echo "[FATAL] Failed to install 'unzip'. Exiting."
     exit 1
   fi
-done
+fi
 
 # --- Ask for URL if not provided ---
 if [[ -z "$SCRIPT_URL" ]]; then
