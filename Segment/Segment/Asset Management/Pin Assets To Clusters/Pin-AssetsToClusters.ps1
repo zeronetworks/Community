@@ -360,7 +360,7 @@ function Test-ValidateProvidedAssetsCanBePinned {
 
     if ($AssetsFailedValidation.Count -gt 0) {
         Write-Warning "Failed to validate $($AssetsFailedValidation.Count)/$($Assets.Count) assets. Check list below for details."
-        $AssetsFailedValidation | Format-Table -Property name, id, ErrorMessage | Out-String | Write-Warning
+        $AssetsFailedValidation | Format-Table -Property name, id, ErrorMessage -Wrap | Out-String -Width 4096 | Write-Warning
         if ($StopOnAssetValidationError) {
             throw "At least one asset failed validation! Terminating script due to -StopOnAssetValidationError being set"
         }
@@ -907,8 +907,13 @@ function Get-AssetsByHostAddresses {
         $Assets.AddRange(@($BatchResults))
     }
 
-    Write-Host "Retrieved $($Assets.Count) assets across $totalBatches batch(es) matching subnet host addresses"
-    return $Assets
+    # An asset can match more than one queried host address (e.g. its lastIpAddress changed
+    # between batches), so different batches can independently resolve the same asset. Dedupe
+    # by id here so downstream validation/pinning never receives the same asset twice.
+    [System.Collections.ArrayList]$UniqueAssets = @($Assets | Sort-Object -Property id -Unique)
+
+    Write-Host "Retrieved $($UniqueAssets.Count) unique assets across $totalBatches batch(es) matching subnet host addresses"
+    return $UniqueAssets
 }
 
 <#
