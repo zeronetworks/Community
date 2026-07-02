@@ -1,4 +1,12 @@
 *.csv
+*-DeploymentClusters.json
 .env
 .env.ps1
 AssetDetailsFieldMappings.json
+DeploymentClusterFieldMappings.json
+subnet-pinning.md
+plan.md
+test-plan.md
+ZeroNetworksApi.yaml
+testing/
+*-DeploymentClusters.json

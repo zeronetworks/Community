@@ -11,7 +11,7 @@
     Zero Networks API key with appropriate permissions. Required for all operations except ExportCsvTemplate.
 
 .PARAMETER PortalUrl
-    Base URL for the Zero Networks portal. Defaults to https://portal.zeronetworks.com.
+    Base URL for the Zero Networks portal (e.g., https://<tenant>-admin.zeronetworks.com). Required for all parameter sets except ExportCsvTemplate.
 
 .PARAMETER AssetId
     Asset ID to pin or unpin. Required for ByAssetId parameter set.
@@ -22,20 +22,32 @@
 .PARAMETER DisableNestedOuResolution
     Disables nested OU resolution when pinning/unpinning assets by OU path. Defaults to false.
 
-.PARAMETER DeploymentClusterId
-    Deployment cluster ID to pin/unpin assets to. Required for ByAssetId and ByOuPath parameter sets.
+.PARAMETER TargetSubnet
+    IPv4 CIDR subnet (e.g., "10.200.200.0/24") to pin or unpin all matching assets within. Required for ByTargetSubnet parameter set.
+
+.PARAMETER DeploymentClusterName
+    Deployment cluster name to pin/unpin assets to. Resolved to a cluster ID via a local <envName>-DeploymentClusters.json
+    cache file (stored next to the script, named after the -PortalUrl tenant). The cache file is created automatically
+    if missing; run -ListDeploymentClusters to refresh it if a cluster was recently added or renamed.
+    Required for ByAssetId, ByOuPath, and ByTargetSubnet parameter sets.
 
 .PARAMETER Unpin
-    Switch to unpin assets instead of pinning them. Available for ByAssetId, ByOuPath, and ByCsvPath parameter sets.
+    Switch to unpin assets instead of pinning them. Available for ByAssetId, ByOuPath, ByCsvPath, and ByTargetSubnet parameter sets.
 
 .PARAMETER SkipSegmentServerValidation
-    Skip validation that deployment clusters have online segment servers. Available for ByAssetId, ByOuPath, and ByCsvPath parameter sets.
+    Skip validation that deployment clusters have online segment servers. Available for ByAssetId, ByOuPath, ByCsvPath, and ByTargetSubnet parameter sets.
+
+.PARAMETER SkipAssetHealthValidation
+    Skip validation that an asset is healthy before pinning/unpinning it. Available for ByAssetId, ByOuPath, ByCsvPath, and ByTargetSubnet parameter sets.
 
 .PARAMETER DryRun
-    Preview changes without applying them. Available for ByAssetId, ByOuPath, and ByCsvPath parameter sets.
+    Preview changes without applying them. Available for ByAssetId, ByOuPath, ByCsvPath, and ByTargetSubnet parameter sets.
 
 .PARAMETER StopOnAssetValidationError
-    Stop processing and throw an error when asset validation fails. Available for ByOuPath and ByCsvPath parameter sets.
+    Stop processing and throw an error when asset validation fails. Available for ByOuPath, ByCsvPath, and ByTargetSubnet parameter sets.
+
+.PARAMETER MaxConcurrentBatches
+    Maximum number of subnet-batch asset resolution requests to run concurrently. Defaults to 5. Set to 1 to force fully sequential behavior. Available for ByTargetSubnet parameter set only. No documented Zero Networks API rate limit exists, so raise cautiously.
 
 .PARAMETER ListDeploymentClusters
     Switch to list all deployment clusters with detailed information.
@@ -52,9 +64,12 @@
 .NOTES
     Requires PowerShell 7.0 or higher.
     Large CSV files are automatically processed in batches of 50 assets.
+    Deployment cluster names are resolved via a local <envName>-DeploymentClusters.json cache file stored next to
+    this script (envName is derived from -PortalUrl). The cache is created automatically the first time it's needed;
+    run -ListDeploymentClusters to refresh it after clusters are added or renamed.
 
 .EXAMPLE
-    .\Pin-AssetsToClusters.ps1 -ApiKey "your-api-key" -AssetId "a:a:qvI6tVtn" -DeploymentClusterId "C:d:00fd409f"
+    .\Pin-AssetsToClusters.ps1 -ApiKey "your-api-key" -AssetId "a:a:qvI6tVtn" -DeploymentClusterName "Production Cluster"
     Pins a single asset to a deployment cluster.
 
 .EXAMPLE
@@ -66,8 +81,12 @@
     Previews what changes would be made without actually applying them.
 
 .EXAMPLE
-    .\Pin-AssetsToClusters.ps1 -ApiKey "your-api-key" -OUPath "OU=Computers,DC=domain,DC=com" -DeploymentClusterId "C:d:00fd409f"
+    .\Pin-AssetsToClusters.ps1 -ApiKey "your-api-key" -OUPath "OU=Computers,DC=domain,DC=com" -DeploymentClusterName "Production Cluster"
     Pins all assets within the specified OU path to a deployment cluster.
+
+.EXAMPLE
+    .\Pin-AssetsToClusters.ps1 -ApiKey "your-api-key" -TargetSubnet "10.200.200.0/24" -DeploymentClusterName "Production Cluster"
+    Pins all monitored assets whose last known IP address falls within the specified subnet to a deployment cluster.
 #>
 
 <#PSScriptInfo
@@ -85,70 +104,95 @@ param(
     [Parameter(ParameterSetName = "ByOuPath", Mandatory = $true)]
     [Parameter(ParameterSetName = "ListDeploymentClusters", Mandatory = $true)]
     [Parameter(ParameterSetName = "ByCsvPath", Mandatory = $true)]
+    [Parameter(ParameterSetName = "ByTargetSubnet", Mandatory = $true)]
     [string]$ApiKey,
 
-    [Parameter(ParameterSetName = "ByAssetId", Mandatory = $false)]
-    [Parameter(ParameterSetName = "ByOuPath", Mandatory = $false)]
-    [Parameter(ParameterSetName = "ListDeploymentClusters", Mandatory = $false)]
-    [Parameter(ParameterSetName = "ByCsvPath", Mandatory = $false)]
-    [string]$PortalUrl = "https://portal.zeronetworks.com",
-    
+    [Parameter(ParameterSetName = "ByAssetId", Mandatory = $true)]
+    [Parameter(ParameterSetName = "ByOuPath", Mandatory = $true)]
+    [Parameter(ParameterSetName = "ListDeploymentClusters", Mandatory = $true)]
+    [Parameter(ParameterSetName = "ByCsvPath", Mandatory = $true)]
+    [Parameter(ParameterSetName = "ByTargetSubnet", Mandatory = $true)]
+    [string]$PortalUrl,
+
     # ParameterSet 1: Pin by Asset ID and Deployment Cluster ID
     [Parameter(ParameterSetName = "ByAssetId", Mandatory = $true)]
     [string]$AssetId,
-    
+
     # ParameterSet: Pin by OU Path and Deployment Cluster ID
     [Parameter(ParameterSetName = "ByOuPath", Mandatory = $true)]
     [string]$OUPath,
-    
+
     [Parameter(ParameterSetName = "ByOuPath", Mandatory = $false)]
     [switch]$DisableNestedOuResolution = $false,
-    
+
+    # ParameterSet: Pin by target subnet (CIDR) and Deployment Cluster ID
+    [Parameter(ParameterSetName = "ByTargetSubnet", Mandatory = $true)]
+    [ValidatePattern('^((25[0-5]|2[0-4]\d|1\d{2}|[1-9]?\d)\.){3}(25[0-5]|2[0-4]\d|1\d{2}|[1-9]?\d)\/(3[0-2]|[1-2]?\d)$')]
+    [string]$TargetSubnet,
+
     [Parameter(ParameterSetName = "ByAssetId", Mandatory = $true)]
     [Parameter(ParameterSetName = "ByOuPath", Mandatory = $true)]
-    [string]$DeploymentClusterId,
-    
-    # Shared switch parameter for unpinning (available in ByAssetId, ByOuPath, and ByCsvPath sets)
+    [Parameter(ParameterSetName = "ByTargetSubnet", Mandatory = $true)]
+    [string]$DeploymentClusterName,
+
+    # Shared switch parameter for unpinning (available in ByAssetId, ByOuPath, ByCsvPath, and ByTargetSubnet sets)
     [Parameter(ParameterSetName = "ByAssetId")]
     [Parameter(ParameterSetName = "ByOuPath")]
     [Parameter(ParameterSetName = "ByCsvPath")]
+    [Parameter(ParameterSetName = "ByTargetSubnet")]
     [switch]$Unpin,
-    
+
     # Shared switch parameter to skip segment server validation (available in all sets with ApiKey)
     [Parameter(ParameterSetName = "ByAssetId", Mandatory = $false)]
     [Parameter(ParameterSetName = "ByOuPath", Mandatory = $false)]
     [Parameter(ParameterSetName = "ByCsvPath", Mandatory = $false)]
+    [Parameter(ParameterSetName = "ByTargetSubnet", Mandatory = $false)]
     [switch]$SkipSegmentServerValidation,
-    
+
+    # Shared switch parameter to skip asset health validation (available in all sets with ApiKey)
+    [Parameter(ParameterSetName = "ByAssetId", Mandatory = $false)]
+    [Parameter(ParameterSetName = "ByOuPath", Mandatory = $false)]
+    [Parameter(ParameterSetName = "ByCsvPath", Mandatory = $false)]
+    [Parameter(ParameterSetName = "ByTargetSubnet", Mandatory = $false)]
+    [switch]$SkipAssetHealthValidation,
+
     # Shared switch parameter for dry run mode (available in all sets with ApiKey)
     [Parameter(ParameterSetName = "ByAssetId", Mandatory = $false)]
     [Parameter(ParameterSetName = "ByOuPath", Mandatory = $false)]
     [Parameter(ParameterSetName = "ByCsvPath", Mandatory = $false)]
+    [Parameter(ParameterSetName = "ByTargetSubnet", Mandatory = $false)]
     [switch]$DryRun,
-    
-    # Switch parameter to stop on asset validation error (available in ByOuPath and ByCsvPath sets)
+
+    # Switch parameter to stop on asset validation error (available in ByOuPath, ByCsvPath, and ByTargetSubnet sets)
     [Parameter(ParameterSetName = "ByOuPath", Mandatory = $false)]
     [Parameter(ParameterSetName = "ByCsvPath", Mandatory = $false)]
+    [Parameter(ParameterSetName = "ByTargetSubnet", Mandatory = $false)]
     [switch]$StopOnAssetValidationError,
-    
+
+    # Maximum number of subnet-batch asset resolution requests to run concurrently (ByTargetSubnet only)
+    [Parameter(ParameterSetName = "ByTargetSubnet", Mandatory = $false)]
+    [ValidateRange(1, 20)]
+    [int]$MaxConcurrentBatches = 5,
+
     # ParameterSet 2: List Deployment Clusters
     [Parameter(ParameterSetName = "ListDeploymentClusters", Mandatory = $true)]
     [switch]$ListDeploymentClusters,
-    
+
     # ParameterSet 3: Pin from CSV file
     [Parameter(ParameterSetName = "ByCsvPath", Mandatory = $true)]
     [string]$CsvPath,
-    
+
     # ParameterSet 4: Export CSV Template
     [Parameter(ParameterSetName = "ExportCsvTemplate", Mandatory = $true)]
     [switch]$ExportCsvTemplate,
-    
+
     # Shared switch parameter for debug output (available in all parameter sets)
     [Parameter(ParameterSetName = "ByAssetId", Mandatory = $false)]
     [Parameter(ParameterSetName = "ByOuPath", Mandatory = $false)]
     [Parameter(ParameterSetName = "ListDeploymentClusters", Mandatory = $false)]
     [Parameter(ParameterSetName = "ByCsvPath", Mandatory = $false)]
     [Parameter(ParameterSetName = "ExportCsvTemplate", Mandatory = $false)]
+    [Parameter(ParameterSetName = "ByTargetSubnet", Mandatory = $false)]
     [switch]$EnableDebug
 )
 $ErrorActionPreference = "Stop"
@@ -259,6 +303,10 @@ $script:DeploymentClusterFieldMappings = @{
 $script:SegmentServerHashtable = $null
 $script:DeploymentClusterHashtable = $null
 
+# Number of host addresses to include per /assets/monitored filter query when resolving
+# assets by subnet (-TargetSubnet). Not exposed as a script parameter - internal tunable only.
+$script:SUBNET_BATCH_SIZE = 100
+
 <#
 This section of the script contains all of the
 asset related functions in the script
@@ -274,6 +322,8 @@ asset related functions in the script
         If specified, validates that assets are already pinned (for unpinning operations).
     .PARAMETER StopOnAssetValidationError
         If specified, throws an error and terminates the script if any asset fails validation.
+    .PARAMETER SkipAssetHealthValidation
+        If specified, skips the asset health check when validating each asset.
     .OUTPUTS
         Returns an ArrayList of asset objects that passed validation.
     .NOTES
@@ -286,7 +336,9 @@ function Test-ValidateProvidedAssetsCanBePinned {
         [Parameter(Mandatory = $false)]
         [switch]$AssetMustBePinned,
         [Parameter(Mandatory = $false)]
-        [switch]$StopOnAssetValidationError
+        [switch]$StopOnAssetValidationError,
+        [Parameter(Mandatory = $false)]
+        [switch]$SkipAssetHealthValidation
     )
     # Validate each asset can be pinned/unpinned. Keep a track of any assets that pass or fail validation.
     # If the -StopOnAssetValidationError switch is provided, throw an error if any asset fails validation,
@@ -300,7 +352,7 @@ function Test-ValidateProvidedAssetsCanBePinned {
         }
 
         try {
-            Test-AssetCanBePinned -AssetId $asset.id -AssetMustBePinned:$AssetMustBePinned
+            Test-AssetCanBePinned -AssetId $asset.id -AssetMustBePinned:$AssetMustBePinned -SkipAssetHealthValidation:$SkipAssetHealthValidation
             $AssetsPassedValidation.Add($asset) | Out-Null
         }
         catch {
@@ -314,7 +366,7 @@ function Test-ValidateProvidedAssetsCanBePinned {
 
     if ($AssetsFailedValidation.Count -gt 0) {
         Write-Warning "Failed to validate $($AssetsFailedValidation.Count)/$($Assets.Count) assets. Check list below for details."
-        $AssetsFailedValidation | Format-Table -Property name, id, ErrorMessage | Out-String | Write-Warning
+        $AssetsFailedValidation | Format-Table -Property name, id, ErrorMessage -Wrap | Out-String -Width 4096 | Write-Warning
         if ($StopOnAssetValidationError) {
             throw "At least one asset failed validation! Terminating script due to -StopOnAssetValidationError being set"
         }
@@ -337,6 +389,8 @@ function Test-ValidateProvidedAssetsCanBePinned {
         The asset ID to validate.
     .PARAMETER AssetMustBePinned
         If specified, validates that the asset is already pinned (for unpinning operations).
+    .PARAMETER SkipAssetHealthValidation
+        If specified, skips the asset health check (healthState.healthStatus) below.
     .OUTPUTS
         None. Throws an exception if validation fails.
     .NOTES
@@ -347,7 +401,9 @@ function Test-AssetCanBePinned {
         [Parameter(Mandatory = $true)]
         [string]$AssetId,
         [Parameter(Mandatory = $false)]
-        [switch]$AssetMustBePinned
+        [switch]$AssetMustBePinned,
+        [Parameter(Mandatory = $false)]
+        [switch]$SkipAssetHealthValidation
     )
     # Get asset details from portal API
     $AssetDetails = Get-AssetDetails -AssetId $AssetId
@@ -379,9 +435,9 @@ function Test-AssetCanBePinned {
         throw "Asset $($AssetDetails.name) ($($AssetDetails.id)) is not monitored by a Segment Server (e.g uses Cloud Connector, Lightweight Agent). Only hosts monitored by a Segment Server can be pinned to a deployment cluster."
     }
     
-    # 3rd: Check if asset is healthy (healthStatus = 1)
-    if ($AssetDetails.healthState.healthStatus -ne 1) {
-        throw "Asset $($AssetDetails.name) ($($AssetDetails.id)) is not healthy! Please check the asset health in the portaland try again."
+    # 3rd: Check if asset is healthy (healthStatus = 1), unless skipped via -SkipAssetHealthValidation
+    if (-not $SkipAssetHealthValidation -and $AssetDetails.healthState.healthStatus -ne 1) {
+        throw "Asset $($AssetDetails.name) ($($AssetDetails.id)) is not healthy! Please check the asset health in the portal and try again."
     }
     
     # 4th: Check if asset is applicable for pinning (deploymentsClusterSource != 6)
@@ -402,7 +458,11 @@ function Test-AssetCanBePinned {
         }
     }
     
-    Write-Host "Validated that asset $($AssetDetails.name) ($($AssetDetails.id)) can be $($Unpin ? "unpinned" : "pinned") to deployment cluster: $($script:DeploymentClusterHashtable[$DeploymentClusterId].name)"
+    # $DeploymentClusterId may be unset here (e.g. ByCsvPath validates assets across multiple clusters
+    # at once, with no single ambient cluster ID in scope) - guard the lookup so this stays a status
+    # message and never throws.
+    $DeploymentClusterNameForMessage = (-not [string]::IsNullOrEmpty($DeploymentClusterId) -and $script:DeploymentClusterHashtable.ContainsKey($DeploymentClusterId)) ? $script:DeploymentClusterHashtable[$DeploymentClusterId].name : "N/A"
+    Write-Host "Validated that asset $($AssetDetails.name) ($($AssetDetails.id)) can be $($Unpin ? "unpinned" : "pinned") to deployment cluster: $DeploymentClusterNameForMessage"
 }
 
 <#
@@ -689,7 +749,185 @@ function Set-AssetsToDeploymentCluster {
 }
 
 <#
-This section of the script contains functions related to 
+This section of the script contains functions related to
+subnet-based asset discovery for pinning/unpinning by CIDR range.
+#>
+
+<#
+    .SYNOPSIS
+        Expands an IPv4 CIDR subnet into an array of individual host address strings.
+    .PARAMETER TargetSubnet
+        The CIDR subnet to expand (e.g., "10.200.200.0/24").
+    .OUTPUTS
+        Returns an ArrayList of every dotted-quad host address in the subnet range (including network/broadcast addresses).
+    .NOTES
+        Subnets larger than /24 (256 addresses) require interactive confirmation before proceeding.
+        Subnets larger than /16 (65,536 addresses) are rejected outright, since resolving them would require
+        an impractical number of batched API calls. Throws an exception if the subnet is malformed, too large,
+        or if the user declines the confirmation prompt.
+    #>
+function Get-SubnetHostAddresses {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$TargetSubnet
+    )
+    Write-Host "Expanding subnet $TargetSubnet into individual host addresses"
+
+    $parts = $TargetSubnet -split '/'
+    $networkIp = [ipaddress]::Parse($parts[0])
+    $prefixLength = [int]$parts[1]
+
+    if ($prefixLength -lt 0 -or $prefixLength -gt 32) {
+        throw "Invalid CIDR prefix length in subnet $TargetSubnet : must be between 0 and 32"
+    }
+
+    # Convert the network IP to a uint32 using network byte order (big-endian)
+    $networkBytes = $networkIp.GetAddressBytes()
+    if ([BitConverter]::IsLittleEndian) {
+        [Array]::Reverse($networkBytes)
+    }
+    $networkInt = [BitConverter]::ToUInt32($networkBytes, 0)
+
+    # Compute the subnet mask - special-cased for /0 to avoid undefined shift-by-32 behavior on a uint32
+    $maskInt = if ($prefixLength -eq 0) { [uint32]0 } else { [uint32]::MaxValue -shl (32 - $prefixLength) }
+    $networkBaseInt = $networkInt -band $maskInt
+
+    # numAddresses is computed as a uint64 so that shifting by up to 32 bits is well-defined
+    [uint64]$numAddresses = [uint64]1 -shl (32 - $prefixLength)
+
+    # Large-subnet guardrail: hard-stop above /16, warn + require confirmation above /24
+    if ($numAddresses -gt 65536) {
+        throw "Subnet $TargetSubnet contains $numAddresses addresses, which exceeds the maximum supported size of 65,536 (/16). Please provide a smaller subnet."
+    }
+    elseif ($numAddresses -gt 256) {
+        Write-Warning "Subnet $TargetSubnet contains $numAddresses addresses, which will require $([math]::Ceiling($numAddresses / $script:SUBNET_BATCH_SIZE)) batched API call(s) to resolve assets.`nThis may take a long time to complete. Please confirm you want to proceed with this subnet size."
+        $confirmation = Read-Host "Type 'y' to confirm you want to proceed with this subnet size"
+        if ($confirmation -ne 'y') {
+            throw "Aborted subnet expansion for $TargetSubnet - user did not confirm proceeding with a subnet larger than /24"
+        }
+    }
+
+    # Enumerate every address in the range, converting each back to a dotted-quad string
+    [System.Collections.ArrayList]$AssetSubnetHostAddresses = @()
+    for ([uint64]$i = 0; $i -lt $numAddresses; $i++) {
+        $currentInt = [uint32]([uint64]$networkBaseInt + $i)
+        $currentBytes = [BitConverter]::GetBytes($currentInt)
+        if ([BitConverter]::IsLittleEndian) {
+            [Array]::Reverse($currentBytes)
+        }
+        $currentIp = [ipaddress]::new($currentBytes)
+        $AssetSubnetHostAddresses.Add($currentIp.ToString()) | Out-Null
+    }
+
+    Write-Host "Expanded subnet $TargetSubnet into $($AssetSubnetHostAddresses.Count) host addresses"
+    return $AssetSubnetHostAddresses
+}
+
+<#
+    .SYNOPSIS
+        Retrieves monitored assets whose last known IP address falls within a set of subnet host addresses.
+    .PARAMETER AssetSubnetHostAddresses
+        ArrayList of dotted-quad host address strings to search for (as produced by Get-SubnetHostAddresses).
+    .PARAMETER MaxConcurrentBatches
+        Maximum number of batch queries to run concurrently. Defaults to 5. Set to 1 to force sequential behavior.
+    .OUTPUTS
+        Returns an ArrayList of asset entity objects whose lastIpAddress matched any of the provided addresses.
+    .NOTES
+        Addresses are queried in batches of $script:SUBNET_BATCH_SIZE, since the API has no native subnet-range filter.
+        It is expected that some (or all) batches may return zero matching assets - this is not treated as an error.
+        Batches are queried concurrently (via ForEach-Object -Parallel), so "Querying batch N of M..." progress
+        messages may print out of order - this is cosmetic only and does not affect the assets returned.
+    #>
+function Get-AssetsByHostAddresses {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Collections.ArrayList]$AssetSubnetHostAddresses,
+
+        [Parameter(Mandatory = $false)]
+        [int]$MaxConcurrentBatches = 5
+    )
+    Write-Host "Retrieving assets matching $($AssetSubnetHostAddresses.Count) subnet host addresses"
+
+    $batchSize = $script:SUBNET_BATCH_SIZE
+    $totalAddresses = $AssetSubnetHostAddresses.Count
+    $totalBatches = [math]::Ceiling($totalAddresses / $batchSize)
+
+    # Build batch descriptors up-front (cheap, no I/O) so the API calls themselves can run concurrently
+    [System.Collections.ArrayList]$Batches = @()
+    $batchNumber = 1
+    for ($i = 0; $i -lt $totalAddresses; $i += $batchSize) {
+        $endIndex = [math]::Min($i + $batchSize - 1, $totalAddresses - 1)
+        $Batches.Add([PSCustomObject]@{
+            BatchNumber = $batchNumber
+            Addresses   = @($AssetSubnetHostAddresses[$i..$endIndex])
+        }) | Out-Null
+        $batchNumber++
+    }
+
+    # ForEach-Object -Parallel runspaces do not inherit $script: variables or functions from the
+    # calling scope - capture what each batch's API call needs here and re-hydrate it via $using:
+    # inside the parallel block.
+    $ApiBaseUrl = $script:ApiBaseUrl
+    $Headers = $script:Headers
+    $CapturedDebugPreference = $DebugPreference
+    $InvokeApiRequestDef = ${function:Invoke-ApiRequest}.ToString()
+    $InvokePaginatedApiRequestDef = ${function:Invoke-PaginatedApiRequest}.ToString()
+    $TestApiResponseStatusCodeDef = ${function:Test-ApiResponseStatusCode}.ToString()
+
+    $BatchResults = $Batches | ForEach-Object -ThrottleLimit $MaxConcurrentBatches -Parallel {
+        # Re-hydrate script-scope state and functions inside this runspace
+        ${function:Test-ApiResponseStatusCode} = $using:TestApiResponseStatusCodeDef
+        ${function:Invoke-ApiRequest} = $using:InvokeApiRequestDef
+        ${function:Invoke-PaginatedApiRequest} = $using:InvokePaginatedApiRequestDef
+        $script:ApiBaseUrl = $using:ApiBaseUrl
+        $script:Headers = $using:Headers
+        $DebugPreference = $using:CapturedDebugPreference
+
+        $batch = $_
+        Write-Host "Querying batch $($batch.BatchNumber) of $($using:totalBatches) ($($batch.Addresses.Count) addresses)..."
+
+        # Build filter array for API query - filters assets by lastIpAddress matching any address in this batch
+        $FilterArray = @(
+            @{
+                id = "lastIpAddress"
+                includeValues = @($batch.Addresses)
+            }
+        )
+        $FilterJson = $FilterArray | ConvertTo-Json -Compress -AsArray -Depth 10
+
+        $QueryParams = @{
+            _limit = 100
+            showInactive = $false
+            _filters = $FilterJson
+        }
+
+        $response = Invoke-PaginatedApiRequest -Method "GET" -ApiEndpoint "/assets/monitored" -QueryParams $QueryParams
+
+        Write-Debug "Batch $($batch.BatchNumber) response body: $($response | ConvertTo-Json -Compress -Depth 10)"
+
+        if ($null -ne $response.items -and $response.items.Count -gt 0) {
+            $response.items
+        }
+    }
+
+    # Merge results back into a single accumulator - this happens single-threaded after
+    # ForEach-Object -Parallel completes, so no thread-safety concern here.
+    [System.Collections.ArrayList]$Assets = @()
+    if ($null -ne $BatchResults) {
+        $Assets.AddRange(@($BatchResults))
+    }
+
+    # An asset can match more than one queried host address (e.g. its lastIpAddress changed
+    # between batches), so different batches can independently resolve the same asset. Dedupe
+    # by id here so downstream validation/pinning never receives the same asset twice.
+    [System.Collections.ArrayList]$UniqueAssets = @($Assets | Sort-Object -Property id -Unique)
+
+    Write-Host "Retrieved $($UniqueAssets.Count) unique assets across $totalBatches batch(es) matching subnet host addresses"
+    return $UniqueAssets
+}
+
+<#
+This section of the script contains functions related to
 deployment cluster operations.
 #>
 
@@ -944,11 +1182,105 @@ function Write-DeploymentClusters {
         Write-Host $("="*(($Host.UI.RawUI.WindowSize.Width)/2))
     }
     Write-Host "Finished writing deployment clusters information to console"
-    
+
 }
 
 <#
-This section of the script is responsible for 
+    .SYNOPSIS
+        Computes the local deployment-cluster name-to-ID cache file path for the current tenant.
+    .OUTPUTS
+        Returns the full path to the <envName>-DeploymentClusters.json cache file located next to the script.
+    .NOTES
+        envName is derived from the -PortalUrl host, stripping a trailing ".zeronetworks.com" suffix if present;
+        otherwise the full host is used as-is.
+    #>
+function Get-DeploymentClusterCachePath {
+    $envName = ([Uri]$PortalUrl).Host -replace '\.zeronetworks\.com$', ''
+    return Join-Path -Path $PSScriptRoot -ChildPath "$envName-DeploymentClusters.json"
+}
+
+<#
+    .SYNOPSIS
+        Writes the deployment cluster name-to-ID cache file to disk, overwriting any existing file.
+    .PARAMETER DeploymentClusters
+        Array of deployment cluster objects (as returned by Get-DeploymentClusters) to cache.
+    .OUTPUTS
+        None. Writes the cache file to $script:DeploymentClusterCachePath.
+    .NOTES
+        The cache file is a flat JSON object mapping cluster name to cluster ID.
+    #>
+function Save-DeploymentClusterCache {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Array]$DeploymentClusters
+    )
+    $NameToIdMap = @{}
+    foreach ($cluster in $DeploymentClusters) {
+        $NameToIdMap[$cluster.name] = $cluster.id
+    }
+
+    try {
+        $NameToIdMap | ConvertTo-Json | Set-Content -Path $script:DeploymentClusterCachePath
+    }
+    catch {
+        throw "Failed to write deployment cluster cache file '$($script:DeploymentClusterCachePath)': $_"
+    }
+    Write-Host "Deployment cluster name cache file written to $($script:DeploymentClusterCachePath) with $($NameToIdMap.Count) cluster(s)"
+}
+
+<#
+    .SYNOPSIS
+        Ensures the local deployment-cluster name-to-ID cache file exists, creating it from the API if missing.
+    .OUTPUTS
+        None. Sets $script:DeploymentClusterCachePath. Creates the cache file via Save-DeploymentClusterCache if it does not already exist.
+    .NOTES
+        Does not refresh an existing cache file - run -ListDeploymentClusters to force a refresh.
+    #>
+function Initialize-DeploymentClusterCache {
+    $script:DeploymentClusterCachePath = Get-DeploymentClusterCachePath
+
+    if (Test-Path -Path $script:DeploymentClusterCachePath) {
+        Write-Debug "Deployment cluster cache file already exists at $($script:DeploymentClusterCachePath)"
+        return
+    }
+
+    Write-Host "Deployment cluster cache file not found - creating $($script:DeploymentClusterCachePath)"
+    $DeploymentClusters = Get-DeploymentClusters
+    Save-DeploymentClusterCache -DeploymentClusters $DeploymentClusters
+}
+
+<#
+    .SYNOPSIS
+        Resolves a deployment cluster name to its cluster ID using the local name cache file.
+    .PARAMETER DeploymentClusterName
+        The human-readable deployment cluster name to resolve.
+    .OUTPUTS
+        Returns the deployment cluster ID string matching the provided name.
+    .NOTES
+        Throws an exception listing the known cluster names in the cache file if the name is not found.
+        Run -ListDeploymentClusters to refresh the cache file if a cluster was recently added or renamed.
+    #>
+function Resolve-DeploymentClusterName {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$DeploymentClusterName
+    )
+    try {
+        $CachedClusters = Get-Content -Path $script:DeploymentClusterCachePath -Raw | ConvertFrom-Json -AsHashtable
+    }
+    catch {
+        throw "Failed to read deployment cluster cache file '$($script:DeploymentClusterCachePath)': $_"
+    }
+
+    if (-not $CachedClusters.ContainsKey($DeploymentClusterName)) {
+        throw "Deployment cluster name '$DeploymentClusterName' not found in cache file '$($script:DeploymentClusterCachePath)'. Known deployment cluster names: $($CachedClusters.Keys -join ', '). Run -ListDeploymentClusters to refresh the cache if this cluster was recently added or renamed."
+    }
+
+    return $CachedClusters[$DeploymentClusterName]
+}
+
+<#
+This section of the script is responsible for
 creating and exporting the CSV template.
 #>
 
@@ -964,11 +1296,11 @@ function Export-CsvTemplate {
     $template = [PSCustomObject]@{
         AssetName = $null
         AssetId = $null
-        DeploymentClusterId = $null
+        DeploymentClusterName = $null
     }
     $template | Export-Csv -Path ".\pin-assets-to-clusters-template.csv" -NoTypeInformation
     Write-Host "CSV Template exported to .\pin-assets-to-clusters-template.csv"
-    Write-Host "Please fill in AT LEAST the AssetId, AssetName and DeploymentClusterId columns, and then run the script again with the -CsvPath parameter to pin the assets to the clusters."
+    Write-Host "Please fill in AT LEAST the AssetId, AssetName and DeploymentClusterName columns, and then run the script again with the -CsvPath parameter to pin the assets to the clusters."
     Write-Host "Example: .\Pin-AssetsToClusters.ps1 -CsvPath '.\pin-assets-to-clusters-template.csv' -ApiKey 'your-api-key'"
 }
 
@@ -980,7 +1312,7 @@ function Export-CsvTemplate {
     .OUTPUTS
         Returns an array of PSCustomObject representing the validated CSV rows.
     .NOTES
-        Required columns: AssetId, DeploymentClusterId. AssetName is optional.
+        Required columns: AssetId, DeploymentClusterName. AssetName is optional.
     #>
 function Get-CsvData {
     param(
@@ -1007,32 +1339,32 @@ function Get-CsvData {
     }
     
     # Validate required columns exist
-    $requiredColumns = @('AssetId', 'AssetName', 'DeploymentClusterId')
+    $requiredColumns = @('AssetId', 'AssetName', 'DeploymentClusterName')
     $firstRow = $csvData[0]
     $actualColumns = $firstRow.PSObject.Properties.Name
     $missingColumns = @()
-    
+
     foreach ($column in $requiredColumns) {
         if ($actualColumns -notcontains $column) {
             $missingColumns += $column
         }
     }
-    
+
     if ($missingColumns.Count -gt 0) {
-        throw "CSV validation failed: The CSV file needs at least AssetId and DeploymentClusterId columns. Actual columns found in CSV: $($actualColumns -join ', ')"
+        throw "CSV validation failed: The CSV file needs at least AssetId and DeploymentClusterName columns. Actual columns found in CSV: $($actualColumns -join ', ')"
     }
-    
+
     # Validate each row has required values (Import-Csv excludes header from data array)
     for ($i = 0; $i -lt $csvData.Count; $i++) {
         $row = $csvData[$i]
         $csvRowNumber = $i + 2  # +2: row 1 is header, arrays are 0-indexed
-        
+
         if ($null -eq $row.AssetId) {
             throw "CSV validation failed: AssetId is null at row $csvRowNumber (index $i)"
         }
-        
-        if ($null -eq $row.DeploymentClusterId) {
-            throw "CSV validation failed: DeploymentClusterId is null at row $csvRowNumber (index $i)"
+
+        if ($null -eq $row.DeploymentClusterName) {
+            throw "CSV validation failed: DeploymentClusterName is null at row $csvRowNumber (index $i)"
         }
     }
     
@@ -1053,6 +1385,7 @@ initializing the API context and making API requests.
         None. Sets $script:Headers and $script:ApiBaseUrl for use by Invoke-ApiRequest function.
     .NOTES
         Sets $script:Headers and $script:ApiBaseUrl for use by Invoke-ApiRequest function.
+        Also ensures the local deployment cluster name cache file exists via Initialize-DeploymentClusterCache.
     #>
 function Initialize-ApiContext {
     $script:Headers = @{
@@ -1060,6 +1393,7 @@ function Initialize-ApiContext {
         Authorization = $ApiKey
     }
     $script:ApiBaseUrl = "$PortalUrl/api/v1"
+    Initialize-DeploymentClusterCache
 }
 
 <#
@@ -1239,6 +1573,9 @@ function Invoke-PaginatedApiRequest {
         Returns the API response object.
     .NOTES
         Automatically validates status codes and throws exceptions for errors.
+        Retries up to 3 times with a short exponential backoff (1s, 2s, 4s) if the API responds with
+        HTTP 429 (rate limited), since concurrent subnet-batch requests (-MaxConcurrentBatches) can
+        trigger rate limiting that a single sequential request stream would not have.
     #>
 function Invoke-ApiRequest {
     param(
@@ -1292,8 +1629,20 @@ function Invoke-ApiRequest {
         }
         
         # Execute request and capture status code (SkipHttpErrorCheck allows manual error handling)
-        $statusCode = $null
-        $response = Invoke-RestMethod @requestParams -SkipHttpErrorCheck -StatusCodeVariable statusCode
+        # Retry on 429 (rate limited) with a short exponential backoff before giving up
+        $maxAttempts = 3
+        for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+            $statusCode = $null
+            $response = Invoke-RestMethod @requestParams -SkipHttpErrorCheck -StatusCodeVariable statusCode
+
+            if ($statusCode -eq 429 -and $attempt -lt $maxAttempts) {
+                $backoffSeconds = [math]::Pow(2, $attempt - 1)
+                Write-Warning "Received HTTP 429 (rate limited) from $($requestParams['Uri']). Retrying in $backoffSeconds second(s) (attempt $attempt of $maxAttempts)..."
+                Start-Sleep -Seconds $backoffSeconds
+                continue
+            }
+            break
+        }
 
         # Validate status code (throws exception for non-2XX codes)
         Test-ApiResponseStatusCode -StatusCode $statusCode -Response $response | Out-Null
@@ -1316,31 +1665,33 @@ workflow to execute based on the parameter set matched.
 #>
 switch ($PSCmdlet.ParameterSetName) {
     "ByAssetId" {
-        Write-Host "$($DryRun ? "[DRY RUN] " : '')Starting workflow to $($Unpin ? "unpin" : "pin") asset $AssetId to deployment cluster $DeploymentClusterId"
+        Write-Host "$($DryRun ? "[DRY RUN] " : '')Starting workflow to $($Unpin ? "unpin" : "pin") asset $AssetId to deployment cluster $DeploymentClusterName"
         Initialize-ApiContext
-        
-        # Validate deployment cluster exists and has online segment servers
+
+        # Resolve the deployment cluster name to an ID, then validate it exists and has online segment servers
+        $DeploymentClusterId = Resolve-DeploymentClusterName -DeploymentClusterName $DeploymentClusterName
         Invoke-ValidateDeploymentClusterId -DeploymentClusterId $DeploymentClusterId -SkipSegmentServerValidation:$SkipSegmentServerValidation
-        
+
         # Validate asset can be pinned/unpinned
-        Test-AssetCanBePinned -AssetId $AssetId -AssetMustBePinned:$Unpin
-        
+        Test-AssetCanBePinned -AssetId $AssetId -AssetMustBePinned:$Unpin -SkipAssetHealthValidation:$SkipAssetHealthValidation
+
         # Create asset object for the function
         $asset = [PSCustomObject]@{
             id = $AssetId
         }
         $Assets = [System.Collections.ArrayList]@($asset)
-        
+
         # Execute pin/unpin operation
         Set-AssetsToDeploymentCluster -Assets $Assets -DeploymentClusterId $DeploymentClusterId -Unpin:$Unpin -DryRun:$DryRun
-        
-        Write-Host "$($DryRun ? "[DRY RUN] " : '')Finished workflow to $($Unpin ? "unpin" : "pin") asset $AssetId to deployment cluster $DeploymentClusterId"
+
+        Write-Host "$($DryRun ? "[DRY RUN] " : '')Finished workflow to $($Unpin ? "unpin" : "pin") asset $AssetId to deployment cluster $DeploymentClusterName"
     }
     "ByOuPath" {
-        Write-Host "$($DryRun ? "[DRY RUN] " : '')Starting workflow to $($Unpin ? "unpin" : "pin") assets in OU path $OUPath to deployment cluster $DeploymentClusterId"
+        Write-Host "$($DryRun ? "[DRY RUN] " : '')Starting workflow to $($Unpin ? "unpin" : "pin") assets in OU path $OUPath to deployment cluster $DeploymentClusterName"
         Initialize-ApiContext
-        
-        # Validate deployment cluster exists and has online segment servers
+
+        # Resolve the deployment cluster name to an ID, then validate it exists and has online segment servers
+        $DeploymentClusterId = Resolve-DeploymentClusterName -DeploymentClusterName $DeploymentClusterName
         Invoke-ValidateDeploymentClusterId -DeploymentClusterId $DeploymentClusterId -SkipSegmentServerValidation:$SkipSegmentServerValidation
 
         # Get OU Information from API
@@ -1352,29 +1703,57 @@ switch ($PSCmdlet.ParameterSetName) {
         Wrapping the return value in an array ensures that the value is always returned as an array, regardless of the number of objects returned.
         #>
         # Get members of OU
-        [System.Collections.ArrayList]$Assets = [System.Collections.ArrayList]@(Get-AssetsFromOU -OUPath $OUPath -EntityId $OUInformation.id -DisableNestedOuResolution:$DisableNestedOuResolution) 
-        
+        [System.Collections.ArrayList]$Assets = [System.Collections.ArrayList]@(Get-AssetsFromOU -OUPath $OUPath -EntityId $OUInformation.id -DisableNestedOuResolution:$DisableNestedOuResolution)
+
         # Validate each asset can be pinned/unpinned
-        [System.Collections.ArrayList]$AssetsPassedValidation = [System.Collections.ArrayList]@(Test-ValidateProvidedAssetsCanBePinned -Assets $Assets -AssetMustBePinned:$Unpin -StopOnAssetValidationError:$StopOnAssetValidationError)
+        [System.Collections.ArrayList]$AssetsPassedValidation = [System.Collections.ArrayList]@(Test-ValidateProvidedAssetsCanBePinned -Assets $Assets -AssetMustBePinned:$Unpin -StopOnAssetValidationError:$StopOnAssetValidationError -SkipAssetHealthValidation:$SkipAssetHealthValidation)
 
         # Finally, call function to perform the batch based cluster pinning/unpinning operation
         Invoke-BatchBasedClusterPinning -AssetsPassedValidation $AssetsPassedValidation -DeploymentClusterId $DeploymentClusterId -Unpin:$Unpin -DryRun:$DryRun
-        
-        Write-Host "$($DryRun ? "[DRY RUN] " : '')Finished workflow to $($Unpin ? "unpin" : "pin") assets in OU path $OUPath to deployment cluster $DeploymentClusterId"
+
+        Write-Host "$($DryRun ? "[DRY RUN] " : '')Finished workflow to $($Unpin ? "unpin" : "pin") assets in OU path $OUPath to deployment cluster $DeploymentClusterName"
+    }
+    "ByTargetSubnet" {
+        Write-Host "$($DryRun ? "[DRY RUN] " : '')Starting workflow to $($Unpin ? "unpin" : "pin") assets in subnet $TargetSubnet to deployment cluster $DeploymentClusterName"
+        Initialize-ApiContext
+
+        # Resolve the deployment cluster name to an ID, then validate it exists and has online segment servers
+        $DeploymentClusterId = Resolve-DeploymentClusterName -DeploymentClusterName $DeploymentClusterName
+        Invoke-ValidateDeploymentClusterId -DeploymentClusterId $DeploymentClusterId -SkipSegmentServerValidation:$SkipSegmentServerValidation
+
+        # Expand the subnet into individual host addresses, then resolve them to monitored assets
+        $AssetSubnetHostAddresses = Get-SubnetHostAddresses -TargetSubnet $TargetSubnet
+        [System.Collections.ArrayList]$Assets = [System.Collections.ArrayList]@(Get-AssetsByHostAddresses -AssetSubnetHostAddresses $AssetSubnetHostAddresses -MaxConcurrentBatches $MaxConcurrentBatches)
+
+        if ($Assets.Count -eq 0) {
+            Write-Host "No assets found matching subnet $TargetSubnet. Exiting..."
+            exit 0
+        }
+
+        # Validate each asset can be pinned/unpinned
+        [System.Collections.ArrayList]$AssetsPassedValidation = [System.Collections.ArrayList]@(Test-ValidateProvidedAssetsCanBePinned -Assets $Assets -AssetMustBePinned:$Unpin -StopOnAssetValidationError:$StopOnAssetValidationError -SkipAssetHealthValidation:$SkipAssetHealthValidation)
+
+        # Finally, call function to perform the batch based cluster pinning/unpinning operation
+        Invoke-BatchBasedClusterPinning -AssetsPassedValidation $AssetsPassedValidation -DeploymentClusterId $DeploymentClusterId -Unpin:$Unpin -DryRun:$DryRun
+
+        Write-Host "$($DryRun ? "[DRY RUN] " : '')Finished workflow to $($Unpin ? "unpin" : "pin") assets in subnet $TargetSubnet to deployment cluster $DeploymentClusterName"
     }
     "ByCsvPath" {
         Write-Host "$($DryRun ? "[DRY RUN] " : '')Starting workflow to $($Unpin ? "unpin" : "pin") assets from CSV file $CsvPath"
         Initialize-ApiContext
-        
+
         # Read and validate CSV data
         $csvData = Get-CsvData -CsvPath $CsvPath
-        
-        # Get unique deployment cluster IDs from CSV
-        $UniqueClusterIds = @($csvData.DeploymentClusterId | Select-Object -Unique)
-        
+
+        # Get unique deployment cluster names from CSV, then resolve each to a cluster ID
+        $UniqueClusterNames = @($csvData.DeploymentClusterName | Select-Object -Unique)
+
         # Validate all deployment clusters exist and have online segment servers
-        foreach ($clusterId in $UniqueClusterIds) {
+        $ClusterNameToIdMap = @{}
+        foreach ($clusterName in $UniqueClusterNames) {
+            $clusterId = Resolve-DeploymentClusterName -DeploymentClusterName $clusterName
             Invoke-ValidateDeploymentClusterId -DeploymentClusterId $clusterId -SkipSegmentServerValidation:$SkipSegmentServerValidation
+            $ClusterNameToIdMap[$clusterName] = $clusterId
         }
 
         # Since the CSV data template does not have 1:1 field names as assets returned from API
@@ -1385,26 +1764,29 @@ switch ($PSCmdlet.ParameterSetName) {
             $Assets.Add([pscustomobject]@{
                 id = $row.AssetId
                 name = $row.AssetName
-                DeploymentClusterId = $row.DeploymentClusterId
+                DeploymentClusterId = $ClusterNameToIdMap[$row.DeploymentClusterName]
             }) | Out-Null
         }
 
         # Validate each asset can be pinned/unpinned
-        [System.Collections.ArrayList]$AssetsPassedValidation = [System.Collections.ArrayList]@(Test-ValidateProvidedAssetsCanBePinned -Assets $Assets -AssetMustBePinned:$Unpin -StopOnAssetValidationError:$StopOnAssetValidationError)
-        
+        [System.Collections.ArrayList]$AssetsPassedValidation = [System.Collections.ArrayList]@(Test-ValidateProvidedAssetsCanBePinned -Assets $Assets -AssetMustBePinned:$Unpin -StopOnAssetValidationError:$StopOnAssetValidationError -SkipAssetHealthValidation:$SkipAssetHealthValidation)
+
         # Process each cluster's assets
-        foreach ($clusterId in $UniqueClusterIds) {
+        foreach ($clusterId in @($ClusterNameToIdMap.Values | Select-Object -Unique)) {
             $AssetsToProcess = [System.Collections.ArrayList]@($AssetsPassedValidation | Where-Object { $_.DeploymentClusterId -eq $clusterId })
             Write-Host "Processing $($Unpin ? "unpinning" : "pinning") operation against $($clusterId) for $($AssetsToProcess.Count) assets"
             Invoke-BatchBasedClusterPinning -AssetsPassedValidation $AssetsToProcess -DeploymentClusterId $clusterId -Unpin:$Unpin -DryRun:$DryRun
         }
-        
+
         Write-Host "$($DryRun ? "[DRY RUN] " : '')Finished workflow to $($Unpin ? "unpin" : "pin") assets from CSV file $CsvPath"
     }
     "ListDeploymentClusters" {
         Initialize-ApiContext
         $DeploymentClusters = Get-DeploymentClusters
         Write-DeploymentClusters -DeploymentClusters $DeploymentClusters
+        # ListDeploymentClusters already fetches fresh cluster data above, so always refresh
+        # (not just create-if-missing) the local name cache file here.
+        Save-DeploymentClusterCache -DeploymentClusters $DeploymentClusters
         ""
     }
     "ExportCsvTemplate" {
