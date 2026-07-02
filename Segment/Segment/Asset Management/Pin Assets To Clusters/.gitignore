@@ -8,3 +8,4 @@ plan.md
 test-plan.md
 ZeroNetworksApi.yaml
 testing/
+*-DeploymentClusters.json
