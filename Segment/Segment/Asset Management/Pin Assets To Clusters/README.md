@@ -52,9 +52,9 @@ See the [Quick start](#quick-start) section for more examples.
 - `-ApiKey` - Your Zero Networks API key
 - `-AssetId` - The asset ID to pin/unpin
 - `-DeploymentClusterId` - The deployment cluster ID
+- `-PortalUrl` - Portal URL (e.g., `https://yourportal-admin.zeronetworks.com`)
 
 **Optional Parameters:**
-- `-PortalUrl` - Portal URL (default: `https://portal.zeronetworks.com`)
 - `-Unpin` - Switch to unpin instead of pin
 - `-SkipSegmentServerValidation` - Skip validation that segment servers are online
 - `-SkipAssetHealthValidation` - Skip validation that the asset is healthy
@@ -79,9 +79,9 @@ See the [Quick start](#quick-start) section for more examples.
 - `-ApiKey` - Your Zero Networks API key
 - `-OUPath` - The OU path (e.g., "OU=Computers,DC=domain,DC=com")
 - `-DeploymentClusterId` - The deployment cluster ID
+- `-PortalUrl` - Portal URL (e.g., `https://yourportal-admin.zeronetworks.com`)
 
 **Optional Parameters:**
-- `-PortalUrl` - Portal URL (default: `https://portal.zeronetworks.com`)
 - `-DisableNestedOuResolution` - Disable nested OU resolution (default: `false`). When set to `true`, only direct members of the OU are processed, not nested OUs.
 - `-Unpin` - Switch to unpin instead of pin
 - `-SkipSegmentServerValidation` - Skip validation that segment servers are online
@@ -96,9 +96,9 @@ Pin or unpin multiple assets from a CSV file. Use `-ExportCsvTemplate` and `-Lis
 **Required Parameters:**
 - `-ApiKey` - Your Zero Networks API key
 - `-CsvPath` - Path to the CSV file
+- `-PortalUrl` - Portal URL (e.g., `https://yourportal-admin.zeronetworks.com`)
 
 **Optional Parameters:**
-- `-PortalUrl` - Portal URL (default: `https://portal.zeronetworks.com`)
 - `-Unpin` - Switch to unpin instead of pin
 - `-SkipSegmentServerValidation` - Skip validation that segment servers are online
 - `-SkipAssetHealthValidation` - Skip validation that assets are healthy
@@ -128,9 +128,9 @@ The script expands the CIDR range into individual host addresses (including netw
 - `-ApiKey` - Your Zero Networks API key
 - `-TargetSubnet` - IPv4 CIDR subnet to pin/unpin assets within (e.g., `10.200.200.0/24`)
 - `-DeploymentClusterId` - The deployment cluster ID
+- `-PortalUrl` - Portal URL (e.g., `https://yourportal-admin.zeronetworks.com`)
 
 **Optional Parameters:**
-- `-PortalUrl` - Portal URL (default: `https://portal.zeronetworks.com`)
 - `-Unpin` - Switch to unpin instead of pin
 - `-SkipSegmentServerValidation` - Skip validation that segment servers are online
 - `-SkipAssetHealthValidation` - Skip validation that assets are healthy
@@ -145,9 +145,9 @@ List all deployment clusters with detailed information.
 **Required Parameters:**
 - `-ApiKey` - Your Zero Networks API key
 - `-ListDeploymentClusters` - Switch to enable listing mode
+- `-PortalUrl` - Portal URL (e.g., `https://yourportal-admin.zeronetworks.com`)
 
 **Optional Parameters:**
-- `-PortalUrl` - Portal URL (default: `https://portal.zeronetworks.com`)
 - `-EnableDebug` - Enable debug output
 
 ### 6. Export CSV Template to use with CSV Bulk Operations

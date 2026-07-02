@@ -11,7 +11,7 @@
     Zero Networks API key with appropriate permissions. Required for all operations except ExportCsvTemplate.
 
 .PARAMETER PortalUrl
-    Base URL for the Zero Networks portal. Defaults to https://portal.zeronetworks.com.
+    Base URL for the Zero Networks portal (e.g., https://<tenant>-admin.zeronetworks.com). Required for all parameter sets except ExportCsvTemplate.
 
 .PARAMETER AssetId
     Asset ID to pin or unpin. Required for ByAssetId parameter set.
@@ -101,12 +101,12 @@ param(
     [Parameter(ParameterSetName = "ByTargetSubnet", Mandatory = $true)]
     [string]$ApiKey,
 
-    [Parameter(ParameterSetName = "ByAssetId", Mandatory = $false)]
-    [Parameter(ParameterSetName = "ByOuPath", Mandatory = $false)]
-    [Parameter(ParameterSetName = "ListDeploymentClusters", Mandatory = $false)]
-    [Parameter(ParameterSetName = "ByCsvPath", Mandatory = $false)]
-    [Parameter(ParameterSetName = "ByTargetSubnet", Mandatory = $false)]
-    [string]$PortalUrl = "https://portal.zeronetworks.com",
+    [Parameter(ParameterSetName = "ByAssetId", Mandatory = $true)]
+    [Parameter(ParameterSetName = "ByOuPath", Mandatory = $true)]
+    [Parameter(ParameterSetName = "ListDeploymentClusters", Mandatory = $true)]
+    [Parameter(ParameterSetName = "ByCsvPath", Mandatory = $true)]
+    [Parameter(ParameterSetName = "ByTargetSubnet", Mandatory = $true)]
+    [string]$PortalUrl,
 
     # ParameterSet 1: Pin by Asset ID and Deployment Cluster ID
     [Parameter(ParameterSetName = "ByAssetId", Mandatory = $true)]
