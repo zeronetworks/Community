@@ -43,6 +43,9 @@
 .PARAMETER StopOnAssetValidationError
     Stop processing and throw an error when asset validation fails. Available for ByOuPath, ByCsvPath, and ByTargetSubnet parameter sets.
 
+.PARAMETER MaxConcurrentBatches
+    Maximum number of subnet-batch asset resolution requests to run concurrently. Defaults to 5. Set to 1 to force fully sequential behavior. Available for ByTargetSubnet parameter set only. No documented Zero Networks API rate limit exists, so raise cautiously.
+
 .PARAMETER ListDeploymentClusters
     Switch to list all deployment clusters with detailed information.
 
@@ -159,6 +162,11 @@ param(
     [Parameter(ParameterSetName = "ByCsvPath", Mandatory = $false)]
     [Parameter(ParameterSetName = "ByTargetSubnet", Mandatory = $false)]
     [switch]$StopOnAssetValidationError,
+
+    # Maximum number of subnet-batch asset resolution requests to run concurrently (ByTargetSubnet only)
+    [Parameter(ParameterSetName = "ByTargetSubnet", Mandatory = $false)]
+    [ValidateRange(1, 20)]
+    [int]$MaxConcurrentBatches = 5,
 
     # ParameterSet 2: List Deployment Clusters
     [Parameter(ParameterSetName = "ListDeploymentClusters", Mandatory = $true)]
@@ -810,35 +818,69 @@ function Get-SubnetHostAddresses {
         Retrieves monitored assets whose last known IP address falls within a set of subnet host addresses.
     .PARAMETER AssetSubnetHostAddresses
         ArrayList of dotted-quad host address strings to search for (as produced by Get-SubnetHostAddresses).
+    .PARAMETER MaxConcurrentBatches
+        Maximum number of batch queries to run concurrently. Defaults to 5. Set to 1 to force sequential behavior.
     .OUTPUTS
         Returns an ArrayList of asset entity objects whose lastIpAddress matched any of the provided addresses.
     .NOTES
         Addresses are queried in batches of $script:SUBNET_BATCH_SIZE, since the API has no native subnet-range filter.
         It is expected that some (or all) batches may return zero matching assets - this is not treated as an error.
+        Batches are queried concurrently (via ForEach-Object -Parallel), so "Querying batch N of M..." progress
+        messages may print out of order - this is cosmetic only and does not affect the assets returned.
     #>
 function Get-AssetsByHostAddresses {
     param(
         [Parameter(Mandatory = $true)]
-        [System.Collections.ArrayList]$AssetSubnetHostAddresses
+        [System.Collections.ArrayList]$AssetSubnetHostAddresses,
+
+        [Parameter(Mandatory = $false)]
+        [int]$MaxConcurrentBatches = 5
     )
     Write-Host "Retrieving assets matching $($AssetSubnetHostAddresses.Count) subnet host addresses"
 
-    [System.Collections.ArrayList]$Assets = @()
     $batchSize = $script:SUBNET_BATCH_SIZE
     $totalAddresses = $AssetSubnetHostAddresses.Count
     $totalBatches = [math]::Ceiling($totalAddresses / $batchSize)
-    $batchNumber = 1
 
+    # Build batch descriptors up-front (cheap, no I/O) so the API calls themselves can run concurrently
+    [System.Collections.ArrayList]$Batches = @()
+    $batchNumber = 1
     for ($i = 0; $i -lt $totalAddresses; $i += $batchSize) {
         $endIndex = [math]::Min($i + $batchSize - 1, $totalAddresses - 1)
-        $batch = @($AssetSubnetHostAddresses[$i..$endIndex])
-        Write-Host "Querying batch $batchNumber of $totalBatches ($($batch.Count) addresses)..."
+        $Batches.Add([PSCustomObject]@{
+            BatchNumber = $batchNumber
+            Addresses   = @($AssetSubnetHostAddresses[$i..$endIndex])
+        }) | Out-Null
+        $batchNumber++
+    }
+
+    # ForEach-Object -Parallel runspaces do not inherit $script: variables or functions from the
+    # calling scope - capture what each batch's API call needs here and re-hydrate it via $using:
+    # inside the parallel block.
+    $ApiBaseUrl = $script:ApiBaseUrl
+    $Headers = $script:Headers
+    $CapturedDebugPreference = $DebugPreference
+    $InvokeApiRequestDef = ${function:Invoke-ApiRequest}.ToString()
+    $InvokePaginatedApiRequestDef = ${function:Invoke-PaginatedApiRequest}.ToString()
+    $TestApiResponseStatusCodeDef = ${function:Test-ApiResponseStatusCode}.ToString()
+
+    $BatchResults = $Batches | ForEach-Object -ThrottleLimit $MaxConcurrentBatches -Parallel {
+        # Re-hydrate script-scope state and functions inside this runspace
+        ${function:Test-ApiResponseStatusCode} = $using:TestApiResponseStatusCodeDef
+        ${function:Invoke-ApiRequest} = $using:InvokeApiRequestDef
+        ${function:Invoke-PaginatedApiRequest} = $using:InvokePaginatedApiRequestDef
+        $script:ApiBaseUrl = $using:ApiBaseUrl
+        $script:Headers = $using:Headers
+        $DebugPreference = $using:CapturedDebugPreference
+
+        $batch = $_
+        Write-Host "Querying batch $($batch.BatchNumber) of $($using:totalBatches) ($($batch.Addresses.Count) addresses)..."
 
         # Build filter array for API query - filters assets by lastIpAddress matching any address in this batch
         $FilterArray = @(
             @{
                 id = "lastIpAddress"
-                includeValues = @($batch)
+                includeValues = @($batch.Addresses)
             }
         )
         $FilterJson = $FilterArray | ConvertTo-Json -Compress -AsArray -Depth 10
@@ -851,13 +893,18 @@ function Get-AssetsByHostAddresses {
 
         $response = Invoke-PaginatedApiRequest -Method "GET" -ApiEndpoint "/assets/monitored" -QueryParams $QueryParams
 
-        Write-Debug "Batch $batchNumber response body: $($response | ConvertTo-Json -Compress -Depth 10)"
+        Write-Debug "Batch $($batch.BatchNumber) response body: $($response | ConvertTo-Json -Compress -Depth 10)"
 
         if ($null -ne $response.items -and $response.items.Count -gt 0) {
-            $Assets.AddRange(@($response.items))
+            $response.items
         }
+    }
 
-        $batchNumber++
+    # Merge results back into a single accumulator - this happens single-threaded after
+    # ForEach-Object -Parallel completes, so no thread-safety concern here.
+    [System.Collections.ArrayList]$Assets = @()
+    if ($null -ne $BatchResults) {
+        $Assets.AddRange(@($BatchResults))
     }
 
     Write-Host "Retrieved $($Assets.Count) assets across $totalBatches batch(es) matching subnet host addresses"
@@ -1415,6 +1462,9 @@ function Invoke-PaginatedApiRequest {
         Returns the API response object.
     .NOTES
         Automatically validates status codes and throws exceptions for errors.
+        Retries up to 3 times with a short exponential backoff (1s, 2s, 4s) if the API responds with
+        HTTP 429 (rate limited), since concurrent subnet-batch requests (-MaxConcurrentBatches) can
+        trigger rate limiting that a single sequential request stream would not have.
     #>
 function Invoke-ApiRequest {
     param(
@@ -1468,8 +1518,20 @@ function Invoke-ApiRequest {
         }
         
         # Execute request and capture status code (SkipHttpErrorCheck allows manual error handling)
-        $statusCode = $null
-        $response = Invoke-RestMethod @requestParams -SkipHttpErrorCheck -StatusCodeVariable statusCode
+        # Retry on 429 (rate limited) with a short exponential backoff before giving up
+        $maxAttempts = 3
+        for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+            $statusCode = $null
+            $response = Invoke-RestMethod @requestParams -SkipHttpErrorCheck -StatusCodeVariable statusCode
+
+            if ($statusCode -eq 429 -and $attempt -lt $maxAttempts) {
+                $backoffSeconds = [math]::Pow(2, $attempt - 1)
+                Write-Warning "Received HTTP 429 (rate limited) from $($requestParams['Uri']). Retrying in $backoffSeconds second(s) (attempt $attempt of $maxAttempts)..."
+                Start-Sleep -Seconds $backoffSeconds
+                continue
+            }
+            break
+        }
 
         # Validate status code (throws exception for non-2XX codes)
         Test-ApiResponseStatusCode -StatusCode $statusCode -Response $response | Out-Null
@@ -1547,7 +1609,7 @@ switch ($PSCmdlet.ParameterSetName) {
 
         # Expand the subnet into individual host addresses, then resolve them to monitored assets
         $AssetSubnetHostAddresses = Get-SubnetHostAddresses -TargetSubnet $TargetSubnet
-        [System.Collections.ArrayList]$Assets = [System.Collections.ArrayList]@(Get-AssetsByHostAddresses -AssetSubnetHostAddresses $AssetSubnetHostAddresses)
+        [System.Collections.ArrayList]$Assets = [System.Collections.ArrayList]@(Get-AssetsByHostAddresses -AssetSubnetHostAddresses $AssetSubnetHostAddresses -MaxConcurrentBatches $MaxConcurrentBatches)
 
         if ($Assets.Count -eq 0) {
             Write-Host "No assets found matching subnet $TargetSubnet. Exiting..."

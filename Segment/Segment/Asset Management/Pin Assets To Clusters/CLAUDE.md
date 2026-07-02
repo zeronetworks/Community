@@ -70,7 +70,7 @@ The bottom-of-file `switch ($PSCmdlet.ParameterSetName)` block dispatches to one
 1. `Initialize-ApiContext`
 2. `Invoke-ValidateDeploymentClusterId` for the one `-DeploymentClusterId` supplied.
 3. `Get-SubnetHostAddresses` — expands `-TargetSubnet` into every individual host address in the range (including network/broadcast addresses). Warns and requires interactive confirmation above /24 (256 addresses), and hard-stops above /16 (65,536 addresses).
-4. `Get-AssetsByHostAddresses` — queries `/assets/monitored` in batches of `$script:SUBNET_BATCH_SIZE` (default 100, not a script parameter) using a `lastIpAddress` filter, accumulating `.items` across batches (empty batches are expected, not an error).
+4. `Get-AssetsByHostAddresses` — queries `/assets/monitored` in batches of `$script:SUBNET_BATCH_SIZE` (default 100, not a script parameter) using a `lastIpAddress` filter. Batches run concurrently via `ForEach-Object -Parallel`, up to `-MaxConcurrentBatches` (default 5; set to 1 for sequential behavior) — results are merged into a single list after the parallel block completes (empty batches are expected, not an error). `Invoke-ApiRequest` retries up to 3 times with exponential backoff on HTTP 429 to absorb any rate limiting the added concurrency triggers.
 5. `Test-ValidateProvidedAssetsCanBePinned` — validates the whole asset list at once, honoring `-StopOnAssetValidationError`. Assets from `/assets/monitored` already carry `.id`/`.name` in the shape expected, so no normalization step is needed (unlike `ByCsvPath`).
 6. `Invoke-BatchBasedClusterPinning` → `Set-AssetsToDeploymentCluster` in batches of 50, all against the single validated cluster.
 
