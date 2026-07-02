@@ -4,7 +4,7 @@ certifi==2025.10.5
 charset-normalizer==3.4.4
 click==8.3.0
 dill==0.4.0
-idna==3.11
+idna==3.15
 iniconfig==2.3.0
 isort==7.0.0
 loguru==0.7.3
@@ -16,12 +16,12 @@ pandas==2.3.3
 pathspec==0.12.1
 platformdirs==4.5.0
 pluggy==1.6.0
-Pygments==2.19.2
+Pygments==2.20.0
 pylint==4.0.3
-pytest==9.0.1
+pytest==9.0.3
 python-dateutil==2.9.0.post0
 pytokens==0.3.0
 pytz==2025.2
 PyYAML==6.0.3
 requests==2.32.5
-urllib3==2.6.0
+urllib3==2.7.0

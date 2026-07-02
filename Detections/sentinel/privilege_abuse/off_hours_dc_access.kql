@@ -1,0 +1,62 @@
+// -- Title         : ZN - Off-Hours Domain Controller Access
+// -- Description   : Detects authentication targeting a Domain Controller outside normal
+// --                 business hours (before 07:00 or after 20:00 UTC, or on weekends).
+// --                 Off-hours DC access indicates credential harvesting, Pass-the-Ticket, or
+// --                 attacker tooling running outside monitored windows.
+// -- Version       : 1.0.1
+// -- Last modified : 2026-05-05
+// -- Author        : Zero Networks
+// -- MITRE ATT&CK  : T1558 (Steal or Forge Kerberos Tickets), T1087.002 (Account Discovery - AD),
+// --                 T1069.002 (Permission Groups Discovery - Domain)
+// -- Severity      : High (authentication failure), Medium (success)
+// -- Data source   : ZNIdentityActivity_CL
+// -- Tuning        : Adjust _businessHourStart/_businessHourEnd for your timezone.
+// --                 Populate the ZN_DomainControllers Watchlist with DC asset IDs from ZN.
+// --                 Domain Controllers have no dedicated assetType; they are SERVER (2).
+// --                 Add known scheduled jobs and monitoring accounts to an exclusion watchlist.
+
+let _businessHourStart = 7;    // 07:00 UTC - adjust to local business hours
+let _businessHourEnd   = 20;   // 20:00 UTC
+// Populate ZN_DomainControllers watchlist with your DC asset IDs (ZN asset type has no dedicated DC value)
+let _dcAssetIDs = toscalar(_GetWatchlist("ZN_DomainControllers") | summarize make_set(SearchKey));
+
+ZNIdentityActivity_CL
+| where TimeGenerated >= ago(1h)
+| where dst_assetType_d == 2   // SERVER - pre-filter; DC watchlist join below narrows to DCs only
+| where dst_assetId_s in (_dcAssetIDs)
+| where isnotempty(subjectUser_name_s) and isnotempty(dst_assetId_s)
+| extend
+    HourOfDay = hourofday(TimeGenerated),
+    DayOfWeek = dayofweek(TimeGenerated)
+| where HourOfDay  < _businessHourStart
+    or  HourOfDay >= _businessHourEnd
+    or  DayOfWeek == 0d   // Sunday
+    or  DayOfWeek == 6d   // Saturday
+| extend
+    AlertSeverity = iff(failureReason_d != 0, "High", "Medium"),
+    OffHoursReason = case(
+        DayOfWeek == 0d or DayOfWeek == 6d,
+            "Weekend",
+        HourOfDay < _businessHourStart,
+            strcat("Before business hours (", tostring(HourOfDay), ":00 UTC)"),
+        strcat("After business hours (", tostring(HourOfDay), ":00 UTC)")),
+    AlertName = strcat(
+        "Off-hours DC access: ",
+        subjectUser_name_s, " -> ",
+        iff(isnotempty(dst_fqdn_s), dst_fqdn_s, dst_assetId_s),
+        " [", authenticationPackageName_s, "] ", OffHoursReason)
+| project
+    TimeGenerated,
+    AlertName,
+    AlertSeverity,
+    OffHoursReason,
+    AuthPackage      = authenticationPackageName_s,
+    FailureReason    = failureReason_d,
+    UserName         = subjectUser_name_s,
+    UserSID          = subjectUser_sid_s,
+    DstAssetID       = dst_assetId_s,
+    DstFqdn          = dst_fqdn_s,
+    DstAssetType     = dst_assetType_d,
+    EventType        = eventType_d,
+    LogonType        = logonType_d
+| sort by TimeGenerated desc

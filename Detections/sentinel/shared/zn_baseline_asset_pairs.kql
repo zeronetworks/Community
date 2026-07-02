@@ -1,0 +1,27 @@
+// -- Title         : ZN - Baseline: Known Asset Pairs
+// -- Description   : Run this query standalone to populate the ZN_KnownAssetPairs Watchlist.
+// --                 Captures all internal (src, dst) asset ID pairs seen in the lookback window.
+// --                 Required by: new_internal_asset_pair.kql
+// -- Schedule      : Run daily; refresh Watchlist after each run.
+// -- Watchlist     : ZN_KnownAssetPairs  (columns: SrcAssetID, DstAssetID)
+// -- Version       : 1.0.0
+// -- Last modified : 2026-05-03
+// -- Author        : Zero Networks
+
+let _lookbackDays = 14d;
+
+ZNNetworkActivity_CL
+| where TimeGenerated >= ago(_lookbackDays)
+| where TrafficType_s == "Internal"
+| where isnotempty(Src_AssetID_s) and isnotempty(Dst_AssetID_s)
+| summarize
+    LastSeen   = max(TimeGenerated),
+    EventCount = count()
+    by Src_AssetID_s, Dst_AssetID_s, Src_Fqdn_s, Dst_Fqdn_s
+| project
+    SrcAssetID = Src_AssetID_s,
+    DstAssetID = Dst_AssetID_s,
+    SrcFqdn    = Src_Fqdn_s,
+    DstFqdn    = Dst_Fqdn_s,
+    LastSeen,
+    EventCount

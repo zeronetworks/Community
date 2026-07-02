@@ -1,0 +1,47 @@
+`comment("
+Title         : ZN - SMB Share Fanout
+Description   : Detects a single internal source connecting to an unusually large number of
+                distinct SMB/NetBIOS destinations in a short window. Indicates ransomware
+                staging, worm propagation, or mass share enumeration.
+Version       : 1.0.0
+Last modified : 2026-05-03
+Author        : Zero Networks
+MITRE ATT&CK  : T1021.002 (SMB/Windows Admin Shares), T1083 (File and Directory Discovery)
+Severity      : High
+Data source   : index=zeronetworks sourcetype=zn:network
+")`
+index=zeronetworks sourcetype="zn:network" earliest=-5m@m latest=now
+| spath output=traffic_type   path="TrafficType"
+| spath output=dst_port       path="Dst.Port"
+| spath output=src_asset_id   path="Src.AssetID"
+| spath output=dst_asset_id   path="Dst.AssetID"
+| spath output=src_fqdn       path="Src.Fqdn"
+| spath output=src_ip         path="Src.IP"
+| spath output=src_asset_type path="Src.AssetType"
+| spath output=src_user       path="Src.UserName"
+| spath output=src_process    path="Src.ProcessPath"
+| spath output=src_seg_state  path="Src.AssetNetworkSegmentationState"
+| spath output=dst_fqdn       path="Dst.Fqdn"
+| spath output=conn_status    path="ConnectionStatus"
+| where traffic_type="Internal"
+    AND (dst_port="445" OR dst_port="139")
+    AND isnotnull(src_asset_id) AND src_asset_id!=""
+    AND isnotnull(dst_asset_id) AND dst_asset_id!=""
+| stats
+    dc(dst_asset_id)        AS distinct_share_count
+    values(dst_fqdn)        AS dst_fqdns
+    values(dst_asset_id)    AS dst_asset_ids
+    values(conn_status)     AS conn_statuses
+    count                   AS total_connections
+    min(_time)              AS first_seen
+    max(_time)              AS last_seen
+    BY src_asset_id src_fqdn src_ip src_asset_type src_user src_process src_seg_state
+| where distinct_share_count >= 5
+| eval
+    src_display=if(isnotnull(src_fqdn) AND src_fqdn!="", src_fqdn, src_ip),
+    alert_name="SMB share fanout: ".src_display." -> ".distinct_share_count." shares in 5m",
+    alert_severity="High"
+| table first_seen last_seen alert_name alert_severity total_connections distinct_share_count
+    src_asset_id src_fqdn src_ip src_asset_type src_user src_process src_seg_state
+    dst_asset_ids dst_fqdns conn_statuses
+| sort - distinct_share_count

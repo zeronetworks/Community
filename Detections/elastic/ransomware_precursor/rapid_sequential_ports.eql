@@ -1,0 +1,45 @@
+// -- Title         : ZN - Rapid Sequential Port Scan
+// -- Description   : Detects a single internal source connecting to 15+ distinct destination
+// --                 ports on the same target in a 5-minute window.
+// -- Version       : 1.0.0
+// -- Last modified : 2026-05-03
+// -- Author        : Zero Networks
+// -- MITRE ATT&CK  : T1046 (Network Service Discovery), T1595.001 (Active Scanning: Port Scans)
+// -- Severity      : High
+// -- Index         : logs-zn.network-*
+// --
+// -- DEPLOYMENT: Use the "threshold" rule type in Kibana Detection Engine.
+// --
+// -- threshold rule configuration:
+// --   rule_type        : threshold
+// --   index            : logs-zn.network-*
+// --   interval         : 5m
+// --   from             : now-6m
+// --   threshold.field  : ["Src.AssetID", "Dst.AssetID"]
+// --   threshold.value  : 1
+// --   threshold.cardinality:
+// --     - field: Dst.Port
+// --       value: 15
+// --   query (KQL)      : see below
+// --
+// -- KQL filter:
+//
+//    TrafficType: "Internal"
+//    AND Src.AssetID: *
+//    AND Dst.AssetID: *
+//    AND Dst.Port: *
+//
+// -- ES|QL equivalent:
+
+FROM logs-zn.network-*
+| WHERE TrafficType == "Internal"
+    AND Src.AssetID IS NOT NULL AND Src.AssetID != ""
+    AND Dst.AssetID IS NOT NULL AND Dst.AssetID != ""
+    AND @timestamp > NOW() - 5 minutes
+| STATS distinct_ports   = COUNT_DISTINCT(Dst.Port),
+         total_conns     = COUNT(),
+         scanned_ports   = VALUES(Dst.Port)
+    BY Src.AssetID, Src.Fqdn, Src.IP, Src.AssetType,
+       Dst.AssetID, Dst.Fqdn, Dst.IP
+| WHERE distinct_ports >= 15
+| SORT distinct_ports DESC

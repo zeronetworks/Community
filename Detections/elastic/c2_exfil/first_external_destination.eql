@@ -1,0 +1,39 @@
+// -- Title         : ZN - First External Destination
+// -- Description   : Fires when an internal source connects to an external IP never seen
+// --                 before from that source in the 14-day baseline window.
+// -- Version       : 1.0.0
+// -- Last modified : 2026-05-03
+// -- Author        : Zero Networks
+// -- MITRE ATT&CK  : T1071 (Application Layer Protocol), T1041 (Exfiltration Over C2 Channel)
+// -- Severity      : High (established), Medium (blocked/requested), Low (blocked_at_source)
+// -- Index         : logs-zn.network-*
+// --
+// -- DEPLOYMENT: Use the "new_terms" rule type in Kibana Detection Engine.
+// --
+// -- new_terms rule configuration:
+// --   rule_type           : new_terms
+// --   index               : logs-zn.network-*
+// --   new_terms_fields    : ["Src.AssetID", "Dst.IP"]
+// --   history_window_start: now-14d
+// --   interval            : 1h
+// --   from                : now-65m
+// --   query (KQL)         : see below
+// --
+// -- KQL filter:
+//
+//    TrafficType: "External"
+//    AND Src.AssetID: *
+//    AND Dst.IP: *
+//
+// -- EQL query (custom_query fallback):
+
+any where
+    event.dataset == "zn.network"
+    and TrafficType == "External"
+    and Src.AssetID != null and Src.AssetID != ""
+    and Dst.IP != null and Dst.IP != ""
+
+// -- Field reference:
+// --   Dst.IsoCode        : geo country code of external IP
+// --   Dst.IPThreatScore  : ZN threat intelligence score (0=clean, 100=malicious)
+// --   ConnectionStatus   : "established" | "blocked" | "requested" | "blocked_at_source"

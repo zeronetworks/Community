@@ -1,0 +1,52 @@
+// Copyright 2026 Zero Networks. All rights reserved.
+//
+// -- Title         : ZN - High Outbound Connection Volume
+// -- Description   : Detects an internal host making 50+ established connections to the same
+// --                 external IP within a 1-hour aggregation window. Connection count proxies
+// --                 data volume in the absence of byte-level telemetry.
+// -- Version       : 1.0.0
+// -- Last modified : 2026-05-03
+// -- Author        : Zero Networks
+// -- MITRE ATT&CK  : TA0010, T1041 (Exfiltration Over C2 Channel), T1048
+// -- Severity      : MEDIUM
+// -- Log type      : ZN_NETWORK
+
+rule zn_high_outbound_volume {
+  meta:
+    author              = "Zero Networks"
+    description         = "50+ established external connections from same source to same IP in 1h."
+    severity            = "MEDIUM"
+    priority            = "MEDIUM"
+    mitre_attack_tactic = "TA0010"
+    mitre_attack_technique = "T1041"
+    version             = "1.0.0"
+    last_modified       = "2026-05-03"
+
+  events:
+    $e.metadata.log_type = "ZN_NETWORK"
+    $e.additional.fields["TrafficType"] = "External"
+    $e.additional.fields["ConnectionStatus"] = "established"
+
+    $src_id = $e.principal.asset.asset_id
+    $dst_ip = $e.target.ip
+    $src_id != ""
+    $dst_ip != ""
+
+  match:
+    $src_id, $dst_ip over 1h
+
+  outcome:
+    $connection_count = count($e.metadata.event_timestamp.seconds)
+    $src_fqdn         = $e.principal.hostname
+    $src_ip           = $e.principal.ip
+    $src_user         = $e.principal.user.userid
+    $src_process      = $e.principal.process.file.full_path
+    $src_seg_state    = array_first($e.additional.fields["SrcSegState"])
+    $dst_fqdn         = $e.target.hostname
+    $dst_ports        = array_distinct($e.target.port)
+    $dst_iso_code     = array_first($e.additional.fields["DstIsoCode"])
+    $dst_threat_score = array_first($e.additional.fields["DstIPThreatScore"])
+
+  condition:
+    $e and $connection_count >= 50
+}

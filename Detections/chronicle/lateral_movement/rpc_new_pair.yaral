@@ -1,0 +1,100 @@
+// Copyright 2026 Zero Networks. All rights reserved.
+//
+// -- Title         : ZN - New RPC Pair (Dangerous Interface)
+// -- Description   : Fires when a new (src_asset_id, dst_asset_id, rpc_operation) triple is
+// --                 observed for a high-risk RPC interface not seen in the reference list.
+// --                 Dangerous operations covered:
+// --                   ITaskSchedulerService (T1053.005) - remote scheduled task
+// --                   IWbemServices (T1047)             - WMI lateral movement
+// --                   winreg (T1112)           - remote registry
+// --                   svcctl (T1543.003)       - remote service manipulation
+// --                   drsuapi (T1003.006)               - DCSync / credential dump
+// --                   samr (T1087.002)                  - account enumeration
+// -- Version       : 1.0.0
+// -- Last modified : 2026-04-22
+// -- Author        : Zero Networks
+// -- MITRE ATT&CK  : TA0008, T1047, T1053.005, T1003.006, T1112, T1543.003, T1569.002
+// -- Severity      : CRITICAL (drsuapi), HIGH (ITaskScheduler/WMI/svcctl), MEDIUM (rest)
+// -- Log type      : ZN_RPC
+// --
+// -- Prerequisites:
+// --   Reference list 'zn_known_rpc_pairs' populated before enabling.
+// --   Format: "src_asset_id:dst_asset_id:operation_name" (one per line).
+// --   Populate via scheduled baseline export from SIEM.
+// --
+// -- UDM mapping assumed for ZN_RPC events (from ZN Chronicle parser):
+// --   Operation.Name       -> additional.fields["OperationName"]
+// --   Operation.Number     -> additional.fields["OperationNumber"]
+// --   Interface.UUID       -> additional.fields["InterfaceUUID"]
+// --   Interface.Name       -> additional.fields["InterfaceName"]
+// --   Status               -> additional.fields["Status"]
+// --   User.Name            -> target.user.userid
+// --   User.SID             -> target.user.windows_sid
+// --   Src.AssetID          -> principal.asset.asset_id
+// --   Dst.AssetID          -> target.asset.asset_id
+// --   Src.AssetRPCSegmentationState -> additional.fields["SrcRPCSegState"]
+// --   Dst.AssetRPCSegmentationState -> additional.fields["DstRPCSegState"]
+
+rule zn_rpc_new_pair {
+  meta:
+    author              = "Zero Networks"
+    description         = "First-ever dangerous RPC operation between two assets."
+    severity            = "HIGH"
+    priority            = "HIGH"
+    mitre_attack_tactic = "TA0008"
+    mitre_attack_technique = "T1047, T1053.005, T1003.006"
+    version             = "1.0.0"
+    last_modified       = "2026-04-22"
+
+  events:
+    $e.metadata.log_type = "ZN_RPC"
+
+    // Match only dangerous RPC interfaces
+    $op = $e.additional.fields["OperationName"]
+    $op in (
+        "ITaskSchedulerService",
+        "IWbemServices",
+        "winreg",
+        "drsuapi",
+        "samr",
+        "svcctl"
+    )
+
+    $src_id = $e.principal.asset.asset_id
+    $dst_id = $e.target.asset.asset_id
+    $src_id != ""
+    $dst_id != ""
+
+    // Exclude known (src:dst:operation) triples from the reference list
+    not strings.concat($src_id, ":", strings.concat($dst_id, ":", $op))
+        in %zn_known_rpc_pairs
+
+  match:
+    $src_id, $dst_id, $op over 1h
+
+  outcome:
+    $mitre_technique = if($op = "ITaskSchedulerService", "T1053.005",
+                       if($op = "IWbemServices", "T1047",
+                       if($op = "winreg", "T1112",
+                       if($op = "svcctl", "T1543.003",
+                       if($op = "drsuapi", "T1003.006",
+                       if($op = "samr", "T1087.002"))))))
+    $severity = if($op = "drsuapi", "CRITICAL",
+                if($op = "ITaskSchedulerService" or $op = "IWbemServices" or
+                   $op = "svcctl", "HIGH", "MEDIUM"))
+    $status           = array_first($e.additional.fields["Status"])
+    $interface_uuid   = array_first($e.additional.fields["InterfaceUUID"])
+    $interface_name   = array_first($e.additional.fields["InterfaceName"])
+    $src_fqdn         = $e.principal.hostname
+    $src_ip           = $e.principal.ip
+    $src_seg_state    = array_first($e.additional.fields["SrcRPCSegState"])
+    $src_process      = $e.principal.process.file.full_path
+    $user_name        = $e.target.user.userid
+    $dst_fqdn         = $e.target.hostname
+    $dst_ip           = $e.target.ip
+    $dst_port         = $e.target.port
+    $dst_seg_state    = array_first($e.additional.fields["DstRPCSegState"])
+
+  condition:
+    $e
+}

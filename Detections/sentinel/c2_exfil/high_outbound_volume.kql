@@ -1,0 +1,59 @@
+// -- Title         : ZN - High Outbound Connection Volume
+// -- Description   : Detects an internal host establishing an unusually high number of
+// --                 connections to the same external endpoint in a 1-hour window. Used as
+// --                 a proxy for high outbound data volume when byte-level telemetry is
+// --                 unavailable. Indicates data staging, exfiltration, or C2 data transfer.
+// -- Version       : 1.0.0
+// -- Last modified : 2026-05-03
+// -- Author        : Zero Networks
+// -- MITRE ATT&CK  : T1041 (Exfiltration Over C2 Channel), T1048 (Exfiltration Over Alt Protocol)
+// -- Severity      : Medium
+// -- Data source   : ZNNetworkActivity_CL
+// -- Note          : Connection count is used as an exfiltration volume proxy. If your ingestion
+// --                 pipeline includes byte fields (e.g. Bytes.Out), replace the TotalConnections
+// --                 threshold with a byte-volume threshold for higher fidelity.
+
+let _windowMinutes  = 60;   // rolling window
+let _connThreshold  = 50;   // connections to same external IP before alerting
+
+ZNNetworkActivity_CL
+| where TimeGenerated >= ago(totimespan(strcat(tostring(_windowMinutes), "m")))
+| where TrafficType_s == "External"
+| where ConnectionStatus_s == "established"
+| where isnotempty(Src_AssetID_s) and isnotempty(Dst_IP_s)
+| summarize
+    TotalConnections = count(),
+    DstFqdn          = any(Dst_Fqdn_s),
+    DstPorts         = make_set(Dst_Port_d, 20),
+    DstIsoCode       = any(Dst_IsoCode_s),
+    DstIPThreatScore = max(Dst_IPThreatScore_d),
+    FirstSeen        = min(TimeGenerated),
+    LastSeen         = max(TimeGenerated)
+    by Src_AssetID_s, Src_Fqdn_s, Src_IP_s, Src_AssetType_s,
+       Src_UserName_s, Src_ProcessPath_s, Src_AssetNetworkSegmentationState_s, Dst_IP_s
+| where TotalConnections >= _connThreshold
+| extend AlertName = strcat(
+    "High outbound volume: ",
+    iff(isnotempty(Src_Fqdn_s), Src_Fqdn_s, Src_IP_s),
+    " -> ", Dst_IP_s,
+    " (", tostring(TotalConnections), " connections in ",
+    tostring(_windowMinutes), "m)")
+| project
+    FirstSeen,
+    LastSeen,
+    AlertName,
+    AlertSeverity      = "Medium",
+    TotalConnections,
+    SrcAssetID         = Src_AssetID_s,
+    SrcFqdn            = Src_Fqdn_s,
+    SrcIP              = Src_IP_s,
+    SrcAssetType       = Src_AssetType_s,
+    SrcUserName        = Src_UserName_s,
+    SrcProcessPath     = Src_ProcessPath_s,
+    SrcSegState        = Src_AssetNetworkSegmentationState_s,
+    DstIP              = Dst_IP_s,
+    DstFqdn,
+    DstPorts,
+    DstIsoCode,
+    DstIPThreatScore
+| sort by TotalConnections desc

@@ -1,0 +1,58 @@
+// Copyright 2026 Zero Networks. All rights reserved.
+//
+// -- Title         : ZN - Beaconing Pattern (External)
+// -- Description   : Detects an internal host making 6+ established connections to the same
+// --                 external IP within a 24-hour aggregation window. The connection count
+// --                 threshold over a long window approximates hourly-bucket frequency.
+// -- Version       : 1.0.0
+// -- Last modified : 2026-05-03
+// -- Author        : Zero Networks
+// -- MITRE ATT&CK  : TA0011, T1071.001 (Web Protocols), T1071.004 (DNS)
+// -- Severity      : MEDIUM
+// -- Log type      : ZN_NETWORK
+// --
+// -- Notes:
+// --   Chronicle YARA-L aggregates events over a time window (match over 24h).
+// --   The condition checks for 6+ distinct connection events, which correlates
+// --   with regular interval beaconing. For lower-frequency C2 (e.g., every 4h),
+// --   lower the condition threshold accordingly.
+
+rule zn_beaconing_pattern {
+  meta:
+    author              = "Zero Networks"
+    description         = "Internal host connecting repeatedly to same external IP over 24h (beaconing)."
+    severity            = "MEDIUM"
+    priority            = "MEDIUM"
+    mitre_attack_tactic = "TA0011"
+    mitre_attack_technique = "T1071.001"
+    version             = "1.0.0"
+    last_modified       = "2026-05-03"
+
+  events:
+    $e.metadata.log_type = "ZN_NETWORK"
+    $e.additional.fields["TrafficType"] = "External"
+    $e.additional.fields["ConnectionStatus"] = "established"
+
+    $src_id = $e.principal.asset.asset_id
+    $dst_ip = $e.target.ip
+    $src_id != ""
+    $dst_ip != ""
+
+  match:
+    $src_id, $dst_ip over 24h
+
+  outcome:
+    $connection_count  = count($e.metadata.event_timestamp.seconds)
+    $src_fqdn          = $e.principal.hostname
+    $src_ip            = $e.principal.ip
+    $src_asset_type    = array_first($e.additional.fields["SrcAssetType"])
+    $src_user          = $e.principal.user.userid
+    $src_process       = $e.principal.process.file.full_path
+    $dst_fqdn          = $e.target.hostname
+    $dst_port          = $e.target.port
+    $dst_iso_code      = array_first($e.additional.fields["DstIsoCode"])
+    $dst_threat_score  = array_first($e.additional.fields["DstIPThreatScore"])
+
+  condition:
+    $e and $connection_count >= 6
+}

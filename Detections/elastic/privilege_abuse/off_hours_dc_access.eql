@@ -1,0 +1,45 @@
+// -- Title         : ZN - Off-Hours Domain Controller Access
+// -- Description   : Detects Kerberos or LDAP activity targeting a Domain Controller outside
+// --                 business hours (before 07:00 or after 20:00 UTC, or weekends).
+// -- Version       : 1.0.0
+// -- Last modified : 2026-05-05
+// -- Author        : Zero Networks
+// -- MITRE ATT&CK  : T1558 (Steal or Forge Kerberos Tickets), T1087.002 (Account Discovery - AD)
+// -- Severity      : High (auth failure), Medium (success)
+// -- Index         : logs-zn.identity-*
+// --
+// -- DEPLOYMENT: Use the "custom_query" rule type in Kibana Detection Engine.
+// --
+// -- custom_query rule configuration:
+// --   rule_type  : custom_query
+// --   index      : logs-zn.identity-*
+// --   interval   : 1h
+// --   from       : now-65m
+// --   query (KQL): see below
+// --
+// -- IMPORTANT: Domain Controllers have no dedicated assetType in ZN (SERVER = 2 includes DCs).
+// -- Use an Elastic enrich policy or a terms lookup against a dc_asset_ids index to identify DCs.
+// -- dst.assetType == 2 (SERVER) is used as a broad pre-filter only.
+// --
+// -- KQL filter (add an enrich/lookup step to narrow dst.assetId to known DC IDs):
+//
+//    dst.assetType: 2
+//    AND subjectUser.name: *
+//    AND dst.assetId: *
+//
+// -- To enforce off-hours filtering, add a runtime field "hour_of_day" (from @timestamp)
+// -- and filter: hour_of_day < 7 OR hour_of_day >= 20 OR day_of_week: (0 OR 6)
+// --
+// -- EQL query (pre-filters to servers; add enrichment pipeline to flag DC asset IDs):
+
+any where
+    event.dataset == "zn.identity"
+    and dst.assetType == 2   // SERVER - use enrichment to restrict to DC asset IDs
+    and subjectUser.name != null and subjectUser.name != ""
+    and dst.assetId != null and dst.assetId != ""
+    and (
+        hourOfDay(@timestamp) < 7
+        or hourOfDay(@timestamp) >= 20
+        or dayOfWeek(@timestamp) == 0
+        or dayOfWeek(@timestamp) == 6
+    )
