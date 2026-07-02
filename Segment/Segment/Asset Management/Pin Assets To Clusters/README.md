@@ -1,6 +1,6 @@
 # Pin Assets To Clusters
 
-A PowerShell script for pinning (assigning) or unpinning (unassigning) assets to a particular deployment cluster in Zero Networks. This script allows you to pin/unpin individual assets, or in bulk via CSV or AD OU path.
+A PowerShell script for pinning (assigning) or unpinning (unassigning) assets to a particular deployment cluster in Zero Networks. This script allows you to pin/unpin individual assets, or in bulk via CSV, AD OU path, or IPv4 subnet (CIDR).
 
 ## Requirements
 
@@ -9,13 +9,15 @@ A PowerShell script for pinning (assigning) or unpinning (unassigning) assets to
 
 ## Features
 
-- Pin or unpin assets to deployment clusters via asset ID, CSV file, or Active Directory OU path
-- Bulk operations via CSV file or AD OU path
+- Pin or unpin assets to deployment clusters via asset ID, CSV file, Active Directory OU path, or IPv4 subnet (CIDR)
+- Bulk operations via CSV file, AD OU path, or IPv4 subnet
 - Automatic batching for large asset lists (50 assets per batch)
 - Dry run mode to preview changes without applying them (`-DryRun`)
 - Comprehensive validation before making changes
 - Stop on validation error option (`-StopOnAssetValidationError`) for strict validation enforcement
 - Nested OU resolution control (`-DisableNestedOuResolution`) for OU-based operations
+- Asset health check bypass (`-SkipAssetHealthValidation`) for cases where a transient/stale unhealthy status shouldn't block pinning
+- Concurrent subnet asset resolution with tunable throttling (`-MaxConcurrentBatches`) for subnet-based operations
 - List all deployment clusters with detailed information (`-ListDeploymentClusters`)
 - Export CSV template for bulk operations (`-ExportCsvTemplate`)
 - Debug output mode (`-EnableDebug`) for troubleshooting
@@ -23,14 +25,14 @@ A PowerShell script for pinning (assigning) or unpinning (unassigning) assets to
 ## Prerequisites for pinning an asset to a cluster
 You can only pin assets that meet the following criterion:
 - **Must be monitored by a segment server** - You cannot pin assets monitored by Cloud Connector, Segment Connector, etc.
-- **Must have a health status of *Healthy*** - The asset cannot have any health issues listed.
+- **Must have a health status of *Healthy*** - The asset cannot have any health issues listed. *You can skip this check by adding the `-SkipAssetHealthValidation` parameter at run-time*.
 - **Target cluster must have at least one online and active segment server.** *You can skip this check by adding the `-SkipSegmentServerValidation` parameter at run-time*.
 - **Obviously, an asset cannot already be pinned** (The script checks for this)
 
 
 ## Script use cases
 
-The script supports five different use cases:
+The script supports six different use cases:
 
 ### 1. Pinning/Unpinning Asset by Asset ID & Deployment ID (Default)
 Pin or unpin a single asset to a deployment cluster. You can use the `-ListDeploymentClusters` use case to get the Deployment Cluster ID.
@@ -55,6 +57,7 @@ See the [Quick start](#quick-start) section for more examples.
 - `-PortalUrl` - Portal URL (default: `https://portal.zeronetworks.com`)
 - `-Unpin` - Switch to unpin instead of pin
 - `-SkipSegmentServerValidation` - Skip validation that segment servers are online
+- `-SkipAssetHealthValidation` - Skip validation that the asset is healthy
 - `-DryRun` - Preview changes without applying them
 - `-EnableDebug` - Enable debug output
 
@@ -82,6 +85,7 @@ See the [Quick start](#quick-start) section for more examples.
 - `-DisableNestedOuResolution` - Disable nested OU resolution (default: `false`). When set to `true`, only direct members of the OU are processed, not nested OUs.
 - `-Unpin` - Switch to unpin instead of pin
 - `-SkipSegmentServerValidation` - Skip validation that segment servers are online
+- `-SkipAssetHealthValidation` - Skip validation that assets are healthy
 - `-DryRun` - Preview changes without applying them
 - `-StopOnAssetValidationError` - Stop processing and throw an error when asset validation fails. If not specified, the script continues processing and only operates on assets that passed validation.
 - `-EnableDebug` - Enable debug output
@@ -97,11 +101,45 @@ Pin or unpin multiple assets from a CSV file. Use `-ExportCsvTemplate` and `-Lis
 - `-PortalUrl` - Portal URL (default: `https://portal.zeronetworks.com`)
 - `-Unpin` - Switch to unpin instead of pin
 - `-SkipSegmentServerValidation` - Skip validation that segment servers are online
+- `-SkipAssetHealthValidation` - Skip validation that assets are healthy
 - `-DryRun` - Preview changes without applying them
 - `-StopOnAssetValidationError` - Stop processing and throw an error when asset validation fails. If not specified, the script continues processing and only operates on assets that passed validation.
 - `-EnableDebug` - Enable debug output
 
-### 4. List your deployment clusters
+### 4. IPv4 Subnet (CIDR) Bulk Operations
+Pin or unpin all monitored assets whose last known IP address falls within a specified IPv4 subnet (CIDR range) to a deployment cluster.
+
+```powershell
+.\Pin-AssetsToClusters.ps1 `
+    -ApiKey "your-api-key" `
+    -TargetSubnet "10.200.200.0/24" `
+    -DeploymentClusterId "your-deployment-cluster-id" `
+    -PortalUrl "https://yourportal-admin.zeronetworks.com"
+```
+
+The script expands the CIDR range into individual host addresses (including network/broadcast addresses) and resolves them to monitored assets via the API. Host address batches are queried concurrently (see `-MaxConcurrentBatches`) to speed up resolution for large subnets.
+
+**Subnet size limits:**
+- Subnets larger than `/24` (more than 256 addresses) require interactive confirmation before proceeding, since resolution will require multiple batched API calls.
+- Subnets larger than `/16` (more than 65,536 addresses) are rejected outright.
+
+#### Supported Parameters
+**Required Parameters:**
+- `-ApiKey` - Your Zero Networks API key
+- `-TargetSubnet` - IPv4 CIDR subnet to pin/unpin assets within (e.g., `10.200.200.0/24`)
+- `-DeploymentClusterId` - The deployment cluster ID
+
+**Optional Parameters:**
+- `-PortalUrl` - Portal URL (default: `https://portal.zeronetworks.com`)
+- `-Unpin` - Switch to unpin instead of pin
+- `-SkipSegmentServerValidation` - Skip validation that segment servers are online
+- `-SkipAssetHealthValidation` - Skip validation that assets are healthy
+- `-DryRun` - Preview changes without applying them
+- `-StopOnAssetValidationError` - Stop processing and throw an error when asset validation fails. If not specified, the script continues processing and only operates on assets that passed validation.
+- `-MaxConcurrentBatches` - Maximum number of subnet-batch asset resolution requests to run concurrently (default: `5`, range: `1`-`20`). Set to `1` to force fully sequential behavior.
+- `-EnableDebug` - Enable debug output
+
+### 5. List your deployment clusters
 List all deployment clusters with detailed information.
 #### Supported Parameters
 **Required Parameters:**
@@ -112,7 +150,7 @@ List all deployment clusters with detailed information.
 - `-PortalUrl` - Portal URL (default: `https://portal.zeronetworks.com`)
 - `-EnableDebug` - Enable debug output
 
-### 5. Export CSV Template to use with CSV Bulk Operations
+### 6. Export CSV Template to use with CSV Bulk Operations
 Export a CSV template file for bulk operations.
 #### Supported Parameters
 **Required Parameters:**
@@ -231,6 +269,26 @@ To process only direct members of the OU (excluding nested OUs), use the `-Disab
 
 **Note:** The script automatically filters out segment servers and any non-computer entity, processing only valid assets from the OU.
 
+### Pinning Assets by IPv4 Subnet (Bulk Ops)
+#### 1. Determine the target subnet
+- Determine the IPv4 CIDR subnet (e.g., `10.200.200.0/24`) covering the assets you want to pin/unpin. Assets are matched based on their last known IP address in the portal.
+
+#### 2. List deployment clusters
+Follow the steps [2. Run script with -ListDeploymentClusters parameter to get Cluster ID](#2-run-script-with--listdeploymentclusters-parameter-to-get-cluster-id) and [3. Extract cluster ID(s) from output](#3-extract-cluster-ids-from-output) from the [Single asset pinning](#single-asset-pinning) section above to obtain the Cluster ID.
+
+#### 3. Pin assets in the subnet to the cluster
+Run the script with the target subnet and cluster ID.
+
+```powershell
+.\Pin-AssetsToClusters.ps1 `
+    -ApiKey "your-api-key" `
+    -TargetSubnet "10.200.200.0/24" `
+    -DeploymentClusterId "C:d:1234569f" `
+    -PortalUrl "https://yourportal-admin.zeronetworks.com"
+```
+
+**Note:** Subnets larger than `/24` will prompt for interactive confirmation before proceeding, since resolving assets requires multiple batched API calls. Subnets larger than `/16` are rejected. Use `-MaxConcurrentBatches` to control how many resolution batches run in parallel.
+
 ### Pinning assets from a CSV (Bulk Ops)
 #### 1. Export applicable assets to CSV within the portal
 - From within the Zero Networks portal, go to *Entities -> Assets -> Monitored* and add the filter **Monitored By --> Segment Server** and **Health Status --> Healthy** (Prerequisites).
@@ -338,6 +396,48 @@ Finally, run the script, passing it the path to your CSV.
     -DisableNestedOuResolution $true
 ```
 
+### Pin Assets by IPv4 Subnet
+
+```powershell
+.\Pin-AssetsToClusters.ps1 `
+    -ApiKey "your-api-key" `
+    -TargetSubnet "10.200.200.0/24" `
+    -DeploymentClusterId "C:d:1234569f" `
+    -PortalUrl "https://yourportal-admin.zeronetworks.com"
+```
+
+### Unpin Assets by IPv4 Subnet
+
+```powershell
+.\Pin-AssetsToClusters.ps1 `
+    -ApiKey "your-api-key" `
+    -TargetSubnet "10.200.200.0/24" `
+    -DeploymentClusterId "C:d:1234569f" `
+    -Unpin
+```
+
+### Pin Assets by IPv4 Subnet with Custom Concurrency
+
+```powershell
+.\Pin-AssetsToClusters.ps1 `
+    -ApiKey "your-api-key" `
+    -TargetSubnet "10.200.0.0/20" `
+    -DeploymentClusterId "C:d:1234569f" `
+    -MaxConcurrentBatches 10
+```
+
+### Skip Asset Health Validation
+
+Use `-SkipAssetHealthValidation` if a transient or stale unhealthy status in the portal shouldn't block a pin/unpin operation. All other validations (segment server check, monitored-by-Segment-Server check, applicability, and pin state) are still enforced.
+
+```powershell
+.\Pin-AssetsToClusters.ps1 `
+    -ApiKey "your-api-key" `
+    -AssetId "a:a:123456tn" `
+    -DeploymentClusterId "C:d:1234569f" `
+    -SkipAssetHealthValidation
+```
+
 ### Stop on Asset Validation Error
 
 When using `-StopOnAssetValidationError`, the script will stop and throw an error if any asset fails validation, rather than continuing with only the validated assets:
@@ -396,7 +496,7 @@ The script performs comprehensive validation before making any changes:
 ### Asset Validation
 - Asset must not be a segment server (segment servers cannot be pinned to deployment clusters)
 - Asset must be monitored by a Segment Server (not Cloud Connector or Lightweight Agent)
-- Asset must be healthy
+- Asset must be healthy (unless `-SkipAssetHealthValidation` is used)
 - Asset must be applicable to be pinned to a deployment cluster (An asset's deploymentSource attribute cannot be set to "Not Applicable")
 - For pinning: Asset must not already be pinned to a deployment cluster
 - For unpinning: Asset must already be pinned to a deployment cluster
