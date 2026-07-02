@@ -1,0 +1,50 @@
+`comment("
+Title         : ZN - Rapid Sequential Port Scan
+Description   : Detects a single internal source connecting to many distinct destination ports
+                on the same target in a short window. Indicates port scanning, service
+                enumeration, or ransomware pre-encryption reconnaissance.
+Version       : 1.0.0
+Last modified : 2026-05-03
+Author        : Zero Networks
+MITRE ATT&CK  : T1046 (Network Service Discovery), T1595.001 (Active Scanning: Port Scans)
+Severity      : High
+Data source   : index=zeronetworks sourcetype=zn:network
+")`
+index=zeronetworks sourcetype="zn:network" earliest=-5m@m latest=now
+| spath output=traffic_type   path="TrafficType"
+| spath output=src_asset_id   path="Src.AssetID"
+| spath output=dst_asset_id   path="Dst.AssetID"
+| spath output=dst_port       path="Dst.Port"
+| spath output=src_fqdn       path="Src.Fqdn"
+| spath output=src_ip         path="Src.IP"
+| spath output=src_asset_type path="Src.AssetType"
+| spath output=src_user       path="Src.UserName"
+| spath output=src_process    path="Src.ProcessPath"
+| spath output=dst_fqdn       path="Dst.Fqdn"
+| spath output=dst_ip         path="Dst.IP"
+| spath output=dst_seg_state  path="Dst.AssetNetworkSegmentationState"
+| spath output=conn_status    path="ConnectionStatus"
+| where traffic_type="Internal"
+    AND isnotnull(src_asset_id) AND src_asset_id!=""
+    AND isnotnull(dst_asset_id) AND dst_asset_id!=""
+| stats
+    dc(dst_port)         AS distinct_port_count
+    values(dst_port)     AS scanned_ports
+    values(conn_status)  AS conn_statuses
+    count                AS total_connections
+    min(_time)           AS first_seen
+    max(_time)           AS last_seen
+    BY src_asset_id src_fqdn src_ip src_asset_type src_user src_process
+       dst_asset_id dst_fqdn dst_ip dst_seg_state
+| where distinct_port_count >= 15
+| eval
+    src_display=if(isnotnull(src_fqdn) AND src_fqdn!="", src_fqdn, src_ip),
+    dst_display=if(isnotnull(dst_fqdn) AND dst_fqdn!="", dst_fqdn, dst_ip),
+    alert_name="Rapid port scan: ".src_display." -> ".dst_display
+        ." (".distinct_port_count." ports in 5m)",
+    alert_severity="High"
+| table first_seen last_seen alert_name alert_severity total_connections distinct_port_count
+    src_asset_id src_fqdn src_ip src_asset_type src_user src_process
+    dst_asset_id dst_fqdn dst_ip dst_seg_state
+    scanned_ports conn_statuses
+| sort - distinct_port_count

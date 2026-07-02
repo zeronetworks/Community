@@ -1,0 +1,51 @@
+[
+    {
+        "TimestampEpoch": 1234567890,
+        "TimestampIso8601": "2023-10-01T12:00:00Z",
+        "Status": "",
+        "TrafficType": 123,
+        "ProtocolType": 123,
+        "Interface": {
+            "UUID": "123e4567-e89b-12d3-a456-426614174000",
+            "Name": "blah"
+        },
+        "Operation": {
+            "Number": 123,
+            "Name": ""
+        },
+        "User": {
+            "Name": "",
+            "SID": ""
+        },
+        "RuleIDs": [
+            "123",
+            "456"
+        ],
+        "Src": {
+            "AssetID": "",
+            "AssetSource": "",
+            "AssetType": "",
+            "AssetRPCSegmentationState": "",
+            "Fqdn": "",
+            "IP": "",
+            "Port": 123,
+            "EventRecordID": 12345678,
+            "Endpoint": "",
+            "ProcessID": 123,
+            "ProcessPath": ""
+        },
+        "Dst": {
+            "AssetID": "",
+            "AssetSource": "",
+            "AssetType": "",
+            "AssetRPCSegmentationState": "",
+            "Fqdn": "",
+            "IP": "",
+            "Port": 123,
+            "EventRecordID": 12345678,
+            "Endpoint": "",
+            "ProcessID": 123,
+            "ProcessPath": ""
+        }
+    }
+]

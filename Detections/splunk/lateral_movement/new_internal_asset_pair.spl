@@ -1,0 +1,67 @@
+`comment("
+Title         : ZN - New Internal Asset Pair
+Description   : Detects the first observed connection between two internal ZN-managed assets.
+                Covers established connections (confirmed lateral movement) and blocked/requested
+                attempts (lateral movement blocked by ZN policy).
+Version       : 1.0.0
+Last modified : 2026-04-22
+Author        : Zero Networks
+MITRE ATT&CK  : T1021.001, T1021.002, T1021.006
+Severity      : High (established), Medium (blocked/requested), Low (blocked_at_source)
+Data source   : index=zeronetworks sourcetype=zn:network
+Requires      : KV Store collection 'zn_known_asset_pairs' (lookup definition required).
+                Schedule the companion baseline search every 24h. Run baseline for 14+ days
+                before enabling alerts.
+")`
+index=zeronetworks sourcetype="zn:network" earliest=-1h@h latest=now
+| spath output=traffic_type    path="TrafficType"
+| spath output=conn_status     path="ConnectionStatus"
+| spath output=src_asset_id    path="Src.AssetID"
+| spath output=dst_asset_id    path="Dst.AssetID"
+| spath output=src_fqdn        path="Src.Fqdn"
+| spath output=src_ip          path="Src.IP"
+| spath output=src_asset_type  path="Src.AssetType"
+| spath output=src_seg_state   path="Src.AssetNetworkSegmentationState"
+| spath output=src_process     path="Src.ProcessPath"
+| spath output=src_user        path="Src.UserName"
+| spath output=dst_fqdn        path="Dst.Fqdn"
+| spath output=dst_ip          path="Dst.IP"
+| spath output=dst_port        path="Dst.Port"
+| spath output=dst_asset_type  path="Dst.AssetType"
+| spath output=dst_seg_state   path="Dst.AssetNetworkSegmentationState"
+| spath output=protocol_type   path="ProtocolType"
+| where traffic_type="Internal"
+    AND isnotnull(src_asset_id) AND src_asset_id!=""
+    AND isnotnull(dst_asset_id) AND dst_asset_id!=""
+`comment("Anti-join against baseline KV Store - unknown pair = new pair")`
+| lookup zn_known_asset_pairs src_asset_id dst_asset_id OUTPUT src_asset_id AS known_src
+| where isnull(known_src)
+| eval
+    alert_severity=case(
+        conn_status="established",       "High",
+        conn_status="blocked",           "Medium",
+        conn_status="requested",         "Medium",
+        conn_status="blocked_at_source", "Low",
+        true(),                          "Medium"),
+    src_display=if(isnotnull(src_fqdn) AND src_fqdn!="", src_fqdn, src_ip),
+    dst_display=if(isnotnull(dst_fqdn) AND dst_fqdn!="", dst_fqdn, dst_ip),
+    alert_name="New internal asset pair: ".src_display." -> ".dst_display
+| table _time alert_name alert_severity conn_status
+    src_asset_id src_fqdn src_ip src_asset_type src_seg_state src_process src_user
+    dst_asset_id dst_fqdn dst_ip dst_port dst_asset_type dst_seg_state
+    protocol_type
+| sort - _time
+
+`comment("
+--- BASELINE BUILDER (schedule every 24h, lookback=14d) ---
+index=zeronetworks sourcetype=zn:network earliest=-14d@d latest=now
+| spath output=traffic_type  path=TrafficType
+| spath output=src_asset_id  path=Src.AssetID
+| spath output=dst_asset_id  path=Dst.AssetID
+| where traffic_type=Internal
+    AND isnotnull(src_asset_id) AND src_asset_id!=''
+    AND isnotnull(dst_asset_id) AND dst_asset_id!=''
+| stats count by src_asset_id dst_asset_id
+| table src_asset_id dst_asset_id
+| outputlookup zn_known_asset_pairs
+")`

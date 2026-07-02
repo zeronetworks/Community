@@ -1,0 +1,63 @@
+// -- Title         : ZN - Beaconing Pattern (External)
+// -- Description   : Detects an internal host making repeated established connections to the
+// --                 same external destination at regular intervals - a hallmark of C2 agent
+// --                 beaconing. Uses hourly bucket frequency over a 24-hour window; pair must
+// --                 appear in 6+ distinct hourly buckets to fire.
+// -- Version       : 1.0.0
+// -- Last modified : 2026-05-03
+// -- Author        : Zero Networks
+// -- MITRE ATT&CK  : T1071.001 (Web Protocols), T1071.004 (DNS), T1132 (Data Encoding)
+// -- Severity      : Medium
+// -- Data source   : ZNNetworkActivity_CL
+// -- Tuning        : Raise _minBuckets for environments with many recurring jobs;
+// --                 exclude known update/telemetry endpoints by Dst_IP_s or Dst_Fqdn_s.
+
+let _lookbackHours = 24;   // analysis window
+let _minBuckets    = 6;    // distinct 1h buckets with activity to qualify as beaconing
+
+ZNNetworkActivity_CL
+| where TimeGenerated >= ago(totimespan(strcat(tostring(_lookbackHours), "h")))
+| where TrafficType_s == "External"
+| where ConnectionStatus_s == "established"
+| where isnotempty(Src_AssetID_s) and isnotempty(Dst_IP_s)
+| summarize
+    DistinctBuckets  = dcount(bin(TimeGenerated, 1h)),
+    TotalConnections = count(),
+    DstFqdn          = any(Dst_Fqdn_s),
+    DstPort          = any(Dst_Port_d),
+    DstIsoCode       = any(Dst_IsoCode_s),
+    DstIPThreatScore = max(Dst_IPThreatScore_d),
+    FirstSeen        = min(TimeGenerated),
+    LastSeen         = max(TimeGenerated)
+    by Src_AssetID_s, Src_Fqdn_s, Src_IP_s, Src_AssetType_s,
+       Src_UserName_s, Src_ProcessPath_s, Dst_IP_s
+| where DistinctBuckets >= _minBuckets
+| extend
+    AvgIntervalMinutes = toreal(datetime_diff('minute', LastSeen, FirstSeen))
+                         / toreal(DistinctBuckets),
+    AlertName = strcat(
+        "Beaconing pattern: ",
+        iff(isnotempty(Src_Fqdn_s), Src_Fqdn_s, Src_IP_s),
+        " -> ", Dst_IP_s,
+        " (", tostring(DistinctBuckets), " hourly buckets / ",
+        tostring(TotalConnections), " connections)")
+| project
+    FirstSeen,
+    LastSeen,
+    AlertName,
+    AlertSeverity      = "Medium",
+    DistinctBuckets,
+    TotalConnections,
+    AvgIntervalMinutes,
+    SrcAssetID         = Src_AssetID_s,
+    SrcFqdn            = Src_Fqdn_s,
+    SrcIP              = Src_IP_s,
+    SrcAssetType       = Src_AssetType_s,
+    SrcUserName        = Src_UserName_s,
+    SrcProcessPath     = Src_ProcessPath_s,
+    DstIP              = Dst_IP_s,
+    DstFqdn,
+    DstPort,
+    DstIsoCode,
+    DstIPThreatScore
+| sort by DistinctBuckets desc

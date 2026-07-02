@@ -1,0 +1,60 @@
+`comment("
+Title         : ZN - Dormant Host Reactivation
+Description   : Detects an internal asset resuming network activity after 30+ days of silence.
+                Uses a 45-day window split into three periods: historical existence proof
+                [45d-30d], dormancy window [30d-now], detection window [last 1h].
+Version       : 1.0.0
+Last modified : 2026-05-03
+Author        : Zero Networks
+MITRE ATT&CK  : T1078 (Valid Accounts), T1021 (Remote Services)
+Severity      : Medium
+Data source   : index=zeronetworks sourcetype=zn:network
+Notes         : This search spans 45 days - it is intentionally expensive. Schedule at
+                a lower frequency (every 4h) and tune the dormancy threshold as needed.
+                Requires 45+ days of data in the index.
+")`
+index=zeronetworks sourcetype="zn:network" earliest=-45d@d latest=now
+| spath output=traffic_type path="TrafficType"
+| spath output=src_asset_id path="Src.AssetID"
+| where traffic_type="Internal"
+    AND isnotnull(src_asset_id) AND src_asset_id!=""
+| eval
+    now_epoch=now(),
+    period=case(
+        _time >= relative_time(now(), "-1h"),   "detection",
+        _time <  relative_time(now(), "-30d"),  "historical",
+        true(),                                  "dormancy_window")
+| stats
+    sum(eval(period="detection"))       AS current_count
+    sum(eval(period="historical"))      AS historical_count
+    sum(eval(period="dormancy_window")) AS dormancy_count
+    BY src_asset_id
+| where current_count   > 0   AND
+        historical_count > 0  AND
+        dormancy_count   = 0
+`comment("Join back to get event details for the active host")`
+| join type=inner src_asset_id [
+    search index=zeronetworks sourcetype="zn:network" earliest=-1h@h latest=now
+    | spath output=src_asset_id   path="Src.AssetID"
+    | spath output=src_fqdn       path="Src.Fqdn"
+    | spath output=src_ip         path="Src.IP"
+    | spath output=src_asset_type path="Src.AssetType"
+    | spath output=src_seg_state  path="Src.AssetNetworkSegmentationState"
+    | spath output=dst_asset_id   path="Dst.AssetID"
+    | spath output=dst_fqdn       path="Dst.Fqdn"
+    | spath output=dst_ip         path="Dst.IP"
+    | spath output=dst_port       path="Dst.Port"
+    | spath output=conn_status    path="ConnectionStatus"
+    | spath output=traffic_type   path="TrafficType"
+    | where traffic_type="Internal" AND src_asset_id!=""
+    | table _time src_asset_id src_fqdn src_ip src_asset_type src_seg_state
+        dst_asset_id dst_fqdn dst_ip dst_port conn_status
+]
+| eval
+    src_display=if(isnotnull(src_fqdn) AND src_fqdn!="", src_fqdn, src_ip),
+    alert_name="Dormant host reactivated: ".src_display,
+    alert_severity="Medium"
+| table _time alert_name alert_severity
+    src_asset_id src_fqdn src_ip src_asset_type src_seg_state
+    dst_asset_id dst_fqdn dst_ip dst_port conn_status
+| sort - _time

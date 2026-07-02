@@ -1,0 +1,57 @@
+`comment("
+Title         : ZN - OT/IT Boundary Crossing
+Description   : Detects communication that crosses the OT/IT network boundary. An OT asset
+                is identified by a non-empty Src.OTSwitchID or Dst.OTSwitchID. Fires when
+                exactly one side is OT (boundary crossing). Pure OT-to-OT is excluded.
+                Both OT->IT and IT->OT directions are alerted.
+Version       : 1.0.0
+Last modified : 2026-04-22
+Author        : Zero Networks
+MITRE ATT&CK  : T1599 (Network Boundary Bridging)
+Severity      : High (established), Medium (blocked/requested), Low (blocked_at_source)
+Data source   : index=zeronetworks sourcetype=zn:network
+")`
+index=zeronetworks sourcetype="zn:network" earliest=-1h@h latest=now
+| spath output=traffic_type        path="TrafficType"
+| spath output=conn_status         path="ConnectionStatus"
+| spath output=protocol_type       path="ProtocolType"
+| spath output=src_asset_id        path="Src.AssetID"
+| spath output=src_fqdn            path="Src.Fqdn"
+| spath output=src_ip              path="Src.IP"
+| spath output=src_asset_type      path="Src.AssetType"
+| spath output=src_ot_switch_id    path="Src.OTSwitchID"
+| spath output=src_ot_interface    path="Src.OTSwitchInterfaceName"
+| spath output=src_user            path="Src.UserName"
+| spath output=dst_asset_id        path="Dst.AssetID"
+| spath output=dst_fqdn            path="Dst.Fqdn"
+| spath output=dst_ip              path="Dst.IP"
+| spath output=dst_port            path="Dst.Port"
+| spath output=dst_asset_type      path="Dst.AssetType"
+| spath output=dst_ot_switch_id    path="Dst.OTSwitchID"
+| spath output=dst_ot_interface    path="Dst.OTSwitchInterfaceName"
+| where traffic_type="Internal"
+`comment("XOR: exactly one side is OT - boundary crossing, not OT-internal")`
+| where (isnotnull(src_ot_switch_id) AND src_ot_switch_id!=""
+         AND (isnull(dst_ot_switch_id) OR dst_ot_switch_id=""))
+     OR (isnotnull(dst_ot_switch_id) AND dst_ot_switch_id!=""
+         AND (isnull(src_ot_switch_id) OR src_ot_switch_id=""))
+| eval
+    crossing_direction=if(
+        isnotnull(src_ot_switch_id) AND src_ot_switch_id!="", "OT->IT", "IT->OT"),
+    ot_switch_id=if(
+        isnotnull(src_ot_switch_id) AND src_ot_switch_id!="", src_ot_switch_id, dst_ot_switch_id),
+    ot_interface=if(
+        isnotnull(src_ot_switch_id) AND src_ot_switch_id!="", src_ot_interface, dst_ot_interface),
+    alert_severity=case(
+        conn_status="established",       "High",
+        conn_status="blocked",           "Medium",
+        conn_status="requested",         "Medium",
+        conn_status="blocked_at_source", "Low",
+        true(),                          "Medium"),
+    src_display=if(isnotnull(src_fqdn) AND src_fqdn!="", src_fqdn, src_ip),
+    dst_display=if(isnotnull(dst_fqdn) AND dst_fqdn!="", dst_fqdn, dst_ip),
+    alert_name="OT/IT boundary crossing (".crossing_direction."): ".src_display." -> ".dst_display
+| table _time alert_name alert_severity crossing_direction ot_switch_id ot_interface conn_status protocol_type
+    src_asset_id src_fqdn src_ip src_asset_type src_ot_switch_id src_ot_interface src_user
+    dst_asset_id dst_fqdn dst_ip dst_port dst_asset_type dst_ot_switch_id dst_ot_interface
+| sort - _time

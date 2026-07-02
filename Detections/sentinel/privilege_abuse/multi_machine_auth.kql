@@ -1,0 +1,48 @@
+// -- Title         : ZN - Multi-Machine Authentication Spread
+// -- Description   : Detects a single account authenticating to an unusually high number of
+// --                 distinct machines in a 1-hour window. Indicates credential-based lateral
+// --                 movement, Pass-the-Hash/Ticket attacks, or automated compromise tooling.
+// -- Version       : 1.0.0
+// -- Last modified : 2026-05-05
+// -- Author        : Zero Networks
+// -- MITRE ATT&CK  : T1550.002 (Pass the Hash), T1550.003 (Pass the Ticket), T1078 (Valid Accounts)
+// -- Severity      : High
+// -- Data source   : ZNIdentityActivity_CL
+// -- Tuning        : Exclude known administrative accounts (e.g., SCCM, backup) that legitimately
+// --                 authenticate widely. Raise _machineThreshold in large managed environments.
+
+let _windowMinutes    = 60;   // rolling window
+let _machineThreshold = 10;   // distinct target machines before alerting
+
+ZNIdentityActivity_CL
+| where TimeGenerated >= ago(totimespan(strcat(tostring(_windowMinutes), "m")))
+| where failureReason_d == 0
+| where isnotempty(subjectUser_name_s) and isnotempty(dst_assetId_s)
+// Suppress machine accounts (COMPUTER$) that authenticate widely in normal Kerberos flows
+| where not(subjectUser_name_s endswith "$" and subjectUser_name_s !contains "\\")
+| summarize
+    DistinctMachines = dcount(dst_assetId_s),
+    TargetMachines   = make_set(dst_fqdn_s, 50),
+    TargetAssetIDs   = make_set(dst_assetId_s, 50),
+    AuthPackages     = make_set(authenticationPackageName_s, 10),
+    FirstSeen        = min(TimeGenerated),
+    LastSeen         = max(TimeGenerated)
+    by subjectUser_name_s, subjectUser_sid_s
+| where DistinctMachines >= _machineThreshold
+| extend AlertName = strcat(
+    "Multi-machine auth: ",
+    subjectUser_name_s, " -> ",
+    tostring(DistinctMachines), " machines in ",
+    tostring(_windowMinutes), "m")
+| project
+    FirstSeen,
+    LastSeen,
+    AlertName,
+    AlertSeverity    = "High",
+    DistinctMachines,
+    UserName         = subjectUser_name_s,
+    UserSID          = subjectUser_sid_s,
+    TargetMachines,
+    TargetAssetIDs,
+    AuthPackages
+| sort by DistinctMachines desc

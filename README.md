@@ -10,14 +10,15 @@
 <a href="https://github.com/zeronetworks/Community/stargazers" target="blank">
 <img src="https://img.shields.io/github/stars/zeronetworks/Community?style=flat-square" alt="zeronetworks community scripts"/>
 </a>
-<img src="https://img.shields.io/badge/scripts-14-blueviolet?style=flat-square" alt="zeronetworks community stars"/>
+<img src="https://img.shields.io/badge/scripts-14-blueviolet?style=flat-square" alt="zeronetworks community scripts"/>
+<img src="https://img.shields.io/badge/detections-17-blue?style=flat-square" alt="zeronetworks community detections"/>
 <a href="https://github.com/zeronetworks/Community/issues" target="blank">
 <img src="https://img.shields.io/github/issues/zeronetworks/Community?style=flat-square" alt="zeronetworks issues"/>
 </a>
 <a href="https://github.com/zeronetworks/Community/pulls" target="blank">
 <img src="https://img.shields.io/github/issues-pr/zeronetworks/Community?style=flat-square" alt="zeronetworks pull-requests"/>
 </a>
-<h4 align="center">A collaborative collection of valuable scripts for configuring, managing, and troubleshooting issues with Zero Networks, actively contributed by the community and Zero Networks </h4>
+<h4 align="center">A collaborative collection of scripts, tools, and SIEM detection rules for configuring, managing, and monitoring Zero Networks, actively contributed by the community and Zero Networks</h4>
 
 
 <p align="center">
@@ -169,6 +170,23 @@
 
 ---
 
+## Detections
+
+SIEM detection rules built on Zero Networks connection event telemetry. Rules are provided for **Microsoft Sentinel (KQL)**, **Splunk (SPL)**, **Elastic (EQL)**, and **Chronicle (YARA-L)** and cover four threat categories:
+
+| Category | Rules | What it detects |
+|---|---|---|
+| Lateral Movement | 5 | New asset pairs, port fanout, first SMB/RDP/WinRM, OT/IT boundary crossing, dangerous RPC |
+| Ransomware Precursors | 4 | SMB share fanout, new SMB source, dormant host reactivation, rapid port scan |
+| C2 / Exfiltration | 4 | First external destination, beaconing pattern, high outbound volume, cloud storage upload |
+| Privilege & Credential Abuse | 4 | Service account to workstation, multi-machine auth spread, off-hours DC access, DCSync/SAMR |
+
+See **[Detections/README.md](Detections/README.md)** for deployment instructions, baseline requirements, and tuning guidance.
+
+<br>
+
+---
+
 ## Contributing
 
 If you have a script you would like to share to the community or improvements on an existing script, your help is welcome!
@@ -186,4 +204,3 @@ If you have a script you would like to share to the community or improvements on
 - Once the pull request is approved and merged you can pull the changes from `upstream` to your local repo.
 
 <br><br>
-![generated_image](https://img.shields.io/badge/generated%20date-04/18/2024%2020:47:36-blue)

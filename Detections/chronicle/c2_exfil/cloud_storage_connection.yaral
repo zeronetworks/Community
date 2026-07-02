@@ -1,0 +1,70 @@
+// Copyright 2026 Zero Networks. All rights reserved.
+//
+// -- Title         : ZN - Connection to Cloud Storage Service
+// -- Description   : Detects internal hosts connecting to cloud storage services (Dropbox,
+// --                 MEGA, Google Drive, OneDrive, Box, WeTransfer) for the first time.
+// --                 Uses a reference list of known cloud storage FQDNs/domain fragments.
+// -- Version       : 1.0.0
+// -- Last modified : 2026-05-03
+// -- Author        : Zero Networks
+// -- MITRE ATT&CK  : TA0010, T1567.002 (Exfiltration to Cloud Storage), T1048
+// -- Severity      : MEDIUM (server source), LOW (workstation/other)
+// -- Log type      : ZN_NETWORK
+// --
+// -- Prerequisites:
+// --   Reference list 'zn_cloud_storage_domains' must be populated.
+// --   See chronicle/reference_lists/zn_cloud_storage_domains.txt
+// --   Optional: populate 'zn_known_cloud_pairs' with "src_asset_id:provider" strings
+// --   to suppress known-good cloud access pairs (first-seen suppression).
+
+rule zn_cloud_storage_connection {
+  meta:
+    author              = "Zero Networks"
+    description         = "Internal source connecting to a cloud storage service domain."
+    severity            = "MEDIUM"
+    priority            = "MEDIUM"
+    mitre_attack_tactic = "TA0010"
+    mitre_attack_technique = "T1567.002"
+    version             = "1.0.0"
+    last_modified       = "2026-05-03"
+
+  events:
+    $e.metadata.log_type = "ZN_NETWORK"
+    $e.additional.fields["TrafficType"] = "External"
+
+    $src_id  = $e.principal.asset.asset_id
+    $dst_fqdn = $e.target.hostname
+    $src_id   != ""
+    $dst_fqdn != ""
+
+    // Match against known cloud storage domain fragments
+    re.regex($dst_fqdn,
+        `(?i)(dropbox\.com|mega\.nz|mega\.co\.nz|drive\.google\.com|docs\.google\.com|storage\.googleapis\.com|onedrive\.live\.com|1drv\.ms|sharepoint\.com|box\.com|wetransfer\.com|we\.tl|send\.firefox\.com|gofile\.io|anonfiles\.com)`)
+
+  match:
+    $src_id over 1h
+
+  outcome:
+    $cloud_provider = if(
+        re.regex($dst_fqdn, `(?i)dropbox`),     "Dropbox",
+        if(re.regex($dst_fqdn, `(?i)mega`),     "MEGA",
+        if(re.regex($dst_fqdn, `(?i)google`),   "Google Drive",
+        if(re.regex($dst_fqdn, `(?i)(onedrive|1drv\.ms)`), "OneDrive",
+        if(re.regex($dst_fqdn, `(?i)sharepoint`), "SharePoint",
+        if(re.regex($dst_fqdn, `(?i)box\.com`), "Box",
+        if(re.regex($dst_fqdn, `(?i)(wetransfer|we\.tl)`), "WeTransfer",
+        "Other Cloud Storage")))))))
+    $src_asset_type  = array_first($e.additional.fields["SrcAssetType"])
+    $severity        = if($src_asset_type = "Server", "MEDIUM", "LOW")
+    $conn_status     = array_first($e.additional.fields["ConnectionStatus"])
+    $src_fqdn        = $e.principal.hostname
+    $src_ip          = $e.principal.ip
+    $src_user        = $e.principal.user.userid
+    $src_process     = $e.principal.process.file.full_path
+    $src_seg_state   = array_first($e.additional.fields["SrcSegState"])
+    $dst_ip          = $e.target.ip
+    $dst_port        = $e.target.port
+
+  condition:
+    $e
+}

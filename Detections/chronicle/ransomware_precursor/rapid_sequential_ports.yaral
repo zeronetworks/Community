@@ -1,0 +1,52 @@
+// Copyright 2026 Zero Networks. All rights reserved.
+//
+// -- Title         : ZN - Rapid Sequential Port Scan
+// -- Description   : Detects a single internal source connecting to 15+ distinct destination
+// --                 ports on the same target in a 1-hour aggregation window.
+// -- Version       : 1.0.0
+// -- Last modified : 2026-05-03
+// -- Author        : Zero Networks
+// -- MITRE ATT&CK  : TA0007, T1046 (Network Service Discovery), T1595.001
+// -- Severity      : HIGH
+// -- Log type      : ZN_NETWORK
+
+rule zn_rapid_sequential_ports {
+  meta:
+    author              = "Zero Networks"
+    description         = "Single source scanning 15+ distinct ports on the same destination in 1h."
+    severity            = "HIGH"
+    priority            = "HIGH"
+    mitre_attack_tactic = "TA0007"
+    mitre_attack_technique = "T1046"
+    version             = "1.0.0"
+    last_modified       = "2026-05-03"
+
+  events:
+    $e.metadata.log_type = "ZN_NETWORK"
+    $e.additional.fields["TrafficType"] = "Internal"
+
+    $src_id = $e.principal.asset.asset_id
+    $dst_id = $e.target.asset.asset_id
+    $port   = $e.target.port
+    $src_id != ""
+    $dst_id != ""
+    $port   > 0
+
+  match:
+    $src_id, $dst_id over 1h
+
+  outcome:
+    $distinct_port_count = count_distinct($port)
+    $total_connections   = count($e.metadata.event_timestamp.seconds)
+    $src_fqdn            = $e.principal.hostname
+    $src_ip              = $e.principal.ip
+    $src_user            = $e.principal.user.userid
+    $src_process         = $e.principal.process.file.full_path
+    $dst_fqdn            = $e.target.hostname
+    $dst_ip              = $e.target.ip
+    $dst_seg_state       = array_first($e.additional.fields["DstSegState"])
+    $conn_statuses       = array_distinct($e.additional.fields["ConnectionStatus"])
+
+  condition:
+    $e and $distinct_port_count >= 15
+}

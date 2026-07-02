@@ -1,0 +1,33 @@
+// -- Title         : ZN - Baseline: Known RPC Pairs
+// -- Description   : Run this query standalone to populate the ZN_KnownRPCPairs Watchlist.
+// --                 Captures all (src, dst, operation) triples for dangerous RPC interfaces
+// --                 seen in the lookback window.
+// --                 Required by: rpc_new_pair.kql
+// -- Schedule      : Run daily; refresh Watchlist after each run.
+// -- Watchlist     : ZN_KnownRPCPairs  (columns: SrcAssetID, DstAssetID, OperationName)
+// -- Version       : 1.0.0
+// -- Last modified : 2026-05-03
+// -- Author        : Zero Networks
+
+let _lookbackDays  = 14d;
+let _dangerousOps  = dynamic([
+    "ITaskSchedulerService", "IWbemServices", "winreg",
+    "drsuapi", "samr", "svcctl"
+]);
+
+ZNRPCActivity_CL
+| where TimeGenerated >= ago(_lookbackDays)
+| where Operation_Name_s in (_dangerousOps)
+| where isnotempty(Src_AssetID_s) and isnotempty(Dst_AssetID_s)
+| summarize
+    LastSeen   = max(TimeGenerated),
+    EventCount = count()
+    by Src_AssetID_s, Dst_AssetID_s, Operation_Name_s, Src_Fqdn_s, Dst_Fqdn_s
+| project
+    SrcAssetID    = Src_AssetID_s,
+    DstAssetID    = Dst_AssetID_s,
+    OperationName = Operation_Name_s,
+    SrcFqdn       = Src_Fqdn_s,
+    DstFqdn       = Dst_Fqdn_s,
+    LastSeen,
+    EventCount
