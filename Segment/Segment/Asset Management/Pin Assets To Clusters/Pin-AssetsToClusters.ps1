@@ -11,7 +11,7 @@
     Zero Networks API key with appropriate permissions. Required for all operations except ExportCsvTemplate.
 
 .PARAMETER PortalUrl
-    Base URL for the Zero Networks portal. Defaults to https://portal.zeronetworks.com.
+    Base URL for the Zero Networks portal (e.g., https://<tenant>-admin.zeronetworks.com). Required for all parameter sets except ExportCsvTemplate.
 
 .PARAMETER AssetId
     Asset ID to pin or unpin. Required for ByAssetId parameter set.
@@ -25,8 +25,11 @@
 .PARAMETER TargetSubnet
     IPv4 CIDR subnet (e.g., "10.200.200.0/24") to pin or unpin all matching assets within. Required for ByTargetSubnet parameter set.
 
-.PARAMETER DeploymentClusterId
-    Deployment cluster ID to pin/unpin assets to. Required for ByAssetId, ByOuPath, and ByTargetSubnet parameter sets.
+.PARAMETER DeploymentClusterName
+    Deployment cluster name to pin/unpin assets to. Resolved to a cluster ID via a local <envName>-DeploymentClusters.json
+    cache file (stored next to the script, named after the -PortalUrl tenant). The cache file is created automatically
+    if missing; run -ListDeploymentClusters to refresh it if a cluster was recently added or renamed.
+    Required for ByAssetId, ByOuPath, and ByTargetSubnet parameter sets.
 
 .PARAMETER Unpin
     Switch to unpin assets instead of pinning them. Available for ByAssetId, ByOuPath, ByCsvPath, and ByTargetSubnet parameter sets.
@@ -61,9 +64,12 @@
 .NOTES
     Requires PowerShell 7.0 or higher.
     Large CSV files are automatically processed in batches of 50 assets.
+    Deployment cluster names are resolved via a local <envName>-DeploymentClusters.json cache file stored next to
+    this script (envName is derived from -PortalUrl). The cache is created automatically the first time it's needed;
+    run -ListDeploymentClusters to refresh it after clusters are added or renamed.
 
 .EXAMPLE
-    .\Pin-AssetsToClusters.ps1 -ApiKey "your-api-key" -AssetId "a:a:qvI6tVtn" -DeploymentClusterId "C:d:00fd409f"
+    .\Pin-AssetsToClusters.ps1 -ApiKey "your-api-key" -AssetId "a:a:qvI6tVtn" -DeploymentClusterName "Production Cluster"
     Pins a single asset to a deployment cluster.
 
 .EXAMPLE
@@ -75,11 +81,11 @@
     Previews what changes would be made without actually applying them.
 
 .EXAMPLE
-    .\Pin-AssetsToClusters.ps1 -ApiKey "your-api-key" -OUPath "OU=Computers,DC=domain,DC=com" -DeploymentClusterId "C:d:00fd409f"
+    .\Pin-AssetsToClusters.ps1 -ApiKey "your-api-key" -OUPath "OU=Computers,DC=domain,DC=com" -DeploymentClusterName "Production Cluster"
     Pins all assets within the specified OU path to a deployment cluster.
 
 .EXAMPLE
-    .\Pin-AssetsToClusters.ps1 -ApiKey "your-api-key" -TargetSubnet "10.200.200.0/24" -DeploymentClusterId "C:d:00fd409f"
+    .\Pin-AssetsToClusters.ps1 -ApiKey "your-api-key" -TargetSubnet "10.200.200.0/24" -DeploymentClusterName "Production Cluster"
     Pins all monitored assets whose last known IP address falls within the specified subnet to a deployment cluster.
 #>
 
@@ -101,12 +107,12 @@ param(
     [Parameter(ParameterSetName = "ByTargetSubnet", Mandatory = $true)]
     [string]$ApiKey,
 
-    [Parameter(ParameterSetName = "ByAssetId", Mandatory = $false)]
-    [Parameter(ParameterSetName = "ByOuPath", Mandatory = $false)]
-    [Parameter(ParameterSetName = "ListDeploymentClusters", Mandatory = $false)]
-    [Parameter(ParameterSetName = "ByCsvPath", Mandatory = $false)]
-    [Parameter(ParameterSetName = "ByTargetSubnet", Mandatory = $false)]
-    [string]$PortalUrl = "https://portal.zeronetworks.com",
+    [Parameter(ParameterSetName = "ByAssetId", Mandatory = $true)]
+    [Parameter(ParameterSetName = "ByOuPath", Mandatory = $true)]
+    [Parameter(ParameterSetName = "ListDeploymentClusters", Mandatory = $true)]
+    [Parameter(ParameterSetName = "ByCsvPath", Mandatory = $true)]
+    [Parameter(ParameterSetName = "ByTargetSubnet", Mandatory = $true)]
+    [string]$PortalUrl,
 
     # ParameterSet 1: Pin by Asset ID and Deployment Cluster ID
     [Parameter(ParameterSetName = "ByAssetId", Mandatory = $true)]
@@ -127,7 +133,7 @@ param(
     [Parameter(ParameterSetName = "ByAssetId", Mandatory = $true)]
     [Parameter(ParameterSetName = "ByOuPath", Mandatory = $true)]
     [Parameter(ParameterSetName = "ByTargetSubnet", Mandatory = $true)]
-    [string]$DeploymentClusterId,
+    [string]$DeploymentClusterName,
 
     # Shared switch parameter for unpinning (available in ByAssetId, ByOuPath, ByCsvPath, and ByTargetSubnet sets)
     [Parameter(ParameterSetName = "ByAssetId")]
@@ -452,7 +458,11 @@ function Test-AssetCanBePinned {
         }
     }
     
-    Write-Host "Validated that asset $($AssetDetails.name) ($($AssetDetails.id)) can be $($Unpin ? "unpinned" : "pinned") to deployment cluster: $($script:DeploymentClusterHashtable[$DeploymentClusterId].name)"
+    # $DeploymentClusterId may be unset here (e.g. ByCsvPath validates assets across multiple clusters
+    # at once, with no single ambient cluster ID in scope) - guard the lookup so this stays a status
+    # message and never throws.
+    $DeploymentClusterNameForMessage = (-not [string]::IsNullOrEmpty($DeploymentClusterId) -and $script:DeploymentClusterHashtable.ContainsKey($DeploymentClusterId)) ? $script:DeploymentClusterHashtable[$DeploymentClusterId].name : "N/A"
+    Write-Host "Validated that asset $($AssetDetails.name) ($($AssetDetails.id)) can be $($Unpin ? "unpinned" : "pinned") to deployment cluster: $DeploymentClusterNameForMessage"
 }
 
 <#
@@ -1172,11 +1182,105 @@ function Write-DeploymentClusters {
         Write-Host $("="*(($Host.UI.RawUI.WindowSize.Width)/2))
     }
     Write-Host "Finished writing deployment clusters information to console"
-    
+
 }
 
 <#
-This section of the script is responsible for 
+    .SYNOPSIS
+        Computes the local deployment-cluster name-to-ID cache file path for the current tenant.
+    .OUTPUTS
+        Returns the full path to the <envName>-DeploymentClusters.json cache file located next to the script.
+    .NOTES
+        envName is derived from the -PortalUrl host, stripping a trailing ".zeronetworks.com" suffix if present;
+        otherwise the full host is used as-is.
+    #>
+function Get-DeploymentClusterCachePath {
+    $envName = ([Uri]$PortalUrl).Host -replace '\.zeronetworks\.com$', ''
+    return Join-Path -Path $PSScriptRoot -ChildPath "$envName-DeploymentClusters.json"
+}
+
+<#
+    .SYNOPSIS
+        Writes the deployment cluster name-to-ID cache file to disk, overwriting any existing file.
+    .PARAMETER DeploymentClusters
+        Array of deployment cluster objects (as returned by Get-DeploymentClusters) to cache.
+    .OUTPUTS
+        None. Writes the cache file to $script:DeploymentClusterCachePath.
+    .NOTES
+        The cache file is a flat JSON object mapping cluster name to cluster ID.
+    #>
+function Save-DeploymentClusterCache {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Array]$DeploymentClusters
+    )
+    $NameToIdMap = @{}
+    foreach ($cluster in $DeploymentClusters) {
+        $NameToIdMap[$cluster.name] = $cluster.id
+    }
+
+    try {
+        $NameToIdMap | ConvertTo-Json | Set-Content -Path $script:DeploymentClusterCachePath
+    }
+    catch {
+        throw "Failed to write deployment cluster cache file '$($script:DeploymentClusterCachePath)': $_"
+    }
+    Write-Host "Deployment cluster name cache file written to $($script:DeploymentClusterCachePath) with $($NameToIdMap.Count) cluster(s)"
+}
+
+<#
+    .SYNOPSIS
+        Ensures the local deployment-cluster name-to-ID cache file exists, creating it from the API if missing.
+    .OUTPUTS
+        None. Sets $script:DeploymentClusterCachePath. Creates the cache file via Save-DeploymentClusterCache if it does not already exist.
+    .NOTES
+        Does not refresh an existing cache file - run -ListDeploymentClusters to force a refresh.
+    #>
+function Initialize-DeploymentClusterCache {
+    $script:DeploymentClusterCachePath = Get-DeploymentClusterCachePath
+
+    if (Test-Path -Path $script:DeploymentClusterCachePath) {
+        Write-Debug "Deployment cluster cache file already exists at $($script:DeploymentClusterCachePath)"
+        return
+    }
+
+    Write-Host "Deployment cluster cache file not found - creating $($script:DeploymentClusterCachePath)"
+    $DeploymentClusters = Get-DeploymentClusters
+    Save-DeploymentClusterCache -DeploymentClusters $DeploymentClusters
+}
+
+<#
+    .SYNOPSIS
+        Resolves a deployment cluster name to its cluster ID using the local name cache file.
+    .PARAMETER DeploymentClusterName
+        The human-readable deployment cluster name to resolve.
+    .OUTPUTS
+        Returns the deployment cluster ID string matching the provided name.
+    .NOTES
+        Throws an exception listing the known cluster names in the cache file if the name is not found.
+        Run -ListDeploymentClusters to refresh the cache file if a cluster was recently added or renamed.
+    #>
+function Resolve-DeploymentClusterName {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$DeploymentClusterName
+    )
+    try {
+        $CachedClusters = Get-Content -Path $script:DeploymentClusterCachePath -Raw | ConvertFrom-Json -AsHashtable
+    }
+    catch {
+        throw "Failed to read deployment cluster cache file '$($script:DeploymentClusterCachePath)': $_"
+    }
+
+    if (-not $CachedClusters.ContainsKey($DeploymentClusterName)) {
+        throw "Deployment cluster name '$DeploymentClusterName' not found in cache file '$($script:DeploymentClusterCachePath)'. Known deployment cluster names: $($CachedClusters.Keys -join ', '). Run -ListDeploymentClusters to refresh the cache if this cluster was recently added or renamed."
+    }
+
+    return $CachedClusters[$DeploymentClusterName]
+}
+
+<#
+This section of the script is responsible for
 creating and exporting the CSV template.
 #>
 
@@ -1192,11 +1296,11 @@ function Export-CsvTemplate {
     $template = [PSCustomObject]@{
         AssetName = $null
         AssetId = $null
-        DeploymentClusterId = $null
+        DeploymentClusterName = $null
     }
     $template | Export-Csv -Path ".\pin-assets-to-clusters-template.csv" -NoTypeInformation
     Write-Host "CSV Template exported to .\pin-assets-to-clusters-template.csv"
-    Write-Host "Please fill in AT LEAST the AssetId, AssetName and DeploymentClusterId columns, and then run the script again with the -CsvPath parameter to pin the assets to the clusters."
+    Write-Host "Please fill in AT LEAST the AssetId, AssetName and DeploymentClusterName columns, and then run the script again with the -CsvPath parameter to pin the assets to the clusters."
     Write-Host "Example: .\Pin-AssetsToClusters.ps1 -CsvPath '.\pin-assets-to-clusters-template.csv' -ApiKey 'your-api-key'"
 }
 
@@ -1208,7 +1312,7 @@ function Export-CsvTemplate {
     .OUTPUTS
         Returns an array of PSCustomObject representing the validated CSV rows.
     .NOTES
-        Required columns: AssetId, DeploymentClusterId. AssetName is optional.
+        Required columns: AssetId, DeploymentClusterName. AssetName is optional.
     #>
 function Get-CsvData {
     param(
@@ -1235,32 +1339,32 @@ function Get-CsvData {
     }
     
     # Validate required columns exist
-    $requiredColumns = @('AssetId', 'AssetName', 'DeploymentClusterId')
+    $requiredColumns = @('AssetId', 'AssetName', 'DeploymentClusterName')
     $firstRow = $csvData[0]
     $actualColumns = $firstRow.PSObject.Properties.Name
     $missingColumns = @()
-    
+
     foreach ($column in $requiredColumns) {
         if ($actualColumns -notcontains $column) {
             $missingColumns += $column
         }
     }
-    
+
     if ($missingColumns.Count -gt 0) {
-        throw "CSV validation failed: The CSV file needs at least AssetId and DeploymentClusterId columns. Actual columns found in CSV: $($actualColumns -join ', ')"
+        throw "CSV validation failed: The CSV file needs at least AssetId and DeploymentClusterName columns. Actual columns found in CSV: $($actualColumns -join ', ')"
     }
-    
+
     # Validate each row has required values (Import-Csv excludes header from data array)
     for ($i = 0; $i -lt $csvData.Count; $i++) {
         $row = $csvData[$i]
         $csvRowNumber = $i + 2  # +2: row 1 is header, arrays are 0-indexed
-        
+
         if ($null -eq $row.AssetId) {
             throw "CSV validation failed: AssetId is null at row $csvRowNumber (index $i)"
         }
-        
-        if ($null -eq $row.DeploymentClusterId) {
-            throw "CSV validation failed: DeploymentClusterId is null at row $csvRowNumber (index $i)"
+
+        if ($null -eq $row.DeploymentClusterName) {
+            throw "CSV validation failed: DeploymentClusterName is null at row $csvRowNumber (index $i)"
         }
     }
     
@@ -1281,6 +1385,7 @@ initializing the API context and making API requests.
         None. Sets $script:Headers and $script:ApiBaseUrl for use by Invoke-ApiRequest function.
     .NOTES
         Sets $script:Headers and $script:ApiBaseUrl for use by Invoke-ApiRequest function.
+        Also ensures the local deployment cluster name cache file exists via Initialize-DeploymentClusterCache.
     #>
 function Initialize-ApiContext {
     $script:Headers = @{
@@ -1288,6 +1393,7 @@ function Initialize-ApiContext {
         Authorization = $ApiKey
     }
     $script:ApiBaseUrl = "$PortalUrl/api/v1"
+    Initialize-DeploymentClusterCache
 }
 
 <#
@@ -1559,31 +1665,33 @@ workflow to execute based on the parameter set matched.
 #>
 switch ($PSCmdlet.ParameterSetName) {
     "ByAssetId" {
-        Write-Host "$($DryRun ? "[DRY RUN] " : '')Starting workflow to $($Unpin ? "unpin" : "pin") asset $AssetId to deployment cluster $DeploymentClusterId"
+        Write-Host "$($DryRun ? "[DRY RUN] " : '')Starting workflow to $($Unpin ? "unpin" : "pin") asset $AssetId to deployment cluster $DeploymentClusterName"
         Initialize-ApiContext
-        
-        # Validate deployment cluster exists and has online segment servers
+
+        # Resolve the deployment cluster name to an ID, then validate it exists and has online segment servers
+        $DeploymentClusterId = Resolve-DeploymentClusterName -DeploymentClusterName $DeploymentClusterName
         Invoke-ValidateDeploymentClusterId -DeploymentClusterId $DeploymentClusterId -SkipSegmentServerValidation:$SkipSegmentServerValidation
-        
+
         # Validate asset can be pinned/unpinned
         Test-AssetCanBePinned -AssetId $AssetId -AssetMustBePinned:$Unpin -SkipAssetHealthValidation:$SkipAssetHealthValidation
-        
+
         # Create asset object for the function
         $asset = [PSCustomObject]@{
             id = $AssetId
         }
         $Assets = [System.Collections.ArrayList]@($asset)
-        
+
         # Execute pin/unpin operation
         Set-AssetsToDeploymentCluster -Assets $Assets -DeploymentClusterId $DeploymentClusterId -Unpin:$Unpin -DryRun:$DryRun
-        
-        Write-Host "$($DryRun ? "[DRY RUN] " : '')Finished workflow to $($Unpin ? "unpin" : "pin") asset $AssetId to deployment cluster $DeploymentClusterId"
+
+        Write-Host "$($DryRun ? "[DRY RUN] " : '')Finished workflow to $($Unpin ? "unpin" : "pin") asset $AssetId to deployment cluster $DeploymentClusterName"
     }
     "ByOuPath" {
-        Write-Host "$($DryRun ? "[DRY RUN] " : '')Starting workflow to $($Unpin ? "unpin" : "pin") assets in OU path $OUPath to deployment cluster $DeploymentClusterId"
+        Write-Host "$($DryRun ? "[DRY RUN] " : '')Starting workflow to $($Unpin ? "unpin" : "pin") assets in OU path $OUPath to deployment cluster $DeploymentClusterName"
         Initialize-ApiContext
-        
-        # Validate deployment cluster exists and has online segment servers
+
+        # Resolve the deployment cluster name to an ID, then validate it exists and has online segment servers
+        $DeploymentClusterId = Resolve-DeploymentClusterName -DeploymentClusterName $DeploymentClusterName
         Invoke-ValidateDeploymentClusterId -DeploymentClusterId $DeploymentClusterId -SkipSegmentServerValidation:$SkipSegmentServerValidation
 
         # Get OU Information from API
@@ -1595,21 +1703,22 @@ switch ($PSCmdlet.ParameterSetName) {
         Wrapping the return value in an array ensures that the value is always returned as an array, regardless of the number of objects returned.
         #>
         # Get members of OU
-        [System.Collections.ArrayList]$Assets = [System.Collections.ArrayList]@(Get-AssetsFromOU -OUPath $OUPath -EntityId $OUInformation.id -DisableNestedOuResolution:$DisableNestedOuResolution) 
-        
+        [System.Collections.ArrayList]$Assets = [System.Collections.ArrayList]@(Get-AssetsFromOU -OUPath $OUPath -EntityId $OUInformation.id -DisableNestedOuResolution:$DisableNestedOuResolution)
+
         # Validate each asset can be pinned/unpinned
         [System.Collections.ArrayList]$AssetsPassedValidation = [System.Collections.ArrayList]@(Test-ValidateProvidedAssetsCanBePinned -Assets $Assets -AssetMustBePinned:$Unpin -StopOnAssetValidationError:$StopOnAssetValidationError -SkipAssetHealthValidation:$SkipAssetHealthValidation)
 
         # Finally, call function to perform the batch based cluster pinning/unpinning operation
         Invoke-BatchBasedClusterPinning -AssetsPassedValidation $AssetsPassedValidation -DeploymentClusterId $DeploymentClusterId -Unpin:$Unpin -DryRun:$DryRun
-        
-        Write-Host "$($DryRun ? "[DRY RUN] " : '')Finished workflow to $($Unpin ? "unpin" : "pin") assets in OU path $OUPath to deployment cluster $DeploymentClusterId"
+
+        Write-Host "$($DryRun ? "[DRY RUN] " : '')Finished workflow to $($Unpin ? "unpin" : "pin") assets in OU path $OUPath to deployment cluster $DeploymentClusterName"
     }
     "ByTargetSubnet" {
-        Write-Host "$($DryRun ? "[DRY RUN] " : '')Starting workflow to $($Unpin ? "unpin" : "pin") assets in subnet $TargetSubnet to deployment cluster $DeploymentClusterId"
+        Write-Host "$($DryRun ? "[DRY RUN] " : '')Starting workflow to $($Unpin ? "unpin" : "pin") assets in subnet $TargetSubnet to deployment cluster $DeploymentClusterName"
         Initialize-ApiContext
 
-        # Validate deployment cluster exists and has online segment servers
+        # Resolve the deployment cluster name to an ID, then validate it exists and has online segment servers
+        $DeploymentClusterId = Resolve-DeploymentClusterName -DeploymentClusterName $DeploymentClusterName
         Invoke-ValidateDeploymentClusterId -DeploymentClusterId $DeploymentClusterId -SkipSegmentServerValidation:$SkipSegmentServerValidation
 
         # Expand the subnet into individual host addresses, then resolve them to monitored assets
@@ -1627,21 +1736,24 @@ switch ($PSCmdlet.ParameterSetName) {
         # Finally, call function to perform the batch based cluster pinning/unpinning operation
         Invoke-BatchBasedClusterPinning -AssetsPassedValidation $AssetsPassedValidation -DeploymentClusterId $DeploymentClusterId -Unpin:$Unpin -DryRun:$DryRun
 
-        Write-Host "$($DryRun ? "[DRY RUN] " : '')Finished workflow to $($Unpin ? "unpin" : "pin") assets in subnet $TargetSubnet to deployment cluster $DeploymentClusterId"
+        Write-Host "$($DryRun ? "[DRY RUN] " : '')Finished workflow to $($Unpin ? "unpin" : "pin") assets in subnet $TargetSubnet to deployment cluster $DeploymentClusterName"
     }
     "ByCsvPath" {
         Write-Host "$($DryRun ? "[DRY RUN] " : '')Starting workflow to $($Unpin ? "unpin" : "pin") assets from CSV file $CsvPath"
         Initialize-ApiContext
-        
+
         # Read and validate CSV data
         $csvData = Get-CsvData -CsvPath $CsvPath
-        
-        # Get unique deployment cluster IDs from CSV
-        $UniqueClusterIds = @($csvData.DeploymentClusterId | Select-Object -Unique)
-        
+
+        # Get unique deployment cluster names from CSV, then resolve each to a cluster ID
+        $UniqueClusterNames = @($csvData.DeploymentClusterName | Select-Object -Unique)
+
         # Validate all deployment clusters exist and have online segment servers
-        foreach ($clusterId in $UniqueClusterIds) {
+        $ClusterNameToIdMap = @{}
+        foreach ($clusterName in $UniqueClusterNames) {
+            $clusterId = Resolve-DeploymentClusterName -DeploymentClusterName $clusterName
             Invoke-ValidateDeploymentClusterId -DeploymentClusterId $clusterId -SkipSegmentServerValidation:$SkipSegmentServerValidation
+            $ClusterNameToIdMap[$clusterName] = $clusterId
         }
 
         # Since the CSV data template does not have 1:1 field names as assets returned from API
@@ -1652,26 +1764,29 @@ switch ($PSCmdlet.ParameterSetName) {
             $Assets.Add([pscustomobject]@{
                 id = $row.AssetId
                 name = $row.AssetName
-                DeploymentClusterId = $row.DeploymentClusterId
+                DeploymentClusterId = $ClusterNameToIdMap[$row.DeploymentClusterName]
             }) | Out-Null
         }
 
         # Validate each asset can be pinned/unpinned
         [System.Collections.ArrayList]$AssetsPassedValidation = [System.Collections.ArrayList]@(Test-ValidateProvidedAssetsCanBePinned -Assets $Assets -AssetMustBePinned:$Unpin -StopOnAssetValidationError:$StopOnAssetValidationError -SkipAssetHealthValidation:$SkipAssetHealthValidation)
-        
+
         # Process each cluster's assets
-        foreach ($clusterId in $UniqueClusterIds) {
+        foreach ($clusterId in @($ClusterNameToIdMap.Values | Select-Object -Unique)) {
             $AssetsToProcess = [System.Collections.ArrayList]@($AssetsPassedValidation | Where-Object { $_.DeploymentClusterId -eq $clusterId })
             Write-Host "Processing $($Unpin ? "unpinning" : "pinning") operation against $($clusterId) for $($AssetsToProcess.Count) assets"
             Invoke-BatchBasedClusterPinning -AssetsPassedValidation $AssetsToProcess -DeploymentClusterId $clusterId -Unpin:$Unpin -DryRun:$DryRun
         }
-        
+
         Write-Host "$($DryRun ? "[DRY RUN] " : '')Finished workflow to $($Unpin ? "unpin" : "pin") assets from CSV file $CsvPath"
     }
     "ListDeploymentClusters" {
         Initialize-ApiContext
         $DeploymentClusters = Get-DeploymentClusters
         Write-DeploymentClusters -DeploymentClusters $DeploymentClusters
+        # ListDeploymentClusters already fetches fresh cluster data above, so always refresh
+        # (not just create-if-missing) the local name cache file here.
+        Save-DeploymentClusterCache -DeploymentClusters $DeploymentClusters
         ""
     }
     "ExportCsvTemplate" {
