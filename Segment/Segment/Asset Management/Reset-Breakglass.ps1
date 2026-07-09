@@ -68,13 +68,70 @@
     Look for the "Unique auditType values" log line and cross-reference with
     breakglass events you know occurred, then update $BREAKGLASS_ACTIVATE_TYPES.
 
+.EXAMPLE
+    # One-time setup: register a Windows Scheduled Task that runs this script every hour
+    # with a 4-hour grace period, unattended, as SYSTEM. Run this block once from an
+    # elevated PowerShell prompt.
+
+    # Step 1 - store the API key where SYSTEM can read it.
+    # The task below runs as SYSTEM, which has no user profile of its own, so a
+    # User-scoped environment variable would never be visible to it. Machine scope is
+    # readable by SYSTEM and by every user on the box, so only run this on a host where
+    # that's an acceptable exposure - anyone with local admin can read it back out with
+    # [Environment]::GetEnvironmentVariable('ZN_API_KEY','Machine').
+    [Environment]::SetEnvironmentVariable('ZN_API_KEY', '<your-api-key>', 'Machine')
+
+    # Step 2 - register the task.
+    $action    = New-ScheduledTaskAction -Execute 'pwsh.exe' `
+        -Argument '-NonInteractive -ExecutionPolicy Bypass -File "C:\Scripts\Reset-Breakglass.ps1" -TimePeriod 4h'
+    $trigger   = New-ScheduledTaskTrigger -Once -At (Get-Date) `
+        -RepetitionInterval (New-TimeSpan -Hours 1) -RepetitionDuration ([TimeSpan]::MaxValue)
+    $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+    $settings  = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBattery -DontStopIfGoingOnBatteries
+
+    Register-ScheduledTask -TaskName 'ZeroNetworks-Reset-Breakglass' -Action $action `
+        -Trigger $trigger -Principal $principal -Settings $settings `
+        -Description 'Deactivates Zero Networks breakglass after its grace period expires.'
+
+    Step 1 sets ZN_API_KEY as a MACHINE-scoped environment variable. This takes effect
+    immediately for the scheduled task without a reboot or logoff: Task Scheduler spins up
+    a brand-new process (and, for a SYSTEM task, a fresh SYSTEM logon session) on every
+    run, and Windows builds that process's environment block by reading the registry at
+    that moment - it isn't inherited from some already-running session. Replace
+    <your-api-key> with the real key; omitting -ApiKey when invoking the script then falls
+    through to this environment variable (see the ApiKey parameter).
+
+    -Action defines what runs: pwsh.exe invoking this script non-interactively with a
+    4-hour grace period; update the -File path and -TimePeriod to match your deployment.
+
+    -Trigger models a recurring hourly schedule: Task Scheduler has no native "every N
+    hours forever" trigger, so a single -Once trigger is combined with -RepetitionInterval
+    (how often it repeats) and -RepetitionDuration of [TimeSpan]::MaxValue (repeat
+    indefinitely rather than stopping after a fixed duration).
+
+    -Principal runs the task as SYSTEM via -LogonType ServiceAccount, so it executes
+    whether or not a user is logged in and no password needs to be stored; -RunLevel
+    Highest grants the elevation some systems need to write the log file.
+
+    -Settings keeps the task firing on schedule even on a laptop running on battery or
+    briefly unavailable at the scheduled time (-StartWhenAvailable catches it up on the
+    next opportunity).
+
+    After registering, verify with:
+      Get-ScheduledTask -TaskName 'ZeroNetworks-Reset-Breakglass'
+    Trigger an immediate test run with:
+      Start-ScheduledTask -TaskName 'ZeroNetworks-Reset-Breakglass'
+    Remove it later with:
+      Unregister-ScheduledTask -TaskName 'ZeroNetworks-Reset-Breakglass' -Confirm:$false
+
 .NOTES
     Author:  Olaf Gradin
     Contact: olaf.gradin@zeronetworks.com
     Date:    2026-06-25
 
-    Scheduled execution example (Task Scheduler - runs hourly, 4-hour grace period):
-      pwsh -NonInteractive -File "C:\Scripts\Reset-Breakglass.ps1" -TimePeriod 4h
+    See the scheduled-task .EXAMPLE above for a copy-pasteable Register-ScheduledTask
+    setup - including the recommended Machine-scoped ZN_API_KEY environment variable -
+    that runs this script unattended on a recurring interval.
 #>
 
 [CmdletBinding()]
