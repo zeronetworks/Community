@@ -57,7 +57,7 @@
 
 
 <details>
-<summary>Segment (31)</summary>
+<summary>Segment (32)</summary>
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[install-CloudConnectorAPI.ps1](/home/runner/work/Community/Community/Segment/Segment/install-CloudConnectorAPI.ps1)** - install-CloudConnectorAPI.ps1 [[-CloudConnectorFunction] <string>] [[-CloudConnectorToken] <string>] [[-CloudConnectorSource] <string>] [<CommonParameters>]
 
@@ -108,6 +108,8 @@
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Move-ProtectToLearning.ps1](/home/runner/work/Community/Community/Segment/Segment/Move-ProtectToLearning.ps1)** - Move-ProtectToLearning.ps1 
 
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Reset-Breakglass.ps1](/home/runner/work/Community/Community/Segment/Segment/Reset-Breakglass.ps1)** - Automatically deactivates breakglass on Zero Networks assets after a configurable grace period.
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[set-extendLearning.ps1](/home/runner/work/Community/Community/Segment/Segment/set-extendLearning.ps1)** - set-extendLearning.ps1 
 
@@ -252,4 +254,4 @@ If you have a script you would like to share to the community or improvements on
 - Once the pull request is approved and merged you can pull the changes from `upstream` to your local repo.
 
 <br><br>
-![generated_image](https://img.shields.io/badge/generated%20date-07/02/2026%2019:25:35-blue)
+![generated_image](https://img.shields.io/badge/generated%20date-07/10/2026%2021:18:08-blue)
