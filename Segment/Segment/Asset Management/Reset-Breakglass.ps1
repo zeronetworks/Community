@@ -5,24 +5,23 @@
     Automatically deactivates breakglass on Zero Networks assets after a configurable grace period.
 
 .DESCRIPTION
-    Queries the Zero Networks audit log for breakglass activation events that are older than the
-    specified grace period. For each matching asset, captures who activated breakglass and when,
-    then calls the API to deactivate it. Designed for fully unattended scheduled execution.
+    Queries the Zero Networks assets endpoint for devices currently in breakglass, then looks up
+    their most recent breakglass activation audit record. Assets whose activation is older than
+    the specified grace period are deactivated (or reported if -DryRun). Designed for fully
+    unattended scheduled execution.
 
     TimePeriod is a minimum breakglass duration - assets activated MORE THAN 
     that long ago are eligible for deactivation. Ignores breakglass events by 
     the Zero Networks Admins by default. Assets activated within the grace 
-    period are left untouched. Run this on a schedule (e.g., every hour) so 
-    that each run picks up activations that have just passed their grace 
-    period.
+    period are left untouched. Run this on a schedule (e.g., every hour) so that each run picks
+    up activations that have just passed their grace period.
 
     All activity is written as CEF (Common Event Format) log entries to a configurable file.
     Console output mirrors the log at the same level. Default log level is Information.
 
     AUDIT TYPE CODES
     $BREAKGLASS_ACTIVATE_TYPES lists the auditType codes that indicate a breakglass activation.
-    Run with -LogLevel Debug to see all unique auditType values observed in the query window,
-    then cross-reference with known breakglass events to confirm the correct codes.
+    Override with -BreakglassActivateTypes if your tenant uses different codes.
 
 
 .PARAMETER TimePeriod
@@ -49,6 +48,15 @@
     Group IDs take the form g:s:XXXXXXXX - find them in the ZN portal.
     You can also hardcode groups in $BREAKGLASS_EXCLUDE_GROUPS.
 
+.PARAMETER DisableGroupExclusion
+    Skips all group-based exclusion, including the default "Zero Networks Admins" exemption
+    ($BREAKGLASS_EXCLUDE_GROUP_NAMES), $BREAKGLASS_EXCLUDE_GROUPS, and -ExcludeGroupIds.
+    Every eligible breakglass activation is deactivated regardless of who activated it.
+
+.PARAMETER BreakglassActivateTypes
+    One or more auditType codes that indicate a breakglass activation event.
+    Defaults to 132.
+
 .EXAMPLE
     .\Reset-Breakglass.ps1 -TimePeriod 4h
     Deactivates breakglass on assets where it has been active for more than 4 hours.
@@ -63,10 +71,13 @@
     Runs with full debug logging to a custom path.
 
 .EXAMPLE
-    .\Reset-Breakglass.ps1 -TimePeriod 1m -LogLevel Debug -DryRun
+    .\Reset-Breakglass.ps1 -TimePeriod 1m -LogLevel Debug -DryRun -BreakglassActivateTypes 132
     Use a very short grace period the first time to confirm audit type codes.
-    Look for the "Unique auditType values" log line and cross-reference with
-    breakglass events you know occurred, then update $BREAKGLASS_ACTIVATE_TYPES.
+
+.EXAMPLE
+    .\Reset-Breakglass.ps1 -TimePeriod 4h -DisableGroupExclusion
+    Deactivates breakglass on all eligible assets, including activations by
+    members of the default-excluded "Zero Networks Admins" group.
 
 .EXAMPLE
     # One-time setup: register a Windows Scheduled Task that runs this script every hour
@@ -154,7 +165,13 @@ param(
     [switch]$DryRun,
 
     [Parameter()]
-    [string[]]$ExcludeGroupIds = @()
+    [string[]]$ExcludeGroupIds = @(),
+
+    [Parameter()]
+    [switch]$DisableGroupExclusion,
+
+    [Parameter()]
+    [int[]]$BreakglassActivateTypes = @(132)
 )
 
 Set-StrictMode -Version Latest
@@ -165,7 +182,7 @@ $ErrorActionPreference = 'Stop'
 # Audit log action type codes that indicate breakglass was ACTIVATED on an asset.
 # Run with -LogLevel Debug against a window where breakglass was triggered; the script
 # will output all unique auditType values seen.
-$script:BREAKGLASS_ACTIVATE_TYPES = @(132)
+$script:BREAKGLASS_ACTIVATE_TYPES = $BreakglassActivateTypes
 
 # REST sub-path for deactivating breakglass on a single asset.
 # Full URL becomes: <baseUrl>/assets/<assetId>/<BREAKGLASS_DEACTIVATE_PATH>  [POST]
@@ -196,6 +213,70 @@ $script:LOG_LEVEL_MAP = @{
     Information = 3
     Warning     = 6
     Error       = 8
+}
+function Get-BreakglassActivationsForAssets {
+    param(
+        [string[]]$AssetIds,
+        [string]$BaseUrl,
+        [hashtable]$Headers
+    )
+
+    $remaining = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($id in ($AssetIds | Where-Object { $_ })) { [void]$remaining.Add($id) }
+
+    $found  = [System.Collections.Generic.Dictionary[string, object]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    $limit  = 400
+    $offset = 0
+    $cursor = $null
+
+    $filters = @(
+        @{
+            id            = 'auditType'
+            includeValues = @($script:BREAKGLASS_ACTIVATE_TYPES | ForEach-Object { "$_" })
+        }
+    )
+    $filtersJson    = ConvertTo-Json -InputObject $filters -Compress -Depth 5
+    if ($filtersJson -notmatch '^\[') { $filtersJson = "[$filtersJson]" }
+    $filtersEncoded = [Uri]::EscapeDataString($filtersJson)
+
+    do {
+        $uri = "$BaseUrl/audit?_limit=$limit&order=desc&_filters=$filtersEncoded"
+        if ($cursor) {
+            $uri += "&_cursor=$cursor"
+        } else {
+            $uri += "&_offset=$offset"
+        }
+
+        $response = Invoke-ZnApi -Uri $uri -Headers $Headers
+        $items    = @($response.items)
+        if ($items.Count -eq 0) { break }
+
+        foreach ($item in $items) {
+            $id = $item.reportedObjectId
+            if ($id -and $remaining.Contains($id) -and -not $found.ContainsKey($id)) {
+                $found[$id] = $item
+                [void]$remaining.Remove($id)
+            }
+        }
+
+        Write-Log "Audit scan page: $($items.Count) entries (remaining assets: $($remaining.Count))" -Level Debug -SignatureId 'AUDIT-SCAN'
+
+        if ($remaining.Count -eq 0) { break }
+
+        $cursor = $null
+        foreach ($name in @('cursor', 'nextCursor', 'next')) {
+            if ($response.PSObject.Properties[$name] -and $response.$name) {
+                $cursor = $response.$name
+                break
+            }
+        }
+        if (-not $cursor) {
+            $offset += $items.Count
+            if ($items.Count -lt $limit) { break }
+        }
+    } while ($true)
+
+    return $found
 }
 
 # -- Helpers -------------------------------------------------------------------
@@ -330,6 +411,99 @@ function Invoke-ZnApi {
     }
 }
 
+function Get-BreakglassAssets {
+    param(
+        [string]$BaseUrl,
+        [hashtable]$Headers
+    )
+
+    $allAssets = [System.Collections.Generic.List[object]]::new()
+    $limit     = 400
+    $offset    = 0
+
+    $filters = @(
+        @{
+            id            = 'breakGlassStatus'
+            includeValues = @('true')
+        }
+    )
+    $filtersJson    = ConvertTo-Json -InputObject $filters -Compress -Depth 5
+    if ($filtersJson -notmatch '^\[') { $filtersJson = "[$filtersJson]" }
+    $filtersEncoded = [Uri]::EscapeDataString($filtersJson)
+
+    do {
+        $uri      = "$BaseUrl/assets/monitored?_limit=$limit&_offset=$offset&_filters=$filtersEncoded&showInactive=false"
+        $response = Invoke-ZnApi -Uri $uri -Headers $Headers
+        $items    = @($response.items)
+
+        if ($items.Count -eq 0) { break }
+
+        foreach ($item in $items) { $allAssets.Add($item) }
+        Write-Log "Breakglass assets page fetched: $($items.Count) at offset $offset (running total: $($allAssets.Count))" -Level Debug -SignatureId 'ASSET-001'
+
+        $offset += $items.Count
+        if ($items.Count -lt $limit) { break }
+    } while ($true)
+
+    return $allAssets
+}
+
+function Get-LatestBreakglassActivation {
+    param(
+        [string]$AssetId,
+        [string]$BaseUrl,
+        [hashtable]$Headers
+    )
+
+    $filters = @(
+        @{
+            id            = 'auditType'
+            includeValues = @($script:BREAKGLASS_ACTIVATE_TYPES | ForEach-Object { "$_" })
+        },
+        @{
+            id            = 'reportedObjectId'
+            includeValues = @($AssetId)
+        }
+    )
+    $filtersJson    = ConvertTo-Json -InputObject $filters -Compress -Depth 5
+    if ($filtersJson -notmatch '^\[') { $filtersJson = "[$filtersJson]" }
+    $filtersEncoded = [Uri]::EscapeDataString($filtersJson)
+
+    $uri      = "$BaseUrl/audit?_limit=1&order=desc&_filters=$filtersEncoded"
+    $response = Invoke-ZnApi -Uri $uri -Headers $Headers
+    $items    = @($response.items)
+    if ($items.Count -eq 0) { return $null }
+    return $items[0]
+}
+function Get-LatestBreakglassActivationByName {
+    param(
+        [string]$AssetName,
+        [string]$BaseUrl,
+        [hashtable]$Headers
+    )
+
+    if (-not $AssetName) { return $null }
+
+    $filters = @(
+        @{
+            id            = 'auditType'
+            includeValues = @($script:BREAKGLASS_ACTIVATE_TYPES | ForEach-Object { "$_" })
+        },
+        @{
+            id            = 'affectedEntities'
+            includeValues = @($AssetName)
+        }
+    )
+    $filtersJson    = ConvertTo-Json -InputObject $filters -Compress -Depth 5
+    if ($filtersJson -notmatch '^\[') { $filtersJson = "[$filtersJson]" }
+    $filtersEncoded = [Uri]::EscapeDataString($filtersJson)
+
+    $uri      = "$BaseUrl/audit?_limit=1&order=desc&_filters=$filtersEncoded"
+    $response = Invoke-ZnApi -Uri $uri -Headers $Headers
+    $items    = @($response.items)
+    if ($items.Count -eq 0) { return $null }
+    return $items[0]
+}
 function Get-AuditLog {
     param(
         [string]$BaseUrl,
@@ -355,7 +529,7 @@ function Get-AuditLog {
 
         # The API may ignore _to and return entries beyond our window; discard those here.
         foreach ($item in $items) {
-            if (-not $item.timestamp -or ([long]$item.timestamp -ge $FromMs -and [long]$item.timestamp -le $ToMs)) {
+            if (-not $item.timestamp -or [long]$item.timestamp -le $ToMs) {
                 $allEntries.Add($item)
             }
         }
@@ -426,8 +600,9 @@ function Get-GroupMemberIds {
                 -Level Warning -SignatureId 'GROUP-ERR'
             return $ids
         }
-        $items = @($response.items)
-        if ($items.Count -eq 0) { break }
+        $items = $response.items
+        if ($null -eq $items -or $items.Count -eq 0) { break }
+        $items = @($items)
         foreach ($item in $items) {
             $id = $item.id ?? $item.userId
             if ($id) { [void]$ids.Add($id) }
@@ -487,15 +662,13 @@ function Main {
             cs1Label = 'timePeriod'; cs1 = $script:TimePeriod
             cs2Label = 'logFile';    cs2 = $script:LogFile
             cs3Label = 'dryRun';     cs3 = $script:DryRun.ToString()
+            cs4Label = 'groupExclusionDisabled'; cs4 = $script:DisableGroupExclusion.ToString()
         }
 
     # Resolve grace period window.
     # _to   = now - span  (activations must be older than this to be eligible)
-    # _from = _to - 1h    (sliding 1-hour window of events that just became eligible; provides
-    #                      overlap so a missed scheduled run doesn't drop events on the floor)
     $span   = Resolve-TimePeriod -Period $script:TimePeriod
     $toMs   = ([DateTimeOffset]::UtcNow - $span).ToUnixTimeMilliseconds()
-    $fromMs = ([DateTimeOffset]::UtcNow - $span - [TimeSpan]::FromHours(1)).ToUnixTimeMilliseconds()
     $cutoff = ([DateTimeOffset]::FromUnixTimeMilliseconds($toMs)).ToString('yyyy-MM-dd HH:mm:ss UTC')
     Write-Log "Grace period: $($span.ToString()) - deactivating breakglass activated before $cutoff" `
         -Level Information -SignatureId 'SCRIPT-001'
@@ -505,94 +678,101 @@ function Main {
     $baseUrl = Get-BaseUrlFromJwt -Token $key
     $headers = Get-ApiHeaders -Key $key
 
-    # Fetch audit log
-    $auditEntries = Get-AuditLog -BaseUrl $baseUrl -Headers $headers -FromMs $fromMs -ToMs $toMs
-    Write-Log "Total audit entries in window: $($auditEntries.Count)" -Level Information -SignatureId 'AUDIT-003'
-
-    # Log all unique action types at debug level - useful for discovering breakglass codes
-    if ($script:LogLevel -eq 'Debug' -and $auditEntries.Count -gt 0) {
-        $firstEntry = $auditEntries[0]
-        $propNames  = $firstEntry.PSObject.Properties.Name -join ', '
-        Write-Log "First audit entry properties: $propNames" -Level Debug -SignatureId 'AUDIT-SCHEMA'
-        $uniqueTypes = $auditEntries |
-            Select-Object -ExpandProperty auditType -ErrorAction SilentlyContinue |
-            Where-Object { $null -ne $_ } |
-            Sort-Object -Unique
-        Write-Log "Unique auditType values in window: $($uniqueTypes -join ', ')" -Level Debug -SignatureId 'AUDIT-004'
-    }
-
-    # Filter for breakglass activations within the user's actual window (not the extended fetch window)
-    $bgEntries = @($auditEntries | Where-Object {
-        $_.PSObject.Properties['auditType'] -and
-        $_.auditType -in $script:BREAKGLASS_ACTIVATE_TYPES -and
-        (-not $_.timestamp -or [long]$_.timestamp -ge $fromMs)
-    })
-    Write-Log "Breakglass activation entries matched (types $($script:BREAKGLASS_ACTIVATE_TYPES -join ',')): $($bgEntries.Count)" `
-        -Level Information -SignatureId 'AUDIT-005'
-
     # Exclude activations performed by members of configured exempt groups
-    $resolvedIds      = Resolve-GroupIdsByName -Names $script:BREAKGLASS_EXCLUDE_GROUP_NAMES -BaseUrl $baseUrl -Headers $headers
-    $allExcludeGroups = @(@($resolvedIds) + @($script:BREAKGLASS_EXCLUDE_GROUPS) + @($script:ExcludeGroupIds) |
-        Where-Object { $_ } | Sort-Object -Unique)
-    if ($allExcludeGroups.Count -gt 0) {
-        $excludedIds = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-        foreach ($gid in $allExcludeGroups) {
-            foreach ($id in (Get-GroupMemberIds -GroupId $gid -BaseUrl $baseUrl -Headers $headers)) {
-                [void]$excludedIds.Add($id)
+    $excludedIds = $null
+    if ($script:DisableGroupExclusion) {
+        Write-Log "Group exclusion disabled (-DisableGroupExclusion) - no activations are exempt" `
+            -Level Information -SignatureId 'GROUP-DISABLED'
+    } else {
+        $resolvedIds      = Resolve-GroupIdsByName -Names $script:BREAKGLASS_EXCLUDE_GROUP_NAMES -BaseUrl $baseUrl -Headers $headers
+        $allExcludeGroups = @(@($resolvedIds) + @($script:BREAKGLASS_EXCLUDE_GROUPS) + @($script:ExcludeGroupIds) |
+            Where-Object { $_ } | Sort-Object -Unique)
+        if ($allExcludeGroups.Count -gt 0) {
+            $excludedIds = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+            foreach ($gid in $allExcludeGroups) {
+                foreach ($id in (Get-GroupMemberIds -GroupId $gid -BaseUrl $baseUrl -Headers $headers)) {
+                    [void]$excludedIds.Add($id)
+                }
             }
-        }
-        if ($excludedIds.Count -gt 0) {
-            $before    = $bgEntries.Count
-            $bgEntries = @($bgEntries | Where-Object {
-                $performerId = $_.performedBy?.id
-                -not $performerId -or -not $excludedIds.Contains($performerId)
-            })
-            $exempted = $before - $bgEntries.Count
-            if ($exempted -gt 0) {
-                Write-Log "Exempted $exempted activation(s) performed by excluded group members" `
-                    -Level Information -SignatureId 'BG-EXEMPT' -Extensions @{
-                        act      = 'BreakglassExempted'
-                        outcome  = 'skipped'
-                        reason   = 'ExcludedGroup'
-                        cs1Label = 'exemptCount'; cs1 = $exempted
-                        cs2Label = 'groups';      cs2 = ($allExcludeGroups -join ',')
-                    }
+            if ($excludedIds.Count -gt 0) {
+                Write-Log "Loaded $($excludedIds.Count) excluded member(s) across $($allExcludeGroups.Count) group(s)" `
+                    -Level Debug -SignatureId 'BG-EXEMPT-LOAD'
             }
         }
     }
 
-    if ($bgEntries.Count -eq 0) {
-        Write-Log "No breakglass activations found in the $script:TimePeriod window - nothing to reset." `
-            -Level Information -SignatureId 'AUDIT-006' -Extensions @{ outcome = 'noop' }
+    # Fetch assets currently in breakglass
+    $breakglassAssets = @(Get-BreakglassAssets -BaseUrl $baseUrl -Headers $headers)
+    Write-Log "Assets currently in breakglass: $($breakglassAssets.Count)" -Level Information -SignatureId 'ASSET-COUNT'
+
+    if ($breakglassAssets.Count -eq 0) {
+        Write-Log "No assets currently in breakglass - nothing to reset." `
+            -Level Information -SignatureId 'BG-NONE' -Extensions @{ outcome = 'noop' }
         Write-Log "Reset-Breakglass completed." -Level Information -SignatureId 'SCRIPT-END' -Extensions @{ outcome = 'success' }
         return
     }
 
-    # Deduplicate by asset - keep the most recent activation per asset
-    $byAsset = [System.Collections.Generic.Dictionary[string, object]]::new()
-    foreach ($entry in ($bgEntries | Sort-Object { [long]($_.timestamp ?? 0) })) {
-        $id = $entry.reportedObjectId
-        if ($id) { $byAsset[$id] = $entry }
-    }
-    Write-Log "Unique assets with active breakglass to reset: $($byAsset.Count)" -Level Information -SignatureId 'AUDIT-007'
+    $resetCount     = 0
+    $failCount      = 0
+    $dryRunCount    = 0
+    $eligibleCount  = 0
+    $skippedNewer   = 0
+    $skippedNoAudit = 0
+    $skippedExcluded = 0
 
-    $resetCount = 0
-    $failCount  = 0
-    $skipCount  = 0
+    $assetIds = @($breakglassAssets | ForEach-Object { $_.id ?? $_.assetId ?? $_.reportedObjectId } | Where-Object { $_ })
+    $activationMap = Get-BreakglassActivationsForAssets -AssetIds $assetIds -BaseUrl $baseUrl -Headers $headers
 
-    foreach ($entry in $byAsset.Values) {
-        $assetId   = $entry.reportedObjectId
-        $assetName = if ($entry.destinationEntitiesList -and $entry.destinationEntitiesList.Count -gt 0) {
-            $entry.destinationEntitiesList[0].name ?? $assetId
-        } else { $assetId }
+    foreach ($asset in $breakglassAssets) {
+        $assetId = $asset.id ?? $asset.assetId ?? $asset.reportedObjectId
+        if (-not $assetId) {
+            Write-Log "Skipping breakglass asset with missing id" -Level Warning -SignatureId 'BG-ASSET-ID'
+            continue
+        }
+        $assetName = $asset.name ?? $asset.hostname ?? $asset.fqdn ?? $assetId
 
-        # Capture activation context
-        $activatedBy = $entry.performedBy?.name ?? $entry.performedBy?.id ?? 'unknown'
+        $entry = $null
+        if ($activationMap.ContainsKey($assetId)) { $entry = $activationMap[$assetId] }
+        if (-not $entry) {
+            $entry = Get-LatestBreakglassActivationByName -AssetName $assetName -BaseUrl $baseUrl -Headers $headers
+        }
+        if (-not $entry) {
+            Write-Log "No activation audit entry found for $assetName ($assetId) - skipping" `
+                -Level Warning -SignatureId 'BG-AUDIT-MISS'
+            $skippedNoAudit++
+            continue
+        }
 
+        $entryTs = if ($entry.timestamp) { [long]$entry.timestamp } else { $null }
         $activatedAt = if ($entry.timestamp) {
             try { ([DateTimeOffset]::FromUnixTimeMilliseconds([long]$entry.timestamp)).ToString('yyyy-MM-dd HH:mm:ss UTC') }
             catch { [string]$entry.timestamp }
         } else { 'unknown' }
+        if ($entryTs -and $entryTs -gt $toMs) {
+            Write-Log "Breakglass activation for $assetName is newer than cutoff ($activatedAt) - skipping" `
+                -Level Debug -SignatureId 'BG-NEWER' -Extensions @{ cs1Label = 'assetId'; cs1 = $assetId }
+            $skippedNewer++
+            continue
+        }
+
+        $activatedBy = $entry.performedBy?.name ?? $entry.performedBy?.id ?? 'unknown'
+        $eligibleCount++
+
+        if ($excludedIds -and $excludedIds.Count -gt 0) {
+            $performerId = $entry.performedBy?.id
+            if ($performerId -and $excludedIds.Contains($performerId)) {
+                Write-Log "Exempted activation for $assetName - performed by excluded group member" `
+                    -Level Information -SignatureId 'BG-EXEMPT' -Extensions @{
+                        act      = 'BreakglassExempted'
+                        outcome  = 'skipped'
+                        reason   = 'ExcludedGroup'
+                        cs1Label = 'assetId';     cs1 = $assetId
+                        cs2Label = 'performedBy'; cs2 = $performerId
+                    }
+                $skippedExcluded++
+                continue
+            }
+        }
 
         Write-Log "Breakglass activation detected: $assetName | by: $activatedBy | at: $activatedAt" `
             -Level Information -SignatureId 'BG-DETECT' -Extensions @{
@@ -614,7 +794,7 @@ function Main {
         switch ($result) {
             'Success' { $resetCount++ }
             'Failed'  { $failCount++  }
-            'DryRun'  { $skipCount++  }
+            'DryRun'  { $dryRunCount++ }
         }
     }
 
@@ -622,11 +802,13 @@ function Main {
                elseif ($failCount -gt 0)                    { 'partial' }
                else                                          { 'success' }
 
-    Write-Log "Reset-Breakglass completed - Reset: $resetCount  Failed: $failCount  DryRun-skipped: $skipCount  Period: $script:TimePeriod" `
+    Write-Log "Reset-Breakglass completed - Reset: $resetCount  Failed: $failCount  DryRun: $dryRunCount  Eligible: $eligibleCount  SkippedNewer: $skippedNewer  SkippedNoAudit: $skippedNoAudit  SkippedExcluded: $skippedExcluded  Period: $script:TimePeriod" `
         -Level Information -SignatureId 'SCRIPT-END' -Extensions @{
             cs1Label = 'resetCount';  cs1 = $resetCount
             cs2Label = 'failCount';   cs2 = $failCount
             cs3Label = 'timePeriod';  cs3 = $script:TimePeriod
+            cs4Label = 'dryRunCount'; cs4 = $dryRunCount
+            cs5Label = 'eligibleCount'; cs5 = $eligibleCount
             outcome  = $outcome
         }
 }
