@@ -819,6 +819,7 @@ function Add-AssetsToCustomGroup {
         [string]$GroupId,
 
         [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
         [System.Collections.ArrayList]$Assets,
 
         [Parameter(Mandatory = $false)]
@@ -902,6 +903,7 @@ function Remove-AssetsFromCustomGroup {
         [string]$GroupId,
 
         [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
         [System.Collections.ArrayList]$Assets,
 
         [Parameter(Mandatory = $false)]
@@ -1283,6 +1285,7 @@ function Invoke-ProcessGroupSubnetMapping {
 function Write-RunSummary {
     param(
         [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
         [System.Collections.ArrayList]$Results
     )
     Write-Host ""
