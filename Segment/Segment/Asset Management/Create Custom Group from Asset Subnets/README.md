@@ -170,11 +170,12 @@ Every run mirrors all console output to a timestamped log file at `logs\New-Cust
 
 ## Dry Run Mode
 
-Use the `-DryRun` switch to preview what changes would be made without actually applying them:
+Use the `-DryRun` switch to preview what changes would be made without actually applying them. All read-only work still runs - group existence checks, subnet expansion, and asset discovery are never skipped, so the reported `AssetsFound`/`AssetsAffected` counts are always real:
 
 - Group existence is still checked, but missing groups are **not** created
-- Matching assets are still discovered and checked against current group membership
-- The request body that would be sent to add members is displayed, but no mutating API calls are made
+- Matching assets are still discovered regardless of whether the group exists yet
+- If the group already exists, current membership is still checked (read-only) and the request body that would be sent to add/remove members is displayed, but no mutating API calls are made
+- If the group doesn't exist yet (Add mode) or doesn't exist at all (Remove mode), membership can't be checked against it - discovered assets are still counted and reported, just without a per-asset membership diff (Add mode assumes all of them would be added, since a new group has no existing members to skip)
 - The local JSON record is still updated for groups that already exist, but not for groups that would only be created in a non-dry-run pass
 
 ## Notes

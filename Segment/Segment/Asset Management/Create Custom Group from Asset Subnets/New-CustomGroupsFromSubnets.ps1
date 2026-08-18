@@ -1181,10 +1181,16 @@ processing workflow and final summary reporting.
     .OUTPUTS
         Returns a PSCustomObject summarizing what happened for this group (for the final run summary).
     .NOTES
+        All read-only work (subnet expansion, asset discovery) always runs, even under -DryRun and even
+        when the target group does not exist yet - only mutating API calls (group creation, member
+        add/remove) are skipped under -DryRun. The one exception is the group membership check itself
+        (GET .../successors), which requires a real group ID and so cannot run against a group that
+        doesn't exist yet (Add mode, -DryRun) or doesn't exist at all (Remove mode) - in both cases,
+        discovered assets are still counted and reported, just without a membership diff.
         Always updates the local JSON record via Update-GroupRecordEntry, even when the group did not
         already exist and -DryRun prevented it from actually being created (record reflects a null groupId
         in that case, and is corrected on the next non-dry-run pass). In -RemoveAssets mode, a missing
-        group is skipped entirely - nothing is recorded, since there is no group to describe.
+        group is never recorded, since there is no group to describe.
     #>
 function Invoke-ProcessGroupSubnetMapping {
     param(
@@ -1209,37 +1215,36 @@ function Invoke-ProcessGroupSubnetMapping {
 
     if ($RemoveAssets) {
         $existingGroup = Get-CustomGroupByName -GroupName $GroupName
-        if ($null -eq $existingGroup) {
-            Write-Host "Group '$GroupName' does not exist - nothing to remove. Skipping."
-            return [PSCustomObject]@{
-                GroupName      = $GroupName
-                Subnet         = $Subnet
-                Mode           = "Remove"
-                AssetsFound    = 0
-                AssetsAffected = 0
-                AssetsSkipped  = 0
-            }
-        }
-        $GroupId = $existingGroup.id
+        $GroupId = if ($null -ne $existingGroup) { $existingGroup.id } else { $null }
     }
     else {
         $GroupId = New-CustomGroupIfMissing -GroupName $GroupName -Subnet $Subnet -DryRun:$DryRun
-
-        if ([string]::IsNullOrWhiteSpace($GroupId)) {
-            Write-Host "[DRY RUN] Skipping asset discovery/assignment for '$GroupName' - group does not exist yet and would only be created in a non-dry-run pass"
-            return [PSCustomObject]@{
-                GroupName      = $GroupName
-                Subnet         = $Subnet
-                Mode           = "Add"
-                AssetsFound    = 0
-                AssetsAffected = 0
-                AssetsSkipped  = 0
-            }
-        }
     }
+    $GroupExists = -not [string]::IsNullOrWhiteSpace($GroupId)
 
+    # Asset discovery is entirely read-only (GET calls only) - it always runs, regardless of -DryRun
+    # or whether the group exists yet, so a dry run reports real matching-asset counts.
     $HostAddresses = Get-SubnetHostAddresses -TargetSubnet $Subnet
     [System.Collections.ArrayList]$Assets = [System.Collections.ArrayList]@(Get-AssetsByHostAddresses -AssetSubnetHostAddresses $HostAddresses -MaxConcurrentBatches $MaxConcurrentBatches)
+
+    if (-not $GroupExists) {
+        # Membership can't be checked against a group that doesn't exist (Remove mode: not at all;
+        # Add mode: only reachable here under -DryRun, since a non-dry-run always creates the group).
+        if ($RemoveAssets) {
+            Write-Host "Group '$GroupName' does not exist - nothing to remove ($($Assets.Count) matching asset(s) found, but there is no group to check membership against). Skipping."
+        }
+        else {
+            Write-Host "[DRY RUN] Group '$GroupName' does not exist yet - would create it and add all $($Assets.Count) matching asset(s) to it (a new group has no existing members to skip)"
+        }
+        return [PSCustomObject]@{
+            GroupName      = $GroupName
+            Subnet         = $Subnet
+            Mode           = $RemoveAssets ? "Remove" : "Add"
+            AssetsFound    = $Assets.Count
+            AssetsAffected = $RemoveAssets ? 0 : $Assets.Count
+            AssetsSkipped  = 0
+        }
+    }
 
     if ($RemoveAssets) {
         $AssignResult = Remove-AssetsFromCustomGroup -GroupId $GroupId -Assets $Assets -DryRun:$DryRun
