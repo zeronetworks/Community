@@ -4,8 +4,9 @@
 
 .DESCRIPTION
     Reads a CSV of subnet-to-custom-group-name mappings, creates any custom groups that do not
-    already exist, and populates each group with every client/server asset whose last known IP
-    address falls within the mapped subnet. Assets already present in a group are skipped.
+    already exist, and populates each group with every matching asset (restricted to -ClientType
+    and/or -ServerType, or unrestricted via -AllType) whose last known IP address falls within the
+    mapped subnet. Assets already present in a group are skipped.
 
     A local JSON record file tracks every group created (or found), its subnet mapping, and the
     assets assigned to it. This record can be used to re-run the assignment workflow against a
@@ -23,13 +24,18 @@
     Name of a single, already-known custom group to (re-)process. Its subnet mapping is looked up
     in the local JSON record file rather than the CSV. Required for the ByGroupName parameter set.
 
-.PARAMETER Client
-    Include assetType Client (1) assets when matching a subnet. At least one of -Client / -Server
-    is required.
+.PARAMETER ClientType
+    Include assetType Client (1) assets when matching a subnet. At least one of -ClientType /
+    -ServerType / -AllType is required.
 
-.PARAMETER Server
-    Include assetType Server (2) assets when matching a subnet. At least one of -Client / -Server
-    is required.
+.PARAMETER ServerType
+    Include assetType Server (2) assets when matching a subnet. At least one of -ClientType /
+    -ServerType / -AllType is required.
+
+.PARAMETER AllType
+    Match assets of any assetType against the subnet(s), removing the Client/Server restriction
+    entirely. Takes precedence over -ClientType / -ServerType if combined with either. At least
+    one of -ClientType / -ServerType / -AllType is required.
 
 .PARAMETER RemoveAssets
     Removes matching assets that are currently members of the target group(s), instead of adding
@@ -56,22 +62,27 @@
     are both created next to this script and are gitignored.
 
 .EXAMPLE
-    .\New-CustomGroupsFromSubnets.ps1 -Client -Server
+    .\New-CustomGroupsFromSubnets.ps1 -ClientType -ServerType
     Creates/updates all custom groups described in .\subnet-group-mappings.csv, matching both
     client and server assets.
 
 .EXAMPLE
-    .\New-CustomGroupsFromSubnets.ps1 -Server -SubnetCsvPath .\my-mappings.csv -DryRun
+    .\New-CustomGroupsFromSubnets.ps1 -ServerType -SubnetCsvPath .\my-mappings.csv -DryRun
     Previews what would happen for a custom mapping CSV, matching server assets only.
 
 .EXAMPLE
-    .\New-CustomGroupsFromSubnets.ps1 -Client -Server -TargetGroupName "TEST-SERVERS-FLOOR"
+    .\New-CustomGroupsFromSubnets.ps1 -ClientType -ServerType -TargetGroupName "TEST-SERVERS-FLOOR"
     Re-runs asset discovery/assignment for a single already-known group, using the subnet recorded
     for it in the local JSON record file.
 
 .EXAMPLE
-    .\New-CustomGroupsFromSubnets.ps1 -Client -Server -RemoveAssets -DryRun
+    .\New-CustomGroupsFromSubnets.ps1 -ClientType -ServerType -RemoveAssets -DryRun
     Previews removing all matching assets from every group described in .\subnet-group-mappings.csv.
+
+.EXAMPLE
+    .\New-CustomGroupsFromSubnets.ps1 -AllType
+    Creates/updates all custom groups described in .\subnet-group-mappings.csv, matching assets of
+    any assetType (not just Client/Server) within each mapped subnet.
 #>
 
 <#PSScriptInfo
@@ -90,15 +101,19 @@ param(
     [Parameter(ParameterSetName = "ByGroupName", Mandatory = $true)]
     [string]$TargetGroupName,
 
-    # At least one of -Client / -Server is required (enforced below - CmdletBinding cannot express
-    # an "at least one of" constraint declaratively across a parameter set).
+    # At least one of -ClientType / -ServerType / -AllType is required (enforced below -
+    # CmdletBinding cannot express an "at least one of" constraint declaratively across a parameter set).
     [Parameter(ParameterSetName = "BySubnetCsv", Mandatory = $false)]
     [Parameter(ParameterSetName = "ByGroupName", Mandatory = $false)]
-    [switch]$Client,
+    [switch]$ClientType,
 
     [Parameter(ParameterSetName = "BySubnetCsv", Mandatory = $false)]
     [Parameter(ParameterSetName = "ByGroupName", Mandatory = $false)]
-    [switch]$Server,
+    [switch]$ServerType,
+
+    [Parameter(ParameterSetName = "BySubnetCsv", Mandatory = $false)]
+    [Parameter(ParameterSetName = "ByGroupName", Mandatory = $false)]
+    [switch]$AllType,
 
     [Parameter(ParameterSetName = "BySubnetCsv", Mandatory = $false)]
     [Parameter(ParameterSetName = "ByGroupName", Mandatory = $false)]
@@ -127,20 +142,26 @@ else {
     $DebugPreference = "SilentlyContinue"
 }
 
-if (-not $Client -and -not $Server) {
-    throw "At least one of -Client or -Server must be specified - the script needs to know which asset type(s) to match against the subnet(s)."
+if (-not $ClientType -and -not $ServerType -and -not $AllType) {
+    throw "At least one of -ClientType, -ServerType, or -AllType must be specified - the script needs to know which asset type(s) to match against the subnet(s)."
 }
 
 # Number of host addresses to include per /assets/monitored filter query when resolving
 # assets by subnet. Not exposed as a script parameter - internal tunable only.
 $script:SUBNET_BATCH_SIZE = 100
 
-# assetType codes (see ZeroNetworks-openapi.yaml #/components/schemas/assetType) that qualify as
-# "client/server type asset" per the requirements. 1 = Client, 2 = Server. Driven by -Client/-Server.
-$script:QUALIFYING_ASSET_TYPES = @(
-    if ($Client) { 1 }
-    if ($Server) { 2 }
-)
+# assetType codes (see ZeroNetworks-openapi.yaml #/components/schemas/assetType) to restrict matched
+# assets to. 1 = Client, 2 = Server. Driven by -ClientType/-ServerType. $null means "no restriction"
+# (-AllType), matching assets of any assetType.
+$script:QUALIFYING_ASSET_TYPES = if ($AllType) {
+    $null
+}
+else {
+    @(
+        if ($ClientType) { 1 }
+        if ($ServerType) { 2 }
+    )
+}
 
 <#
 This section of the script is responsible for
@@ -553,17 +574,18 @@ function Get-SubnetHostAddresses {
 
 <#
     .SYNOPSIS
-        Retrieves monitored client/server assets whose last known IP address falls within a set of subnet host addresses.
+        Retrieves monitored assets whose last known IP address falls within a set of subnet host addresses.
     .PARAMETER AssetSubnetHostAddresses
         ArrayList of dotted-quad host address strings to search for (as produced by Get-SubnetHostAddresses).
     .PARAMETER MaxConcurrentBatches
         Maximum number of batch queries to run concurrently. Defaults to 5. Set to 1 to force sequential behavior.
     .OUTPUTS
-        Returns an ArrayList of asset entity objects (assetType Client or Server only) whose lastIpAddress matched any of the provided addresses.
+        Returns an ArrayList of asset entity objects whose lastIpAddress matched any of the provided addresses,
+        restricted to $script:QUALIFYING_ASSET_TYPES (or unrestricted, if that is $null - see -AllType).
     .NOTES
         Addresses are queried in batches of $script:SUBNET_BATCH_SIZE, since the API has no native subnet-range filter.
-        Each batch query filters on both lastIpAddress and assetType server-side; a client-side filter is also applied
-        as a safety net, mirroring how OU-based asset discovery filters out non-asset entities.
+        Each batch query filters on lastIpAddress server-side; assetType is restricted client-side afterward
+        (see $script:QUALIFYING_ASSET_TYPES), mirroring how OU-based asset discovery filters out non-asset entities.
         Batches are queried concurrently (via ForEach-Object -Parallel), so "Querying batch N of M..." progress
         messages may print out of order - this is cosmetic only and does not affect the assets returned.
     #>
@@ -575,7 +597,7 @@ function Get-AssetsByHostAddresses {
         [Parameter(Mandatory = $false)]
         [int]$MaxConcurrentBatches = 5
     )
-    Write-Host "Retrieving client/server assets matching $($AssetSubnetHostAddresses.Count) subnet host addresses"
+    Write-Host "Retrieving assets matching $($AssetSubnetHostAddresses.Count) subnet host addresses"
 
     $batchSize = $script:SUBNET_BATCH_SIZE
     $totalAddresses = $AssetSubnetHostAddresses.Count
@@ -618,7 +640,8 @@ function Get-AssetsByHostAddresses {
         # work against /assets/monitored elsewhere in this repo. A second, unverified "assetType"
         # filter here previously caused the API to return zero results (its expected value format
         # is undocumented), so assetType is restricted client-side instead (see the Where-Object
-        # filter on $script:QUALIFYING_ASSET_TYPES below, after the parallel block).
+        # filter on $script:QUALIFYING_ASSET_TYPES below, after the parallel block, which is $null
+        # under -AllType - meaning no assetType restriction at all).
         $FilterArray = @(
             @{
                 id = "lastIpAddress"
@@ -647,13 +670,13 @@ function Get-AssetsByHostAddresses {
         $Assets.AddRange(@($BatchResults))
     }
 
-    # Client-side safety net: only keep assetType Client (1) or Server (2), in case the server-side
-    # filter is not honored, and dedupe by id (an asset can match more than one queried host address).
+    # Restrict to the requested assetType(s) - $script:QUALIFYING_ASSET_TYPES is $null under -AllType,
+    # meaning no restriction - and dedupe by id (an asset can match more than one queried host address).
     [System.Collections.ArrayList]$UniqueAssets = @(
-        $Assets | Where-Object { $script:QUALIFYING_ASSET_TYPES -contains $_.assetType } | Sort-Object -Property id -Unique
+        $Assets | Where-Object { $null -eq $script:QUALIFYING_ASSET_TYPES -or $script:QUALIFYING_ASSET_TYPES -contains $_.assetType } | Sort-Object -Property id -Unique
     )
 
-    Write-Host "Retrieved $($UniqueAssets.Count) unique client/server assets across $totalBatches batch(es) matching subnet host addresses"
+    Write-Host "Retrieved $($UniqueAssets.Count) unique matching asset(s) across $totalBatches batch(es) matching subnet host addresses"
     return $UniqueAssets
 }
 

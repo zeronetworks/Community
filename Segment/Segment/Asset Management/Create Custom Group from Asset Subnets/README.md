@@ -1,6 +1,6 @@
 # Create Custom Group From Asset Subnets
 
-A PowerShell script that creates Zero Networks custom groups from a subnet-to-group-name CSV mapping and populates each group with every client/server asset whose last known IP address falls within the mapped subnet. Already-existing groups are reused (not recreated), and assets already in a group are skipped rather than re-added.
+A PowerShell script that creates Zero Networks custom groups from a subnet-to-group-name CSV mapping and populates each group with every matching asset whose last known IP address falls within the mapped subnet. Already-existing groups are reused (not recreated), and assets already in a group are skipped rather than re-added.
 
 ## Requirements
 
@@ -10,11 +10,11 @@ A PowerShell script that creates Zero Networks custom groups from a subnet-to-gr
 ## Features
 
 - Creates missing custom groups, or reuses existing ones with the same name
-- Populates groups with client/server assets matched by last known IP address within a subnet (CIDR)
+- Populates groups with assets matched by last known IP address within a subnet (CIDR)
 - Skips assets already in the target group instead of re-adding them
 - Bulk operation via CSV file (subnet → custom group name mapping)
 - Single-group re-run mode driven by a local JSON audit record, without needing the CSV (`-TargetGroupName`)
-- Explicit opt-in to asset type: `-Client` and/or `-Server` (at least one required)
+- Explicit opt-in to asset type: `-ClientType` and/or `-ServerType`, or `-AllType` to match every asset type (at least one of the three is required)
 - Remove mode (`-RemoveAssets`): removes matching assets from a group instead of adding them, without ever auto-creating a group
 - Local JSON audit record of every group created/found, its subnet, and the assets assigned to it (see [Local JSON Record](#local-json-record))
 - Console + timestamped log file output for every run (see [Logging](#logging))
@@ -50,12 +50,12 @@ Subnet,Custom Group Name
 Creates/reuses each custom group listed in the CSV and populates it with matching assets.
 
 ```powershell
-.\New-CustomGroupsFromSubnets.ps1 -Client -Server -SubnetCsvPath .\subnet-group-mappings.csv
+.\New-CustomGroupsFromSubnets.ps1 -ClientType -ServerType -SubnetCsvPath .\subnet-group-mappings.csv
 ```
 
 #### Supported Parameters
 **Required Parameters:**
-- `-Client` and/or `-Server` - At least one is required; determines which asset type(s) (`assetType` Client=1, Server=2) are matched against the subnet(s)
+- `-ClientType` and/or `-ServerType`, or `-AllType` - At least one is required; `-ClientType`/`-ServerType` determine which asset type(s) (`assetType` Client=1, Server=2) are matched against the subnet(s), while `-AllType` removes the assetType restriction entirely (matches every asset type) and takes precedence if combined with the others
 
 **Optional Parameters:**
 - `-SubnetCsvPath` - Path to the subnet mapping CSV (default: `.\subnet-group-mappings.csv`)
@@ -68,13 +68,13 @@ Creates/reuses each custom group listed in the CSV and populates it with matchin
 Re-processes one group by name, pulling its subnet from the local JSON record instead of the CSV. Useful for picking up newly-discovered assets in a subnet without re-reading the whole CSV.
 
 ```powershell
-.\New-CustomGroupsFromSubnets.ps1 -Client -Server -TargetGroupName "TEST-SERVERS-FLOOR"
+.\New-CustomGroupsFromSubnets.ps1 -ClientType -ServerType -TargetGroupName "TEST-SERVERS-FLOOR"
 ```
 
 #### Supported Parameters
 **Required Parameters:**
 - `-TargetGroupName` - Name of the custom group to re-process (must already exist in the local JSON record - see [Local JSON Record](#local-json-record))
-- `-Client` and/or `-Server` - At least one is required; determines which asset type(s) (`assetType` Client=1, Server=2) are matched against the subnet
+- `-ClientType` and/or `-ServerType`, or `-AllType` - At least one is required; see above
 
 **Optional Parameters:**
 - `-RemoveAssets` - Remove matching assets from the group instead of adding them (see [Removing Assets](#removing-assets))
@@ -86,52 +86,59 @@ Re-processes one group by name, pulling its subnet from the local JSON record in
 
 ### Process the default CSV (client and server assets)
 ```powershell
-.\New-CustomGroupsFromSubnets.ps1 -Client -Server
+.\New-CustomGroupsFromSubnets.ps1 -ClientType -ServerType
 ```
 
 ### Process the default CSV (server assets only)
 ```powershell
-.\New-CustomGroupsFromSubnets.ps1 -Server
+.\New-CustomGroupsFromSubnets.ps1 -ServerType
+```
+
+### Process the default CSV (every asset type)
+```powershell
+.\New-CustomGroupsFromSubnets.ps1 -AllType
 ```
 
 ### Process a custom CSV path
 ```powershell
-.\New-CustomGroupsFromSubnets.ps1 -Client -Server -SubnetCsvPath ".\my-mappings.csv"
+.\New-CustomGroupsFromSubnets.ps1 -ClientType -ServerType -SubnetCsvPath ".\my-mappings.csv"
 ```
 
 ### Preview changes without applying them
 ```powershell
-.\New-CustomGroupsFromSubnets.ps1 -Client -Server -DryRun
+.\New-CustomGroupsFromSubnets.ps1 -ClientType -ServerType -DryRun
 ```
 
 ### Re-run against a single known group
 ```powershell
-.\New-CustomGroupsFromSubnets.ps1 -Client -Server -TargetGroupName "TEST-SERVERS-FLOOR"
+.\New-CustomGroupsFromSubnets.ps1 -ClientType -ServerType -TargetGroupName "TEST-SERVERS-FLOOR"
 ```
 
 ### Increase subnet-batch concurrency for large subnets
 ```powershell
-.\New-CustomGroupsFromSubnets.ps1 -Client -Server -MaxConcurrentBatches 10
+.\New-CustomGroupsFromSubnets.ps1 -ClientType -ServerType -MaxConcurrentBatches 10
 ```
 
 ### Troubleshoot with debug output
 ```powershell
-.\New-CustomGroupsFromSubnets.ps1 -Client -Server -DryRun -EnableDebug
+.\New-CustomGroupsFromSubnets.ps1 -ClientType -ServerType -DryRun -EnableDebug
 ```
 
 ### Remove matching assets from all mapped groups
 ```powershell
-.\New-CustomGroupsFromSubnets.ps1 -Client -Server -RemoveAssets
+.\New-CustomGroupsFromSubnets.ps1 -ClientType -ServerType -RemoveAssets
 ```
 
 ### Preview removing matching assets from a single known group
 ```powershell
-.\New-CustomGroupsFromSubnets.ps1 -Client -Server -RemoveAssets -TargetGroupName "TEST-SERVERS-FLOOR" -DryRun
+.\New-CustomGroupsFromSubnets.ps1 -ClientType -ServerType -RemoveAssets -TargetGroupName "TEST-SERVERS-FLOOR" -DryRun
 ```
 
 ## Which assets are added
 
-Only monitored assets whose last known IP address falls within the mapped subnet **and** whose `assetType` matches what was requested via `-Client` (1) and/or `-Server` (2) are considered. Other asset types (IP cameras, printers, routers, hypervisors, etc.) are never added, even if their IP falls in range - and running with only `-Server`, for example, will skip matching client assets entirely.
+Only monitored assets whose last known IP address falls within the mapped subnet **and** whose `assetType` matches what was requested are considered:
+- `-ClientType` (1) and/or `-ServerType` (2) restrict matching to just those types - running with only `-ServerType`, for example, will skip matching client assets entirely.
+- `-AllType` removes the assetType restriction entirely, so any asset type (IP cameras, printers, routers, hypervisors, etc. - not just client/server) whose IP falls in range is matched. It takes precedence over `-ClientType`/`-ServerType` if combined with either.
 
 **Subnet size limits** (same as the underlying subnet-expansion logic used elsewhere in this repo):
 - Subnets larger than `/24` (more than 256 addresses) require interactive confirmation before proceeding, since resolution requires multiple batched API calls.
@@ -139,7 +146,7 @@ Only monitored assets whose last known IP address falls within the mapped subnet
 
 ## Removing Assets
 
-Pass `-RemoveAssets` to reverse the script's normal behavior: for each mapped group, matching `-Client`/`-Server` assets that are **currently members** of the group are removed from it instead of being added. Assets that match the subnet but are not currently in the group are left alone (logged as skipped - "nothing to remove").
+Pass `-RemoveAssets` to reverse the script's normal behavior: for each mapped group, matching assets (per `-ClientType`/`-ServerType`/`-AllType`) that are **currently members** of the group are removed from it instead of being added. Assets that match the subnet but are not currently in the group are left alone (logged as skipped - "nothing to remove").
 
 Key differences from the default (add) mode:
 - **Groups are never auto-created.** If a mapped group doesn't exist yet, it is skipped entirely with a log message - there's nothing to remove members from.
@@ -187,8 +194,8 @@ Use the `-DryRun` switch to preview what changes would be made without actually 
 
 ## Troubleshooting
 
-### "At least one of -Client or -Server must be specified..."
-Pass `-Client`, `-Server`, or both, so the script knows which `assetType`(s) to match against the subnet(s).
+### "At least one of -ClientType, -ServerType, or -AllType must be specified..."
+Pass `-ClientType`, `-ServerType`, `-AllType`, or a combination, so the script knows which `assetType`(s) to match against the subnet(s).
 
 ### "Could not find a .env file at '...'"
 Create a `.env` file next to the script (copy `.env.example`) containing `ZN_API_KEY=<your api key>`.
