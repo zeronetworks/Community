@@ -14,6 +14,7 @@ A PowerShell script that creates Zero Networks custom groups from a subnet-to-gr
 - Skips assets already in the target group instead of re-adding them
 - Bulk operation via CSV file (subnet → custom group name mapping)
 - Single-group re-run mode driven by a local JSON audit record, without needing the CSV (`-TargetGroupName`)
+- Explicit opt-in to asset type: `-Client` and/or `-Server` (at least one required)
 - Local JSON audit record of every group created/found, its subnet, and the assets assigned to it (see [Local JSON Record](#local-json-record))
 - Console + timestamped log file output for every run (see [Logging](#logging))
 - API key read from a local `.env` file - never passed on the command line or committed to source control
@@ -45,13 +46,16 @@ Subnet,Custom Group Name
 ## Script use cases
 
 ### 1. Process all mappings from a CSV (Default)
-Creates/reuses each custom group listed in the CSV and populates it with matching client/server assets.
+Creates/reuses each custom group listed in the CSV and populates it with matching assets.
 
 ```powershell
-.\New-CustomGroupsFromSubnets.ps1 -SubnetCsvPath .\subnet-group-mappings.csv
+.\New-CustomGroupsFromSubnets.ps1 -Client -Server -SubnetCsvPath .\subnet-group-mappings.csv
 ```
 
 #### Supported Parameters
+**Required Parameters:**
+- `-Client` and/or `-Server` - At least one is required; determines which asset type(s) (`assetType` Client=1, Server=2) are matched against the subnet(s)
+
 **Optional Parameters:**
 - `-SubnetCsvPath` - Path to the subnet mapping CSV (default: `.\subnet-group-mappings.csv`)
 - `-DryRun` - Preview changes without applying them
@@ -62,12 +66,13 @@ Creates/reuses each custom group listed in the CSV and populates it with matchin
 Re-processes one group by name, pulling its subnet from the local JSON record instead of the CSV. Useful for picking up newly-discovered assets in a subnet without re-reading the whole CSV.
 
 ```powershell
-.\New-CustomGroupsFromSubnets.ps1 -TargetGroupName "TEST-SERVERS-FLOOR"
+.\New-CustomGroupsFromSubnets.ps1 -Client -Server -TargetGroupName "TEST-SERVERS-FLOOR"
 ```
 
 #### Supported Parameters
 **Required Parameters:**
 - `-TargetGroupName` - Name of the custom group to re-process (must already exist in the local JSON record - see [Local JSON Record](#local-json-record))
+- `-Client` and/or `-Server` - At least one is required; determines which asset type(s) (`assetType` Client=1, Server=2) are matched against the subnet
 
 **Optional Parameters:**
 - `-DryRun` - Preview changes without applying them
@@ -76,39 +81,44 @@ Re-processes one group by name, pulling its subnet from the local JSON record in
 
 ## Usage Examples
 
-### Process the default CSV
+### Process the default CSV (client and server assets)
 ```powershell
-.\New-CustomGroupsFromSubnets.ps1
+.\New-CustomGroupsFromSubnets.ps1 -Client -Server
+```
+
+### Process the default CSV (server assets only)
+```powershell
+.\New-CustomGroupsFromSubnets.ps1 -Server
 ```
 
 ### Process a custom CSV path
 ```powershell
-.\New-CustomGroupsFromSubnets.ps1 -SubnetCsvPath ".\my-mappings.csv"
+.\New-CustomGroupsFromSubnets.ps1 -Client -Server -SubnetCsvPath ".\my-mappings.csv"
 ```
 
 ### Preview changes without applying them
 ```powershell
-.\New-CustomGroupsFromSubnets.ps1 -DryRun
+.\New-CustomGroupsFromSubnets.ps1 -Client -Server -DryRun
 ```
 
 ### Re-run against a single known group
 ```powershell
-.\New-CustomGroupsFromSubnets.ps1 -TargetGroupName "TEST-SERVERS-FLOOR"
+.\New-CustomGroupsFromSubnets.ps1 -Client -Server -TargetGroupName "TEST-SERVERS-FLOOR"
 ```
 
 ### Increase subnet-batch concurrency for large subnets
 ```powershell
-.\New-CustomGroupsFromSubnets.ps1 -MaxConcurrentBatches 10
+.\New-CustomGroupsFromSubnets.ps1 -Client -Server -MaxConcurrentBatches 10
 ```
 
 ### Troubleshoot with debug output
 ```powershell
-.\New-CustomGroupsFromSubnets.ps1 -DryRun -EnableDebug
+.\New-CustomGroupsFromSubnets.ps1 -Client -Server -DryRun -EnableDebug
 ```
 
 ## Which assets are added
 
-Only monitored assets of `assetType` **Client** or **Server** whose last known IP address falls within the mapped subnet are considered. Other asset types (IP cameras, printers, routers, hypervisors, etc.) are never added, even if their IP falls in range.
+Only monitored assets whose last known IP address falls within the mapped subnet **and** whose `assetType` matches what was requested via `-Client` (1) and/or `-Server` (2) are considered. Other asset types (IP cameras, printers, routers, hypervisors, etc.) are never added, even if their IP falls in range - and running with only `-Server`, for example, will skip matching client assets entirely.
 
 **Subnet size limits** (same as the underlying subnet-expansion logic used elsewhere in this repo):
 - Subnets larger than `/24` (more than 256 addresses) require interactive confirmation before proceeding, since resolution requires multiple batched API calls.
@@ -153,6 +163,9 @@ Use the `-DryRun` switch to preview what changes would be made without actually 
 - `Pin-AssetsToClusters.ps1` (this script's sibling reference for subnet-based asset discovery patterns) and `*.csv` files in this directory are gitignored, since they're local reference/input material rather than deliverables
 
 ## Troubleshooting
+
+### "At least one of -Client or -Server must be specified..."
+Pass `-Client`, `-Server`, or both, so the script knows which `assetType`(s) to match against the subnet(s).
 
 ### "Could not find a .env file at '...'"
 Create a `.env` file next to the script (copy `.env.example`) containing `ZN_API_KEY=<your api key>`.

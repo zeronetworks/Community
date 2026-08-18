@@ -4,3 +4,4 @@
 logs/
 Pin-AssetsToClusters.ps1
 *.csv
+ZeroNetworks-openapi.yaml

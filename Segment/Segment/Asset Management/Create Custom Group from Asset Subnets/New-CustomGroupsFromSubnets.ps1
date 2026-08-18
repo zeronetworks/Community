@@ -23,6 +23,14 @@
     Name of a single, already-known custom group to (re-)process. Its subnet mapping is looked up
     in the local JSON record file rather than the CSV. Required for the ByGroupName parameter set.
 
+.PARAMETER Client
+    Include assetType Client (1) assets when matching a subnet. At least one of -Client / -Server
+    is required.
+
+.PARAMETER Server
+    Include assetType Server (2) assets when matching a subnet. At least one of -Client / -Server
+    is required.
+
 .PARAMETER DryRun
     Preview changes (group creation, member assignment) without calling any mutating API endpoint.
 
@@ -43,15 +51,16 @@
     are both created next to this script and are gitignored.
 
 .EXAMPLE
-    .\New-CustomGroupsFromSubnets.ps1
-    Creates/updates all custom groups described in .\subnet-group-mappings.csv.
+    .\New-CustomGroupsFromSubnets.ps1 -Client -Server
+    Creates/updates all custom groups described in .\subnet-group-mappings.csv, matching both
+    client and server assets.
 
 .EXAMPLE
-    .\New-CustomGroupsFromSubnets.ps1 -SubnetCsvPath .\my-mappings.csv -DryRun
-    Previews what would happen for a custom mapping CSV without making any changes.
+    .\New-CustomGroupsFromSubnets.ps1 -Server -SubnetCsvPath .\my-mappings.csv -DryRun
+    Previews what would happen for a custom mapping CSV, matching server assets only.
 
 .EXAMPLE
-    .\New-CustomGroupsFromSubnets.ps1 -TargetGroupName "TEST-SERVERS-FLOOR"
+    .\New-CustomGroupsFromSubnets.ps1 -Client -Server -TargetGroupName "TEST-SERVERS-FLOOR"
     Re-runs asset discovery/assignment for a single already-known group, using the subnet recorded
     for it in the local JSON record file.
 #>
@@ -71,6 +80,16 @@ param(
 
     [Parameter(ParameterSetName = "ByGroupName", Mandatory = $true)]
     [string]$TargetGroupName,
+
+    # At least one of -Client / -Server is required (enforced below - CmdletBinding cannot express
+    # an "at least one of" constraint declaratively across a parameter set).
+    [Parameter(ParameterSetName = "BySubnetCsv", Mandatory = $false)]
+    [Parameter(ParameterSetName = "ByGroupName", Mandatory = $false)]
+    [switch]$Client,
+
+    [Parameter(ParameterSetName = "BySubnetCsv", Mandatory = $false)]
+    [Parameter(ParameterSetName = "ByGroupName", Mandatory = $false)]
+    [switch]$Server,
 
     [Parameter(ParameterSetName = "BySubnetCsv", Mandatory = $false)]
     [Parameter(ParameterSetName = "ByGroupName", Mandatory = $false)]
@@ -95,13 +114,20 @@ else {
     $DebugPreference = "SilentlyContinue"
 }
 
+if (-not $Client -and -not $Server) {
+    throw "At least one of -Client or -Server must be specified - the script needs to know which asset type(s) to match against the subnet(s)."
+}
+
 # Number of host addresses to include per /assets/monitored filter query when resolving
 # assets by subnet. Not exposed as a script parameter - internal tunable only.
 $script:SUBNET_BATCH_SIZE = 100
 
 # assetType codes (see ZeroNetworks-openapi.yaml #/components/schemas/assetType) that qualify as
-# "client/server type asset" per the requirements. 1 = Client, 2 = Server.
-$script:QUALIFYING_ASSET_TYPES = @(1, 2)
+# "client/server type asset" per the requirements. 1 = Client, 2 = Server. Driven by -Client/-Server.
+$script:QUALIFYING_ASSET_TYPES = @(
+    if ($Client) { 1 }
+    if ($Server) { 2 }
+)
 
 <#
 This section of the script is responsible for
@@ -575,15 +601,15 @@ function Get-AssetsByHostAddresses {
         $batch = $_
         Write-Host "Querying batch $($batch.BatchNumber) of $($using:totalBatches) ($($batch.Addresses.Count) addresses)..."
 
-        # Filter on both lastIpAddress (this batch's addresses) and assetType (Client=1, Server=2)
+        # Filter server-side on lastIpAddress only - this is the same filter shape already proven to
+        # work against /assets/monitored elsewhere in this repo. A second, unverified "assetType"
+        # filter here previously caused the API to return zero results (its expected value format
+        # is undocumented), so assetType is restricted client-side instead (see the Where-Object
+        # filter on $script:QUALIFYING_ASSET_TYPES below, after the parallel block).
         $FilterArray = @(
             @{
                 id = "lastIpAddress"
                 includeValues = @($batch.Addresses)
-            },
-            @{
-                id = "assetType"
-                includeValues = @($using:QualifyingAssetTypes | ForEach-Object { $_.ToString() })
             }
         )
         $FilterJson = $FilterArray | ConvertTo-Json -Compress -AsArray -Depth 10
