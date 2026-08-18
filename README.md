@@ -57,7 +57,7 @@
 
 
 <details>
-<summary>Segment (33)</summary>
+<summary>Segment (34)</summary>
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[install-CloudConnectorAPI.ps1](/home/runner/work/Community/Community/Segment/Segment/install-CloudConnectorAPI.ps1)** - install-CloudConnectorAPI.ps1 [[-CloudConnectorFunction] <string>] [[-CloudConnectorToken] <string>] [[-CloudConnectorSource] <string>] [<CommonParameters>]
 
@@ -148,6 +148,10 @@ Get-SegmentSimulationBlocks.ps1 -ApiKey <string> -AssetId <string> [-SkipLearnin
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[ZNConnectivityTest.ps1](/home/runner/work/Community/Community/Segment/Segment/ZNConnectivityTest.ps1)** - ZNConnectivityTest.ps1 
 
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Clear-StaleSmbArtifacts.ps1](/home/runner/work/Community/Community/Segment/Segment/Clear-StaleSmbArtifacts.ps1)** - Disconnects idle SMB client connections and removes Explorer artifacts
+(Quick Access, Recent items, Network Shortcuts, jump lists) that point
+at SMB/UNC paths, plus a full thumbnail cache clear.
 
 
 </details>
@@ -256,4 +260,4 @@ If you have a script you would like to share to the community or improvements on
 - Once the pull request is approved and merged you can pull the changes from `upstream` to your local repo.
 
 <br><br>
-![generated_image](https://img.shields.io/badge/generated%20date-08/18/2026%2016:22:37-blue)
+![generated_image](https://img.shields.io/badge/generated%20date-08/18/2026%2016:31:07-blue)
