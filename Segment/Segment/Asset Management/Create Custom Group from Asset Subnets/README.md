@@ -190,7 +190,7 @@ Use the `-DryRun` switch to preview what changes would be made without actually 
 - The script requires PowerShell 7.0 or higher
 - The API key is read from `.env` and is never accepted as a command-line parameter, so it never ends up in shell history
 - The script uses `$ErrorActionPreference = "Stop"` to ensure errors are handled properly
-- `Pin-AssetsToClusters.ps1` (this script's sibling reference for subnet-based asset discovery patterns) and `*.csv` files in this directory are gitignored, since they're local reference/input material rather than deliverables
+- `Pin-AssetsToClusters.ps1` and `ZeroNetworks-openapi.yaml` (reference material used while building this script) and `*.csv` files in this directory are gitignored, since they're local reference/input material rather than deliverables
 
 ## Troubleshooting
 
