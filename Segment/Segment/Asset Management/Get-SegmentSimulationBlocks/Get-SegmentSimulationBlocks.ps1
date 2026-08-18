@@ -48,7 +48,17 @@ param(
     [Parameter(Mandatory = $false, ParameterSetName = "ByAssetId")]
     [Parameter(Mandatory = $false, ParameterSetName = "AllAssets")]
     [Parameter(Mandatory = $false, ParameterSetName = "ByCsvImport")]
-    [bool]$ShowAllowedConnections = $false
+    [bool]$ShowAllowedConnections = $false,
+
+    [Parameter(Mandatory = $false, ParameterSetName = "ByAssetId")]
+    [Parameter(Mandatory = $false, ParameterSetName = "AllAssets")]
+    [Parameter(Mandatory = $false, ParameterSetName = "ByCsvImport")]
+    [string]$PortalUrlOverride,
+
+    [Parameter(Mandatory = $false, ParameterSetName = "ByAssetId")]
+    [Parameter(Mandatory = $false, ParameterSetName = "AllAssets")]
+    [Parameter(Mandatory = $false, ParameterSetName = "ByCsvImport")]
+    [hashtable]$CustomHeader
 )
 
 # By default, stop on errors, unless caught and handled by script
@@ -863,6 +873,12 @@ if (-not ($TokenDetails.e_name -and $TokenDetails.aud)) {
 else {
     $Environment = $TokenDetails.e_name
     $BaseUrl = $TokenDetails.aud
+
+    if ($PortalUrlOverride) {
+        Write-Host "Overriding base URL from JWT ('$BaseUrl') with -PortalUrlOverride value: $PortalUrlOverride" -ForegroundColor Yellow
+        $BaseUrl = $PortalUrlOverride
+    }
+
     Write-Host "Extracted environment details from API Key:" -ForegroundColor Green
     Write-Host "Environment: $($Environment)`nBase URL: $($BaseUrl)" -ForegroundColor Green
 
@@ -871,7 +887,15 @@ else {
         "Authorization" = "$($ApiKey)"
         "Content-Type"  = "application/json"
     }
-    Write-Host "Configured HTTP headers and API URL for custom API calls" -ForegroundColor Green  
+
+    if ($CustomHeader) {
+        foreach ($Key in $CustomHeader.Keys) {
+            Write-Host "Adding custom header: $Key = $($CustomHeader[$Key])" -ForegroundColor Green
+            $Script:Headers[$Key] = $CustomHeader[$Key]
+        }
+    }
+
+    Write-Host "Configured HTTP headers and API URL for custom API calls" -ForegroundColor Green
 }
 
 # Calculate From timestamp if not provided (default to 7 days ago)

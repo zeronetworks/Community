@@ -31,6 +31,8 @@ This helps identify gaps in segmentation rules before an asset is moved out of L
 | `-IgnorePendingRules` | No | `$false` | When specified, pending (unapproved) rules are excluded from the simulation and will not count as covering traffic. |
 | `-ShowDisabledRules` | No | `$false` | When specified, disabled rules are included in the simulation and may cover traffic that would otherwise be blocked. |
 | `-ShowAllowedConnections` | No | `$false` | By default, port/protocol entries where all observed traffic would be allowed are suppressed. Set to `$true` to display them. |
+| `-PortalUrlOverride` | No | — (derived from `-ApiKey`) | Overrides the API base host normally derived from the `aud` claim of the JWT (e.g. `"portal.zeronetworks.com"`). Useful for pointing the script at a different environment than the one embedded in the API key. |
+| `-CustomHeader` | No | — | Hashtable of additional HTTP headers to send with the script's direct REST API calls (e.g. `@{ "zn-env-id" = "<envId>" }`). Merged into the default headers; can add new headers or override `Authorization`/`Content-Type`. |
 
 ## Examples
 
