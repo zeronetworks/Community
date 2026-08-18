@@ -117,9 +117,9 @@ non-default SSH credential profile and/or pinning them to a deployment cluster.
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[auditMonitoredAssets.ps1](/home/runner/work/Community/Community/Segment/Segment/auditMonitoredAssets.ps1)** - This script accepts a CSV of assets which SHOULD be monitored, and queries the ZN API to see if they are showing as monitored..
 
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Get-SegmentSimulationBlocks.ps1](/home/runner/work/Community/Community/Segment/Segment/Get-SegmentSimulationBlocks.ps1)** - Get-SegmentSimulationBlocks.ps1 -ApiKey <string> [-CsvFilePath <string>] [-SkipLearningFilter] [-Direction <string>] [-IgnorePendingRules] [-TrafficType <string>] [-From <string>] [-ShowDisabledRules] [-ShowAllowedConnections <bool>] [<CommonParameters>]
-Get-SegmentSimulationBlocks.ps1 -ApiKey <string> [-SkipLearningFilter] [-Direction <string>] [-IgnorePendingRules] [-TrafficType <string>] [-From <string>] [-ShowDisabledRules] [-ShowAllowedConnections <bool>] [<CommonParameters>]
-Get-SegmentSimulationBlocks.ps1 -ApiKey <string> -AssetId <string> [-SkipLearningFilter] [-Direction <string>] [-IgnorePendingRules] [-TrafficType <string>] [-From <string>] [-ShowDisabledRules] [-ShowAllowedConnections <bool>] [<CommonParameters>]
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Get-SegmentSimulationBlocks.ps1](/home/runner/work/Community/Community/Segment/Segment/Get-SegmentSimulationBlocks.ps1)** - Get-SegmentSimulationBlocks.ps1 -ApiKey <string> [-CsvFilePath <string>] [-SkipLearningFilter] [-Direction <string>] [-IgnorePendingRules] [-TrafficType <string>] [-From <string>] [-ShowDisabledRules] [-ShowAllowedConnections <bool>] [-PortalUrlOverride <string>] [-CustomHeader <hashtable>] [<CommonParameters>]
+Get-SegmentSimulationBlocks.ps1 -ApiKey <string> [-SkipLearningFilter] [-Direction <string>] [-IgnorePendingRules] [-TrafficType <string>] [-From <string>] [-ShowDisabledRules] [-ShowAllowedConnections <bool>] [-PortalUrlOverride <string>] [-CustomHeader <hashtable>] [<CommonParameters>]
+Get-SegmentSimulationBlocks.ps1 -ApiKey <string> -AssetId <string> [-SkipLearningFilter] [-Direction <string>] [-IgnorePendingRules] [-TrafficType <string>] [-From <string>] [-ShowDisabledRules] [-ShowAllowedConnections <bool>] [-PortalUrlOverride <string>] [-CustomHeader <hashtable>] [<CommonParameters>]
 
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Parse-AsimilyExport.ps1](/home/runner/work/Community/Community/Segment/Segment/Parse-AsimilyExport.ps1)** - Parses Asimily asset export files and creates OT assets in Zero Networks.
@@ -256,4 +256,4 @@ If you have a script you would like to share to the community or improvements on
 - Once the pull request is approved and merged you can pull the changes from `upstream` to your local repo.
 
 <br><br>
-![generated_image](https://img.shields.io/badge/generated%20date-08/18/2026%2015:58:31-blue)
+![generated_image](https://img.shields.io/badge/generated%20date-08/18/2026%2016:22:37-blue)
