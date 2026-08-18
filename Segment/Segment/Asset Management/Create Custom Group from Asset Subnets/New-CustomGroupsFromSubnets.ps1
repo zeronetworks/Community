@@ -31,6 +31,11 @@
     Include assetType Server (2) assets when matching a subnet. At least one of -Client / -Server
     is required.
 
+.PARAMETER RemoveAssets
+    Removes matching assets that are currently members of the target group(s), instead of adding
+    them. Groups are never auto-created in this mode - if a mapped group does not already exist,
+    it is skipped (there is nothing to remove members from).
+
 .PARAMETER DryRun
     Preview changes (group creation, member assignment) without calling any mutating API endpoint.
 
@@ -63,6 +68,10 @@
     .\New-CustomGroupsFromSubnets.ps1 -Client -Server -TargetGroupName "TEST-SERVERS-FLOOR"
     Re-runs asset discovery/assignment for a single already-known group, using the subnet recorded
     for it in the local JSON record file.
+
+.EXAMPLE
+    .\New-CustomGroupsFromSubnets.ps1 -Client -Server -RemoveAssets -DryRun
+    Previews removing all matching assets from every group described in .\subnet-group-mappings.csv.
 #>
 
 <#PSScriptInfo
@@ -90,6 +99,10 @@ param(
     [Parameter(ParameterSetName = "BySubnetCsv", Mandatory = $false)]
     [Parameter(ParameterSetName = "ByGroupName", Mandatory = $false)]
     [switch]$Server,
+
+    [Parameter(ParameterSetName = "BySubnetCsv", Mandatory = $false)]
+    [Parameter(ParameterSetName = "ByGroupName", Mandatory = $false)]
+    [switch]$RemoveAssets,
 
     [Parameter(ParameterSetName = "BySubnetCsv", Mandatory = $false)]
     [Parameter(ParameterSetName = "ByGroupName", Mandatory = $false)]
@@ -869,6 +882,89 @@ function Add-AssetsToCustomGroup {
 }
 
 <#
+    .SYNOPSIS
+        Removes assets from a custom group, skipping any not currently present, in batches of 50.
+    .PARAMETER GroupId
+        The custom group ID to remove members from.
+    .PARAMETER Assets
+        ArrayList of asset objects (must have an .id property) to remove.
+    .PARAMETER DryRun
+        If specified, previews the operation without calling the mutation API.
+    .OUTPUTS
+        Returns a PSCustomObject with 'Removed' and 'Skipped' ArrayList properties (of asset objects), for summary reporting.
+    .NOTES
+        Membership is checked once up front via Get-CustomGroupMemberIds; assets that are not currently
+        members are skipped entirely (nothing to remove).
+    #>
+function Remove-AssetsFromCustomGroup {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$GroupId,
+
+        [Parameter(Mandatory = $true)]
+        [System.Collections.ArrayList]$Assets,
+
+        [Parameter(Mandatory = $false)]
+        [switch]$DryRun
+    )
+    $Result = [PSCustomObject]@{
+        Removed = [System.Collections.ArrayList]@()
+        Skipped = [System.Collections.ArrayList]@()
+    }
+
+    if ($Assets.Count -eq 0) {
+        return $Result
+    }
+
+    $CurrentMemberIds = Get-CustomGroupMemberIds -GroupId $GroupId
+
+    [System.Collections.ArrayList]$AssetsToRemove = @()
+    foreach ($asset in $Assets) {
+        if ($CurrentMemberIds.ContainsKey($asset.id)) {
+            $AssetsToRemove.Add($asset) | Out-Null
+        }
+        else {
+            Write-Host "Asset $($asset.name) ($($asset.id)) is not currently a member of group $GroupId - nothing to remove"
+            $Result.Skipped.Add($asset) | Out-Null
+        }
+    }
+
+    if ($AssetsToRemove.Count -eq 0) {
+        Write-Host "No assets to remove from group $GroupId - none of the $($Assets.Count) matching asset(s) are currently members"
+        return $Result
+    }
+
+    $batchSize = 50
+    $totalToRemove = $AssetsToRemove.Count
+    $totalBatches = [math]::Ceiling($totalToRemove / $batchSize)
+    $batchNumber = 1
+
+    for ($i = 0; $i -lt $totalToRemove; $i += $batchSize) {
+        $endIndex = [math]::Min($i + $batchSize - 1, $totalToRemove - 1)
+        $batch = [System.Collections.ArrayList]@($AssetsToRemove[$i..$endIndex])
+
+        $body = @{
+            membersId = @($batch | ForEach-Object { $_.id })
+        }
+
+        if ($DryRun) {
+            Write-Host "[DRY RUN] Would remove batch $batchNumber of $totalBatches ($($batch.Count) assets) from group $GroupId"
+            Write-Host "[DRY RUN] Request body: $($body | ConvertTo-Json -Compress -Depth 10)"
+        }
+        else {
+            Write-Host "Removing batch $batchNumber of $totalBatches ($($batch.Count) assets) from group $GroupId..."
+            Invoke-ApiRequest -Method "DELETE" -ApiEndpoint "groups/custom/$GroupId/members" -Body $body | Out-Null
+            Write-Host "Successfully removed $($batch.Count) asset(s) from group $GroupId"
+        }
+
+        $Result.Removed.AddRange($batch)
+        $batchNumber++
+    }
+
+    return $Result
+}
+
+<#
 This section of the script contains functions related to
 the local JSON audit record of groups created and assets assigned.
 #>
@@ -950,11 +1046,14 @@ function Save-GroupRecord {
         The subnet mapped to this group.
     .PARAMETER AddedAssetIds
         Array of asset IDs newly added to the group during this run (merged into any previously recorded assets).
+    .PARAMETER RemovedAssetIds
+        Array of asset IDs removed from the group during this run (dropped from any previously recorded assets).
     .OUTPUTS
         None. Persists the updated record to disk via Save-GroupRecord.
     .NOTES
         Called after each group is processed (not just at the end of the script), so a mid-run failure
-        still leaves a usable partial record on disk.
+        still leaves a usable partial record on disk. -AddedAssetIds and -RemovedAssetIds are mutually
+        exclusive per call (a given run either adds or removes, never both).
     #>
 function Update-GroupRecordEntry {
     param(
@@ -968,7 +1067,10 @@ function Update-GroupRecordEntry {
         [string]$Subnet,
 
         [Parameter(Mandatory = $false)]
-        [string[]]$AddedAssetIds = @()
+        [string[]]$AddedAssetIds = @(),
+
+        [Parameter(Mandatory = $false)]
+        [string[]]$RemovedAssetIds = @()
     )
     $Record = Read-GroupRecord
 
@@ -976,7 +1078,11 @@ function Update-GroupRecordEntry {
     if ($Record.ContainsKey($GroupName) -and $Record[$GroupName].ContainsKey('assetsAssigned')) {
         $existingAssets = @($Record[$GroupName]['assetsAssigned'])
     }
-    $mergedAssets = @(@($existingAssets) + @($AddedAssetIds) | Select-Object -Unique)
+    $mergedAssets = @(
+        @($existingAssets) + @($AddedAssetIds) |
+            Where-Object { $_ -notin @($RemovedAssetIds) } |
+            Select-Object -Unique
+    )
 
     $Record[$GroupName] = @{
         groupId        = $GroupId
@@ -1064,6 +1170,10 @@ processing workflow and final summary reporting.
         The custom group name to process.
     .PARAMETER Subnet
         The subnet mapped to this group.
+    .PARAMETER RemoveAssets
+        If specified, removes matching assets that are currently members of the group instead of
+        adding them. Groups are never auto-created in this mode - if the group does not already
+        exist, it is skipped.
     .PARAMETER DryRun
         If specified, previews all changes without calling any mutating API endpoint.
     .PARAMETER MaxConcurrentBatches
@@ -1073,7 +1183,8 @@ processing workflow and final summary reporting.
     .NOTES
         Always updates the local JSON record via Update-GroupRecordEntry, even when the group did not
         already exist and -DryRun prevented it from actually being created (record reflects a null groupId
-        in that case, and is corrected on the next non-dry-run pass).
+        in that case, and is corrected on the next non-dry-run pass). In -RemoveAssets mode, a missing
+        group is skipped entirely - nothing is recorded, since there is no group to describe.
     #>
 function Invoke-ProcessGroupSubnetMapping {
     param(
@@ -1084,45 +1195,73 @@ function Invoke-ProcessGroupSubnetMapping {
         [string]$Subnet,
 
         [Parameter(Mandatory = $false)]
+        [switch]$RemoveAssets,
+
+        [Parameter(Mandatory = $false)]
         [switch]$DryRun,
 
         [Parameter(Mandatory = $false)]
         [int]$MaxConcurrentBatches = 5
     )
     Write-Host "$("="*80)"
-    Write-Host "Processing group '$GroupName' for subnet $Subnet"
+    Write-Host "Processing group '$GroupName' for subnet $Subnet ($($RemoveAssets ? "removing" : "adding") matching assets)"
     Write-Host "$("="*80)"
 
-    $GroupId = New-CustomGroupIfMissing -GroupName $GroupName -Subnet $Subnet -DryRun:$DryRun
+    if ($RemoveAssets) {
+        $existingGroup = Get-CustomGroupByName -GroupName $GroupName
+        if ($null -eq $existingGroup) {
+            Write-Host "Group '$GroupName' does not exist - nothing to remove. Skipping."
+            return [PSCustomObject]@{
+                GroupName      = $GroupName
+                Subnet         = $Subnet
+                Mode           = "Remove"
+                AssetsFound    = 0
+                AssetsAffected = 0
+                AssetsSkipped  = 0
+            }
+        }
+        $GroupId = $existingGroup.id
+    }
+    else {
+        $GroupId = New-CustomGroupIfMissing -GroupName $GroupName -Subnet $Subnet -DryRun:$DryRun
 
-    if ([string]::IsNullOrWhiteSpace($GroupId)) {
-        Write-Host "[DRY RUN] Skipping asset discovery/assignment for '$GroupName' - group does not exist yet and would only be created in a non-dry-run pass"
-        return [PSCustomObject]@{
-            GroupName      = $GroupName
-            Subnet         = $Subnet
-            GroupCreated   = $null
-            AssetsFound    = 0
-            AssetsAdded    = 0
-            AssetsSkipped  = 0
+        if ([string]::IsNullOrWhiteSpace($GroupId)) {
+            Write-Host "[DRY RUN] Skipping asset discovery/assignment for '$GroupName' - group does not exist yet and would only be created in a non-dry-run pass"
+            return [PSCustomObject]@{
+                GroupName      = $GroupName
+                Subnet         = $Subnet
+                Mode           = "Add"
+                AssetsFound    = 0
+                AssetsAffected = 0
+                AssetsSkipped  = 0
+            }
         }
     }
 
     $HostAddresses = Get-SubnetHostAddresses -TargetSubnet $Subnet
     [System.Collections.ArrayList]$Assets = [System.Collections.ArrayList]@(Get-AssetsByHostAddresses -AssetSubnetHostAddresses $HostAddresses -MaxConcurrentBatches $MaxConcurrentBatches)
 
-    $AssignResult = Add-AssetsToCustomGroup -GroupId $GroupId -Assets $Assets -DryRun:$DryRun
-
-    Update-GroupRecordEntry -GroupName $GroupName -GroupId $GroupId -Subnet $Subnet -AddedAssetIds @($AssignResult.Added | ForEach-Object { $_.id })
-
-    Write-Host "Finished processing group '$GroupName': $($Assets.Count) asset(s) found, $($AssignResult.Added.Count) added, $($AssignResult.Skipped.Count) already present"
+    if ($RemoveAssets) {
+        $AssignResult = Remove-AssetsFromCustomGroup -GroupId $GroupId -Assets $Assets -DryRun:$DryRun
+        Update-GroupRecordEntry -GroupName $GroupName -GroupId $GroupId -Subnet $Subnet -RemovedAssetIds @($AssignResult.Removed | ForEach-Object { $_.id })
+        Write-Host "Finished processing group '$GroupName': $($Assets.Count) asset(s) found, $($AssignResult.Removed.Count) removed, $($AssignResult.Skipped.Count) not a member"
+        $affectedCount = $AssignResult.Removed.Count
+    }
+    else {
+        $AssignResult = Add-AssetsToCustomGroup -GroupId $GroupId -Assets $Assets -DryRun:$DryRun
+        Update-GroupRecordEntry -GroupName $GroupName -GroupId $GroupId -Subnet $Subnet -AddedAssetIds @($AssignResult.Added | ForEach-Object { $_.id })
+        Write-Host "Finished processing group '$GroupName': $($Assets.Count) asset(s) found, $($AssignResult.Added.Count) added, $($AssignResult.Skipped.Count) already present"
+        $affectedCount = $AssignResult.Added.Count
+    }
 
     return [PSCustomObject]@{
-        GroupName     = $GroupName
-        Subnet        = $Subnet
-        GroupId       = $GroupId
-        AssetsFound   = $Assets.Count
-        AssetsAdded   = $AssignResult.Added.Count
-        AssetsSkipped = $AssignResult.Skipped.Count
+        GroupName      = $GroupName
+        Subnet         = $Subnet
+        GroupId        = $GroupId
+        Mode           = $RemoveAssets ? "Remove" : "Add"
+        AssetsFound    = $Assets.Count
+        AssetsAffected = $affectedCount
+        AssetsSkipped  = $AssignResult.Skipped.Count
     }
 }
 
@@ -1145,11 +1284,11 @@ function Write-RunSummary {
     Write-Host "$("="*80)"
     Write-Host "RUN SUMMARY"
     Write-Host "$("="*80)"
-    $Results | Format-Table -Property GroupName, Subnet, AssetsFound, AssetsAdded, AssetsSkipped -AutoSize | Out-String -Width 4096 | Write-Host
+    $Results | Format-Table -Property GroupName, Subnet, Mode, AssetsFound, AssetsAffected, AssetsSkipped -AutoSize | Out-String -Width 4096 | Write-Host
 
-    $totalAdded = ($Results | Measure-Object -Property AssetsAdded -Sum).Sum
+    $totalAffected = ($Results | Measure-Object -Property AssetsAffected -Sum).Sum
     $totalSkipped = ($Results | Measure-Object -Property AssetsSkipped -Sum).Sum
-    Write-Host "Processed $($Results.Count) group(s). Total assets added: $totalAdded. Total assets already present (skipped): $totalSkipped."
+    Write-Host "Processed $($Results.Count) group(s). Total assets added/removed: $totalAffected. Total assets skipped: $totalSkipped."
     Write-Host "$("="*80)"
 }
 
@@ -1172,19 +1311,21 @@ try {
 
     switch ($PSCmdlet.ParameterSetName) {
         "BySubnetCsv" {
-            Write-Host "$($DryRun ? "[DRY RUN] " : '')Starting workflow to create/populate custom groups from subnet CSV: $SubnetCsvPath"
+            $verb = $RemoveAssets ? "remove assets from" : "create/populate"
+            Write-Host "$($DryRun ? "[DRY RUN] " : '')Starting workflow to $verb custom groups from subnet CSV: $SubnetCsvPath"
 
             $csvData = Get-SubnetCsvData -CsvPath $SubnetCsvPath
 
             foreach ($row in $csvData) {
-                $result = Invoke-ProcessGroupSubnetMapping -GroupName $row.'Custom Group Name' -Subnet $row.Subnet -DryRun:$DryRun -MaxConcurrentBatches $MaxConcurrentBatches
+                $result = Invoke-ProcessGroupSubnetMapping -GroupName $row.'Custom Group Name' -Subnet $row.Subnet -RemoveAssets:$RemoveAssets -DryRun:$DryRun -MaxConcurrentBatches $MaxConcurrentBatches
                 $RunResults.Add($result) | Out-Null
             }
 
-            Write-Host "$($DryRun ? "[DRY RUN] " : '')Finished workflow to create/populate custom groups from subnet CSV: $SubnetCsvPath"
+            Write-Host "$($DryRun ? "[DRY RUN] " : '')Finished workflow to $verb custom groups from subnet CSV: $SubnetCsvPath"
         }
         "ByGroupName" {
-            Write-Host "$($DryRun ? "[DRY RUN] " : '')Starting workflow to (re-)populate custom group '$TargetGroupName' from local record"
+            $verb = $RemoveAssets ? "remove assets from" : "(re-)populate"
+            Write-Host "$($DryRun ? "[DRY RUN] " : '')Starting workflow to $verb custom group '$TargetGroupName' from local record"
 
             $Record = Read-GroupRecord
             if (-not $Record.ContainsKey($TargetGroupName)) {
@@ -1195,10 +1336,10 @@ try {
                 throw "Group '$TargetGroupName' exists in the local record file but has no recorded subnet mapping."
             }
 
-            $result = Invoke-ProcessGroupSubnetMapping -GroupName $TargetGroupName -Subnet $Subnet -DryRun:$DryRun -MaxConcurrentBatches $MaxConcurrentBatches
+            $result = Invoke-ProcessGroupSubnetMapping -GroupName $TargetGroupName -Subnet $Subnet -RemoveAssets:$RemoveAssets -DryRun:$DryRun -MaxConcurrentBatches $MaxConcurrentBatches
             $RunResults.Add($result) | Out-Null
 
-            Write-Host "$($DryRun ? "[DRY RUN] " : '')Finished workflow to (re-)populate custom group '$TargetGroupName'"
+            Write-Host "$($DryRun ? "[DRY RUN] " : '')Finished workflow to $verb custom group '$TargetGroupName'"
         }
     }
 

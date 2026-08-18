@@ -15,6 +15,7 @@ A PowerShell script that creates Zero Networks custom groups from a subnet-to-gr
 - Bulk operation via CSV file (subnet → custom group name mapping)
 - Single-group re-run mode driven by a local JSON audit record, without needing the CSV (`-TargetGroupName`)
 - Explicit opt-in to asset type: `-Client` and/or `-Server` (at least one required)
+- Remove mode (`-RemoveAssets`): removes matching assets from a group instead of adding them, without ever auto-creating a group
 - Local JSON audit record of every group created/found, its subnet, and the assets assigned to it (see [Local JSON Record](#local-json-record))
 - Console + timestamped log file output for every run (see [Logging](#logging))
 - API key read from a local `.env` file - never passed on the command line or committed to source control
@@ -58,6 +59,7 @@ Creates/reuses each custom group listed in the CSV and populates it with matchin
 
 **Optional Parameters:**
 - `-SubnetCsvPath` - Path to the subnet mapping CSV (default: `.\subnet-group-mappings.csv`)
+- `-RemoveAssets` - Remove matching assets from each group instead of adding them (see [Removing Assets](#removing-assets))
 - `-DryRun` - Preview changes without applying them
 - `-MaxConcurrentBatches` - Maximum number of subnet-batch asset resolution requests to run concurrently (default: `5`, range: `1`-`20`)
 - `-EnableDebug` - Enable debug output
@@ -75,6 +77,7 @@ Re-processes one group by name, pulling its subnet from the local JSON record in
 - `-Client` and/or `-Server` - At least one is required; determines which asset type(s) (`assetType` Client=1, Server=2) are matched against the subnet
 
 **Optional Parameters:**
+- `-RemoveAssets` - Remove matching assets from the group instead of adding them (see [Removing Assets](#removing-assets))
 - `-DryRun` - Preview changes without applying them
 - `-MaxConcurrentBatches` - Maximum number of subnet-batch asset resolution requests to run concurrently (default: `5`, range: `1`-`20`)
 - `-EnableDebug` - Enable debug output
@@ -116,6 +119,16 @@ Re-processes one group by name, pulling its subnet from the local JSON record in
 .\New-CustomGroupsFromSubnets.ps1 -Client -Server -DryRun -EnableDebug
 ```
 
+### Remove matching assets from all mapped groups
+```powershell
+.\New-CustomGroupsFromSubnets.ps1 -Client -Server -RemoveAssets
+```
+
+### Preview removing matching assets from a single known group
+```powershell
+.\New-CustomGroupsFromSubnets.ps1 -Client -Server -RemoveAssets -TargetGroupName "TEST-SERVERS-FLOOR" -DryRun
+```
+
 ## Which assets are added
 
 Only monitored assets whose last known IP address falls within the mapped subnet **and** whose `assetType` matches what was requested via `-Client` (1) and/or `-Server` (2) are considered. Other asset types (IP cameras, printers, routers, hypervisors, etc.) are never added, even if their IP falls in range - and running with only `-Server`, for example, will skip matching client assets entirely.
@@ -123,6 +136,15 @@ Only monitored assets whose last known IP address falls within the mapped subnet
 **Subnet size limits** (same as the underlying subnet-expansion logic used elsewhere in this repo):
 - Subnets larger than `/24` (more than 256 addresses) require interactive confirmation before proceeding, since resolution requires multiple batched API calls.
 - Subnets larger than `/16` (more than 65,536 addresses) are rejected outright.
+
+## Removing Assets
+
+Pass `-RemoveAssets` to reverse the script's normal behavior: for each mapped group, matching `-Client`/`-Server` assets that are **currently members** of the group are removed from it instead of being added. Assets that match the subnet but are not currently in the group are left alone (logged as skipped - "nothing to remove").
+
+Key differences from the default (add) mode:
+- **Groups are never auto-created.** If a mapped group doesn't exist yet, it is skipped entirely with a log message - there's nothing to remove members from.
+- The local JSON record's `assetsAssigned` list has the removed asset IDs dropped from it, so it stays an accurate reflection of group membership.
+- `-DryRun` works the same way: membership is still checked and the request body that would be sent is displayed, but no assets are actually removed.
 
 ## Local JSON Record
 
