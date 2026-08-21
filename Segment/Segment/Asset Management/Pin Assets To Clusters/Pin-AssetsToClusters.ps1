@@ -324,6 +324,11 @@ asset related functions in the script
         If specified, throws an error and terminates the script if any asset fails validation.
     .PARAMETER SkipAssetHealthValidation
         If specified, skips the asset health check when validating each asset.
+    .PARAMETER DeploymentClusterId
+        The ID of the deployment cluster assets are being pinned/unpinned to. Used so the "already
+        pinned" check only blocks assets already pinned to THIS cluster, not assets pinned elsewhere.
+        Not required when each asset object already carries its own DeploymentClusterId property
+        (e.g. normalized CSV rows spanning multiple clusters) - that per-asset value takes precedence.
     .OUTPUTS
         Returns an ArrayList of asset objects that passed validation.
     .NOTES
@@ -338,7 +343,9 @@ function Test-ValidateProvidedAssetsCanBePinned {
         [Parameter(Mandatory = $false)]
         [switch]$StopOnAssetValidationError,
         [Parameter(Mandatory = $false)]
-        [switch]$SkipAssetHealthValidation
+        [switch]$SkipAssetHealthValidation,
+        [Parameter(Mandatory = $false)]
+        [string]$DeploymentClusterId
     )
     # Validate each asset can be pinned/unpinned. Keep a track of any assets that pass or fail validation.
     # If the -StopOnAssetValidationError switch is provided, throw an error if any asset fails validation,
@@ -351,8 +358,12 @@ function Test-ValidateProvidedAssetsCanBePinned {
             continue
         }
 
+        # CSV-normalized asset rows carry their own resolved DeploymentClusterId (potentially a
+        # different cluster per row) - prefer that over the ambient parameter when present.
+        $TargetDeploymentClusterId = $null -ne $asset.PSObject.Properties['DeploymentClusterId'] ? $asset.DeploymentClusterId : $DeploymentClusterId
+
         try {
-            Test-AssetCanBePinned -AssetId $asset.id -AssetMustBePinned:$AssetMustBePinned -SkipAssetHealthValidation:$SkipAssetHealthValidation
+            Test-AssetCanBePinned -AssetId $asset.id -AssetMustBePinned:$AssetMustBePinned -SkipAssetHealthValidation:$SkipAssetHealthValidation -DeploymentClusterId $TargetDeploymentClusterId
             $AssetsPassedValidation.Add($asset) | Out-Null
         }
         catch {
@@ -391,6 +402,10 @@ function Test-ValidateProvidedAssetsCanBePinned {
         If specified, validates that the asset is already pinned (for unpinning operations).
     .PARAMETER SkipAssetHealthValidation
         If specified, skips the asset health check (healthState.healthStatus) below.
+    .PARAMETER DeploymentClusterId
+        The ID of the deployment cluster the asset is being pinned/unpinned to. Used to determine
+        whether an already-pinned asset is pinned to THIS cluster (blocks) or a different cluster
+        (allowed - the asset is being moved/re-pinned). If not supplied, any existing pin blocks the operation.
     .OUTPUTS
         None. Throws an exception if validation fails.
     .NOTES
@@ -403,7 +418,9 @@ function Test-AssetCanBePinned {
         [Parameter(Mandatory = $false)]
         [switch]$AssetMustBePinned,
         [Parameter(Mandatory = $false)]
-        [switch]$SkipAssetHealthValidation
+        [switch]$SkipAssetHealthValidation,
+        [Parameter(Mandatory = $false)]
+        [string]$DeploymentClusterId
     )
     # Get asset details from portal API
     $AssetDetails = Get-AssetDetails -AssetId $AssetId
@@ -451,16 +468,18 @@ function Test-AssetCanBePinned {
             throw "Asset $($AssetDetails.name) ($($AssetDetails.id)) is not pinned to a deployment cluster! It must be pinned to a deployment cluster to be unpinned."
         }
     }
-    # 6th: For pinning, verify asset is not already pinned
+    # 6th: For pinning, verify asset is not already pinned to THIS target cluster. An asset already
+    # pinned to a DIFFERENT cluster is allowed through - this is a legitimate move/re-pin. If the
+    # target cluster isn't known here (e.g. no -DeploymentClusterId was supplied), fall back to the
+    # old strict behavior and block on any existing pin, since we can't tell whether it's a move.
     else {
         if ($AssetIsPinnedDeploymentClusterSource -contains $AssetDetails.deploymentsClusterSource) {
-            throw "Asset $($AssetDetails.name) ($($AssetDetails.id)) is already pinned to Deployment Cluster ID: $($AssetDetails.deploymentsCluster.id) - Deployment Cluster Name: $($AssetDetails.deploymentsCluster.name) - Segment Server ID: $($AssetDetails.assignedDeployment.id) - Segment Server Name: $($AssetDetails.assignedDeployment.name)"
+            if ([string]::IsNullOrEmpty($DeploymentClusterId) -or $AssetDetails.deploymentsCluster.id -eq $DeploymentClusterId) {
+                throw "Asset $($AssetDetails.name) ($($AssetDetails.id)) is already pinned to Deployment Cluster ID: $($AssetDetails.deploymentsCluster.id) - Deployment Cluster Name: $($AssetDetails.deploymentsCluster.name) - Segment Server ID: $($AssetDetails.assignedDeployment.id) - Segment Server Name: $($AssetDetails.assignedDeployment.name)"
+            }
         }
     }
-    
-    # $DeploymentClusterId may be unset here (e.g. ByCsvPath validates assets across multiple clusters
-    # at once, with no single ambient cluster ID in scope) - guard the lookup so this stays a status
-    # message and never throws.
+
     $DeploymentClusterNameForMessage = (-not [string]::IsNullOrEmpty($DeploymentClusterId) -and $script:DeploymentClusterHashtable.ContainsKey($DeploymentClusterId)) ? $script:DeploymentClusterHashtable[$DeploymentClusterId].name : "N/A"
     Write-Host "Validated that asset $($AssetDetails.name) ($($AssetDetails.id)) can be $($Unpin ? "unpinned" : "pinned") to deployment cluster: $DeploymentClusterNameForMessage"
 }
@@ -1673,7 +1692,7 @@ switch ($PSCmdlet.ParameterSetName) {
         Invoke-ValidateDeploymentClusterId -DeploymentClusterId $DeploymentClusterId -SkipSegmentServerValidation:$SkipSegmentServerValidation
 
         # Validate asset can be pinned/unpinned
-        Test-AssetCanBePinned -AssetId $AssetId -AssetMustBePinned:$Unpin -SkipAssetHealthValidation:$SkipAssetHealthValidation
+        Test-AssetCanBePinned -AssetId $AssetId -AssetMustBePinned:$Unpin -SkipAssetHealthValidation:$SkipAssetHealthValidation -DeploymentClusterId $DeploymentClusterId
 
         # Create asset object for the function
         $asset = [PSCustomObject]@{
@@ -1706,7 +1725,7 @@ switch ($PSCmdlet.ParameterSetName) {
         [System.Collections.ArrayList]$Assets = [System.Collections.ArrayList]@(Get-AssetsFromOU -OUPath $OUPath -EntityId $OUInformation.id -DisableNestedOuResolution:$DisableNestedOuResolution)
 
         # Validate each asset can be pinned/unpinned
-        [System.Collections.ArrayList]$AssetsPassedValidation = [System.Collections.ArrayList]@(Test-ValidateProvidedAssetsCanBePinned -Assets $Assets -AssetMustBePinned:$Unpin -StopOnAssetValidationError:$StopOnAssetValidationError -SkipAssetHealthValidation:$SkipAssetHealthValidation)
+        [System.Collections.ArrayList]$AssetsPassedValidation = [System.Collections.ArrayList]@(Test-ValidateProvidedAssetsCanBePinned -Assets $Assets -AssetMustBePinned:$Unpin -StopOnAssetValidationError:$StopOnAssetValidationError -SkipAssetHealthValidation:$SkipAssetHealthValidation -DeploymentClusterId $DeploymentClusterId)
 
         # Finally, call function to perform the batch based cluster pinning/unpinning operation
         Invoke-BatchBasedClusterPinning -AssetsPassedValidation $AssetsPassedValidation -DeploymentClusterId $DeploymentClusterId -Unpin:$Unpin -DryRun:$DryRun
@@ -1731,7 +1750,7 @@ switch ($PSCmdlet.ParameterSetName) {
         }
 
         # Validate each asset can be pinned/unpinned
-        [System.Collections.ArrayList]$AssetsPassedValidation = [System.Collections.ArrayList]@(Test-ValidateProvidedAssetsCanBePinned -Assets $Assets -AssetMustBePinned:$Unpin -StopOnAssetValidationError:$StopOnAssetValidationError -SkipAssetHealthValidation:$SkipAssetHealthValidation)
+        [System.Collections.ArrayList]$AssetsPassedValidation = [System.Collections.ArrayList]@(Test-ValidateProvidedAssetsCanBePinned -Assets $Assets -AssetMustBePinned:$Unpin -StopOnAssetValidationError:$StopOnAssetValidationError -SkipAssetHealthValidation:$SkipAssetHealthValidation -DeploymentClusterId $DeploymentClusterId)
 
         # Finally, call function to perform the batch based cluster pinning/unpinning operation
         Invoke-BatchBasedClusterPinning -AssetsPassedValidation $AssetsPassedValidation -DeploymentClusterId $DeploymentClusterId -Unpin:$Unpin -DryRun:$DryRun
