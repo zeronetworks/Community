@@ -1,5 +1,6 @@
 *.txt
 *.log
+*.csv
 *.code-workspace
 .vscode
 CLAUDE.md
