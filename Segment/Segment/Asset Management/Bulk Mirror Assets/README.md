@@ -48,9 +48,9 @@ uv run mirror_assets.py --input assets.csv [--batch-size 25] [--output-dir outpu
 
 ## Output
 
-Two CSVs are written to the output directory (default `./outputs`), timestamped by date:
+CSVs are written to the output directory (default `./outputs`), timestamped by date:
 
 - `mirrored-success-<YYYY-MM-DD>.csv` — assets mirrored successfully
-- `unable-to-mirror-<YYYY-MM-DD>.csv` — assets that failed validation or the mirror call, with a `reason` column
+- `mirrored-failures-<YYYY-MM-DD>.csv` — assets that failed validation or the mirror call, with a `reason` column (only written if at least one asset failed)
 
 A summary is also logged to the console at the end of the run.

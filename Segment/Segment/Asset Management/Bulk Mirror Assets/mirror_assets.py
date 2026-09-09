@@ -405,7 +405,7 @@ def write_output_csvs(
     successes: list[AssetRecord],
     failures: list[MirrorFailure],
     output_dir: str,
-) -> tuple[Path, Path]:
+) -> tuple[Path, Path | None]:
     """Write the success and failure CSV reports.
 
     Args:
@@ -414,7 +414,8 @@ def write_output_csvs(
         output_dir: directory to write the CSVs into (created if missing).
 
     Returns:
-        Tuple of (success_csv_path, failure_csv_path).
+        Tuple of (success_csv_path, failure_csv_path). failure_csv_path is None
+        if no assets failed validation or mirroring.
     """
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -429,7 +430,10 @@ def write_output_csvs(
                 (record.src_asset_id, record.src_asset_name, record.dst_asset_id, record.dst_asset_name)
             )
 
-    failure_path = out_dir / f"unable-to-mirror-{today}.csv"
+    if not failures:
+        return success_path, None
+
+    failure_path = out_dir / f"mirrored-failures-{today}.csv"
     with failure_path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow((*REQUIRED_CSV_COLUMNS, "reason"))
@@ -453,7 +457,7 @@ def print_summary(
     invalid_relationships: dict[str, AssetRecord],
     mirror_failures: list[MirrorFailure],
     success_csv: Path,
-    failure_csv: Path,
+    failure_csv: Path | None,
 ) -> None:
     """Log a console summary of the run's results.
 
@@ -462,18 +466,21 @@ def print_summary(
         invalid_relationships: records that failed validation (dst not a mirror candidate).
         mirror_failures: records that failed the mirror API call.
         success_csv: path to the written success CSV.
-        failure_csv: path to the written failure CSV.
+        failure_csv: path to the written failure CSV, or None if nothing failed.
     """
     total_failed = len(invalid_relationships) + len(mirror_failures)
-    logger.info(
-        "%d asset(s) successfully mirrored, %d failed "
-        "(%d failed validation, %d failed the mirror call) - see %s for details",
-        len(successes),
-        total_failed,
-        len(invalid_relationships),
-        len(mirror_failures),
-        failure_csv,
-    )
+    if failure_csv is not None:
+        logger.info(
+            "%d asset(s) successfully mirrored, %d failed "
+            "(%d failed validation, %d failed the mirror call) - see %s for details",
+            len(successes),
+            total_failed,
+            len(invalid_relationships),
+            len(mirror_failures),
+            failure_csv,
+        )
+    else:
+        logger.info("%d asset(s) successfully mirrored, none failed.", len(successes))
     logger.info("Success report: %s", success_csv)
 
 
