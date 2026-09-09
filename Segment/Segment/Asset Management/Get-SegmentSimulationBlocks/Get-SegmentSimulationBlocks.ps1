@@ -21,7 +21,7 @@ param(
     [Parameter(Mandatory = $false, ParameterSetName = "ByAssetId")]
     [Parameter(Mandatory = $false, ParameterSetName = "AllAssets")]
     [Parameter(Mandatory = $false, ParameterSetName = "ByCsvImport")]
-    [ValidateSet("Incoming", "Outgoing")]
+    [ValidateSet("Incoming", "Outgoing", "Both")]
     [string]$Direction = "Incoming",
 
     [Parameter(Mandatory = $false, ParameterSetName = "ByAssetId")]
@@ -49,6 +49,11 @@ param(
     [Parameter(Mandatory = $false, ParameterSetName = "AllAssets")]
     [Parameter(Mandatory = $false, ParameterSetName = "ByCsvImport")]
     [bool]$ShowAllowedConnections = $false,
+
+    [Parameter(Mandatory = $false, ParameterSetName = "ByAssetId")]
+    [Parameter(Mandatory = $false, ParameterSetName = "AllAssets")]
+    [Parameter(Mandatory = $false, ParameterSetName = "ByCsvImport")]
+    [switch]$IncludeBenign,
 
     [Parameter(Mandatory = $false, ParameterSetName = "ByAssetId")]
     [Parameter(Mandatory = $false, ParameterSetName = "AllAssets")]
@@ -646,7 +651,7 @@ function Get-AssetSegmentSimulationResults {
     
     $Response = Invoke-ZeroNetworksApiCall -Headers $Script:Headers -Method POST -Url $FullUrl -Body $BodyHashTable
     Test-ResponseForError -Response $Response
-    Write-Host "Retrieved segment simulation results for asset $($AssetId) from ZeroNetworks API" -ForegroundColor Green
+    Write-Host "Retrieved segment simulation results for asset $($AssetId) ($Direction direction) from ZeroNetworks API" -ForegroundColor Green
     return $Response.items
 
    
@@ -730,8 +735,16 @@ function Write-SeparatorLine {
 function Write-AssetSegmentSimulationResults {
     param(
         [Parameter(Mandatory = $true)]
-        [object]$Asset
+        [object]$Asset,
+
+        [Parameter(Mandatory = $false)]
+        [ValidateSet("Incoming", "Outgoing", "Both")]
+        [string]$Direction = "Incoming",
+
+        [Parameter(Mandatory = $false)]
+        [switch]$IncludeBenign
     )
+
     Write-Host "`n"
     Write-SeparatorLine -DivisionFactor 4 -Characters "-" -ForegroundColor DarkMagenta
     Write-Host "Segmentation Simulation Results for: $($Asset.Name) ($($Asset.Id))" -ForegroundColor DarkMagenta
@@ -744,71 +757,148 @@ function Write-AssetSegmentSimulationResults {
     }
     Write-SeparatorLine -DivisionFactor 4 -Characters "-" -ForegroundColor DarkMagenta
 
-    $ResultStatistics = @{
-        "TotalAllowedSources" = 0
-        "TotalBlockedSources" = 0
-        "TotalMfaPromotedSources" = 0
+    # Builds the "<source> --> <asset>" or "<asset> --> <destination>" line for a single entity, depending on Direction
+    function Get-EntityConnectionLine {
+        param($Entity, $ProtoPort)
+        if ($IsOutgoing) {
+            return "$($Asset.Name) --> $($Entity.name) ($($Entity.id)):$($ProtoPort)"
+        } else {
+            return "$($Entity.name) ($($Entity.id)) --> $($Asset.Name):$($ProtoPort)"
+        }
     }
 
-    foreach ($Result in $Asset.SegmentSimulationResults) {
-        $ResultStatistics["TotalAllowedSources"] += $Result.coveredEntities.Count
-        $ResultStatistics["TotalBlockedSources"] += $Result.uncoveredEntities.Count
-        $ResultStatistics["TotalMfaPromotedSources"] += $Result.coveredByMfaEntities.Count
-    }
+    # In Both mode, each result item is tagged with its own Direction; render Incoming and Outgoing as separate, labeled groups
+    $DirectionGroups = if ($Direction -eq "Both") { @("Incoming", "Outgoing") } else { @($Direction) }
 
-    if ($ResultStatistics["TotalAllowedSources"] -gt 0 -and $ResultStatistics["TotalBlockedSources"] -eq 0 -and $ResultStatistics["TotalMfaPromotedSources"] -eq 0) {
-        Write-Host "$("`t"*1)No blocked (or MFA prompted) sources found! Use -ShowAllowedConnections to see assets that only have allowed sources." -ForegroundColor Green
-    }
-
-    # Enumerate the segment simulation results
-    foreach ($Result in $Asset.SegmentSimulationResults) {
-        if ($Result.coveredEntities.Count -gt 0 -and $Result.coveredByMfaEntities.Count -eq 0 -and $Result.uncoveredEntities.Count -eq 0 -and (-not $ShowAllowedConnections)) {
+    foreach ($Group in $DirectionGroups) {
+        $GroupResults = @($Asset.SegmentSimulationResults | Where-Object { $_.Direction -eq $Group })
+        if ($GroupResults.Count -eq 0) {
             continue
         }
-        Write-SeparatorLine -DivisionFactor 3 -Characters "-" -ForegroundColor DarkCyan -TabCount 1
-        $ValidProcesses = $Result.localProcessesList | Where-Object { $_ -ne "Unknown" -and $_ -ne "" }
-        # Need to cast the protocolType to an int32 integer to use the mapping table - the value from the result is int64
-        Write-Host "$("`t"*1)$($script:ProtocolTypeMap[[int]$Result.protocolType])/$($Result.port) --> $($Asset.Name) ($($Asset.Id))" -ForegroundColor Cyan
-        Write-Host "$("`t"*1)Number of Occurences: $($Result.occurred)" -ForegroundColor DarkCyan
-        Write-Host "$("`t"*1)Last observed at: $(((Convert-DateTimeToLocal -DateTime $Result.lastTimeSeen).Datetime).ToString("yyyy-MM-ddTHH:mm:ss.fffzzz"))" -ForegroundColor DarkCyan
-        if (($null -ne $ValidProcesses) -and ($ValidProcesses.Count -gt 0)) {
-            Write-Host "$("`t"*1)Connections landed on local processes:" -ForegroundColor DarkCyan
-            foreach ($Process in $ValidProcesses) {
-                Write-Host "$("`t"*2) - $($Process)" -ForegroundColor DarkCyan
-            }
+
+        # Entities returned by the API represent the other end of the connection.
+        # For Incoming traffic, entities are sources connecting into the asset.
+        # For Outgoing traffic, entities are destinations the asset connects out to.
+        $IsOutgoing = $Group -eq "Outgoing"
+        $EntityRoleSingular = if ($IsOutgoing) { "destination" } else { "source" }
+        $EntityRolePlural = if ($IsOutgoing) { "destinations" } else { "sources" }
+
+        if ($Direction -eq "Both") {
+            Write-SeparatorLine -DivisionFactor 4 -Characters "=" -ForegroundColor DarkMagenta
+            Write-Host "$Group Traffic" -ForegroundColor DarkMagenta
+            Write-SeparatorLine -DivisionFactor 4 -Characters "=" -ForegroundColor DarkMagenta
         }
-        if ($Result.coveredEntities.Count -gt 0 -and $ShowAllowedConnections) {
-            Write-SeparatorLine -DivisionFactor 4 -Characters "=" -ForegroundColor DarkGreen -TabCount 1
-            Write-Host "$("`t"*1)The following entities will be allowed to connect to $($script:ProtocolTypeMap[[int]$Result.protocolType])/$($Result.port) after segmentation:" -ForegroundColor DarkGreen
-            foreach ($Entity in $Result.coveredEntities) {
-                Write-Host "$("`t"*2)✅   - $($Entity.name) ($($Entity.id)) --> $($Asset.Name):$($script:ProtocolTypeMap[[int]$Result.protocolType])/$($Result.port) - Observed $($Entity.count) times" -ForegroundColor DarkGreen
-            }
-            Write-SeparatorLine -DivisionFactor 4 -Characters "=" -ForegroundColor DarkGreen -TabCount 1
-        } <#else {
-            Write-Host "$("`t"*1) ⚠️   There are no observed entities that will be OUTRIGHT allowed to connect to $($script:ProtocolTypeMap[[int]$Result.protocolType])/$($Result.port) after segmentation!" -ForegroundColor DarkYellow
-        }#>
-        if ($Result.coveredByMfaEntities.Count -gt 0) {
-            Write-SeparatorLine -DivisionFactor 4 -Characters "=" -ForegroundColor DarkBlue -TabCount 1
-            Write-Host "$("`t"*1)The following entities will be prompoted for MFA to connect to $($script:ProtocolTypeMap[[int]$Result.protocolType])/$($Result.port) after segmentation:" -ForegroundColor DarkBlue
-            foreach ($Entity in $Result.coveredByMfaEntities) {
-                Write-Host "$("`t"*2)⚠️   - $($Entity.name) ($($Entity.id)) --> $($Asset.Name):$($script:ProtocolTypeMap[[int]$Result.protocolType])/$($Result.port) - Observed $($Entity.count) times" -ForegroundColor DarkBlue
-            }
-            Write-SeparatorLine -DivisionFactor 4 -Characters "=" -ForegroundColor DarkBlue -TabCount 1
+
+        $ResultStatistics = @{
+            "TotalAllowed" = 0
+            "TotalBlocked" = 0
+            "TotalMfaPrompted" = 0
+            "TotalExcluded" = 0
+            "TotalBenign" = 0
         }
-        <#else {
-            Write-Host "$("`t"*1) ℹ️   There are no observed entities that will be prompoted for MFA to connect to $($script:ProtocolTypeMap[[int]$Result.protocolType])/$($Result.port) after segmentation!" -ForegroundColor DarkBlue
-        }#>
-        if ($Result.uncoveredEntities.Count -gt 0) {
-            Write-SeparatorLine -DivisionFactor 4 -Characters "=" -ForegroundColor Red -TabCount 1
-            Write-Host "$("`t"*1)The following entities will be BLOCKED FROM CONNECTING to $($script:ProtocolTypeMap[[int]$Result.protocolType])/$($Result.port) after segmentation:" -ForegroundColor Red
-            foreach ($Entity in $Result.uncoveredEntities) {
-                Write-Host "$("`t"*2)❌   - $($Entity.name) ($($Entity.id)) --> $($Asset.Name):$($script:ProtocolTypeMap[[int]$Result.protocolType])/$($Result.port) - Observed $($Entity.count) times" -ForegroundColor Red
+
+        foreach ($Result in $GroupResults) {
+            $ResultStatistics["TotalAllowed"] += $Result.coveredEntities.Count
+            $ResultStatistics["TotalBlocked"] += $Result.blockedByRuleEntities.Count + $Result.noAllowRuleEntities.Count
+            $ResultStatistics["TotalMfaPrompted"] += $Result.coveredByMfaEntities.Count
+            $ResultStatistics["TotalExcluded"] += $Result.aeExclusionEntities.Count
+            $ResultStatistics["TotalBenign"] += $Result.benignEntities.Count
+        }
+
+        if ($ResultStatistics["TotalAllowed"] -gt 0 -and $ResultStatistics["TotalBlocked"] -eq 0 -and $ResultStatistics["TotalMfaPrompted"] -eq 0) {
+            Write-Host "$("`t"*1)No blocked (or MFA prompted) $EntityRolePlural found! Use -ShowAllowedConnections to see assets that only have allowed $EntityRolePlural." -ForegroundColor Green
+        }
+
+        # Enumerate the segment simulation results
+        foreach ($Result in $GroupResults) {
+            $HasBlocked = ($Result.blockedByRuleEntities.Count + $Result.noAllowRuleEntities.Count) -gt 0
+            $HasMfa = $Result.coveredByMfaEntities.Count -gt 0
+            $HasExcluded = $Result.aeExclusionEntities.Count -gt 0
+            $HasBenign = $IncludeBenign -and $Result.benignEntities.Count -gt 0
+            if ($Result.coveredEntities.Count -gt 0 -and -not $HasMfa -and -not $HasBlocked -and -not $HasExcluded -and -not $HasBenign -and (-not $ShowAllowedConnections)) {
+                continue
             }
-            Write-SeparatorLine -DivisionFactor 4 -Characters "=" -ForegroundColor Red -TabCount 1
-        } <#else {
-            Write-Host "$("`t"*1) ℹ️   There were no observed entities that will be OUTRIGHT blocked from connecting to $($script:ProtocolTypeMap[[int]$Result.protocolType])/$($Result.port) after segmentation!" -ForegroundColor Green
-        }#>
-        Write-SeparatorLine -DivisionFactor 3 -Characters "-" -ForegroundColor DarkCyan -TabCount 1
+            Write-SeparatorLine -DivisionFactor 3 -Characters "-" -ForegroundColor DarkCyan -TabCount 1
+            $ValidProcesses = $Result.localProcessesList | Where-Object { $_ -ne "Unknown" -and $_ -ne "" }
+            # Need to cast the protocolType to an int32 integer to use the mapping table - the value from the result is int64
+            $ProtoPort = "$($script:ProtocolTypeMap[[int]$Result.protocolType])/$($Result.port)"
+            if ($IsOutgoing) {
+                Write-Host "$("`t"*1)$($Asset.Name) ($($Asset.Id)) --> $ProtoPort" -ForegroundColor Cyan
+            } else {
+                Write-Host "$("`t"*1)$ProtoPort --> $($Asset.Name) ($($Asset.Id))" -ForegroundColor Cyan
+            }
+            Write-Host "$("`t"*1)Number of Occurences: $($Result.occurred)" -ForegroundColor DarkCyan
+            Write-Host "$("`t"*1)Last observed at: $(((Convert-DateTimeToLocal -DateTime $Result.lastTimeSeen).Datetime).ToString("yyyy-MM-ddTHH:mm:ss.fffzzz"))" -ForegroundColor DarkCyan
+            if (($null -ne $ValidProcesses) -and ($ValidProcesses.Count -gt 0)) {
+                Write-Host "$("`t"*1)Connections landed on local processes:" -ForegroundColor DarkCyan
+                foreach ($Process in $ValidProcesses) {
+                    Write-Host "$("`t"*2) - $($Process)" -ForegroundColor DarkCyan
+                }
+            }
+
+            if ($Result.coveredEntities.Count -gt 0 -and $ShowAllowedConnections) {
+                Write-SeparatorLine -DivisionFactor 4 -Characters "=" -ForegroundColor DarkGreen -TabCount 1
+                if ($IsOutgoing) {
+                    Write-Host "$("`t"*1)$($Asset.Name) will be allowed to connect to the following $EntityRolePlural on $ProtoPort after segmentation:" -ForegroundColor DarkGreen
+                } else {
+                    Write-Host "$("`t"*1)The following $EntityRolePlural will be allowed to connect to $($Asset.Name) on $ProtoPort after segmentation:" -ForegroundColor DarkGreen
+                }
+                foreach ($Entity in $Result.coveredEntities) {
+                    Write-Host "$("`t"*2)✅   - $(Get-EntityConnectionLine -Entity $Entity -ProtoPort $ProtoPort) - Observed $($Entity.count) times" -ForegroundColor DarkGreen
+                }
+                Write-SeparatorLine -DivisionFactor 4 -Characters "=" -ForegroundColor DarkGreen -TabCount 1
+            }
+            if ($Result.coveredByMfaEntities.Count -gt 0) {
+                Write-SeparatorLine -DivisionFactor 4 -Characters "=" -ForegroundColor DarkBlue -TabCount 1
+                if ($IsOutgoing) {
+                    Write-Host "$("`t"*1)$($Asset.Name) will be prompoted for MFA to connect to the following $EntityRolePlural on $ProtoPort after segmentation:" -ForegroundColor DarkBlue
+                } else {
+                    Write-Host "$("`t"*1)The following $EntityRolePlural will be prompoted for MFA to connect to $($Asset.Name) on $ProtoPort after segmentation:" -ForegroundColor DarkBlue
+                }
+                foreach ($Entity in $Result.coveredByMfaEntities) {
+                    Write-Host "$("`t"*2)⚠️   - $(Get-EntityConnectionLine -Entity $Entity -ProtoPort $ProtoPort) - Observed $($Entity.count) times" -ForegroundColor DarkBlue
+                }
+                Write-SeparatorLine -DivisionFactor 4 -Characters "=" -ForegroundColor DarkBlue -TabCount 1
+            }
+            $BlockedEntities = @($Result.blockedByRuleEntities) + @($Result.noAllowRuleEntities)
+            if ($BlockedEntities.Count -gt 0) {
+                Write-SeparatorLine -DivisionFactor 4 -Characters "=" -ForegroundColor Red -TabCount 1
+                if ($IsOutgoing) {
+                    Write-Host "$("`t"*1)$($Asset.Name) will be BLOCKED FROM CONNECTING to the following $EntityRolePlural on $ProtoPort after segmentation:" -ForegroundColor Red
+                } else {
+                    Write-Host "$("`t"*1)The following $EntityRolePlural will be BLOCKED FROM CONNECTING to $($Asset.Name) on $ProtoPort after segmentation:" -ForegroundColor Red
+                }
+                foreach ($Entity in $BlockedEntities) {
+                    Write-Host "$("`t"*2)❌   - $(Get-EntityConnectionLine -Entity $Entity -ProtoPort $ProtoPort) - Observed $($Entity.count) times" -ForegroundColor Red
+                }
+                Write-SeparatorLine -DivisionFactor 4 -Characters "=" -ForegroundColor Red -TabCount 1
+            }
+            if ($Result.aeExclusionEntities.Count -gt 0) {
+                Write-SeparatorLine -DivisionFactor 4 -Characters "=" -ForegroundColor DarkYellow -TabCount 1
+                if ($IsOutgoing) {
+                    Write-Host "$("`t"*1)$($Asset.Name) is excluded via an Access Exception rule and will NOT be blocked from connecting to the following $EntityRolePlural on $ProtoPort after segmentation:" -ForegroundColor DarkYellow
+                } else {
+                    Write-Host "$("`t"*1)The following $EntityRolePlural are excluded via an Access Exception rule and will NOT be blocked from connecting to $($Asset.Name) on $ProtoPort after segmentation:" -ForegroundColor DarkYellow
+                }
+                foreach ($Entity in $Result.aeExclusionEntities) {
+                    Write-Host "$("`t"*2)🛡️   - $(Get-EntityConnectionLine -Entity $Entity -ProtoPort $ProtoPort) - Observed $($Entity.count) times" -ForegroundColor DarkYellow
+                }
+                Write-SeparatorLine -DivisionFactor 4 -Characters "=" -ForegroundColor DarkYellow -TabCount 1
+            }
+            if ($IncludeBenign -and $Result.benignEntities.Count -gt 0) {
+                Write-SeparatorLine -DivisionFactor 4 -Characters "=" -ForegroundColor Gray -TabCount 1
+                if ($IsOutgoing) {
+                    Write-Host "$("`t"*1)$($Asset.Name)'s connections to the following $EntityRolePlural on $ProtoPort are classified as benign traffic and will NOT be blocked after segmentation:" -ForegroundColor Gray
+                } else {
+                    Write-Host "$("`t"*1)The following $EntityRolePlural are classified as benign traffic and will NOT be blocked from connecting to $($Asset.Name) on $ProtoPort after segmentation:" -ForegroundColor Gray
+                }
+                foreach ($Entity in $Result.benignEntities) {
+                    Write-Host "$("`t"*2)ℹ️   - $(Get-EntityConnectionLine -Entity $Entity -ProtoPort $ProtoPort) - Observed $($Entity.count) times" -ForegroundColor Gray
+                }
+                Write-SeparatorLine -DivisionFactor 4 -Characters "=" -ForegroundColor Gray -TabCount 1
+            }
+            Write-SeparatorLine -DivisionFactor 3 -Characters "-" -ForegroundColor DarkCyan -TabCount 1
+        }
     }
     Write-Host "`n"
 }
@@ -928,9 +1018,18 @@ $AssetsWithSimulationResults = @()
 foreach ($Asset in $Assets) {
 
     try {
-        $Results = @(Get-AssetSegmentSimulationResults -AssetId $Asset.Id -Direction $Direction -TrafficType $TrafficType -IgnorePendingRules:$IgnorePendingRules -From $FromMsTimestamp -ShowDisabledRules:$ShowDisabledRules)
+        if ($Direction -eq "Both") {
+            $IncomingResults = @(Get-AssetSegmentSimulationResults -AssetId $Asset.Id -Direction Incoming -TrafficType $TrafficType -IgnorePendingRules:$IgnorePendingRules -From $FromMsTimestamp -ShowDisabledRules:$ShowDisabledRules)
+            $OutgoingResults = @(Get-AssetSegmentSimulationResults -AssetId $Asset.Id -Direction Outgoing -TrafficType $TrafficType -IgnorePendingRules:$IgnorePendingRules -From $FromMsTimestamp -ShowDisabledRules:$ShowDisabledRules)
+            $IncomingResults | ForEach-Object { $_ | Add-Member -NotePropertyName Direction -NotePropertyValue "Incoming" -Force }
+            $OutgoingResults | ForEach-Object { $_ | Add-Member -NotePropertyName Direction -NotePropertyValue "Outgoing" -Force }
+            $Results = @($IncomingResults) + @($OutgoingResults)
+        } else {
+            $Results = @(Get-AssetSegmentSimulationResults -AssetId $Asset.Id -Direction $Direction -TrafficType $TrafficType -IgnorePendingRules:$IgnorePendingRules -From $FromMsTimestamp -ShowDisabledRules:$ShowDisabledRules)
+            $Results | ForEach-Object { $_ | Add-Member -NotePropertyName Direction -NotePropertyValue $Direction -Force }
+        }
         if ($Results.Count -gt 0) {
-            $TotalBlockedOrMfaResults = ($Results | Where-Object { $_.coveredByMfaEntities.Count -gt 0 -or $_.uncoveredEntities.Count -gt 0}).Count
+            $TotalBlockedOrMfaResults = ($Results | Where-Object { $_.coveredByMfaEntities.Count -gt 0 -or $_.blockedByRuleEntities.Count -gt 0 -or $_.noAllowRuleEntities.Count -gt 0}).Count
             $Asset | Add-Member -MemberType NoteProperty -Name "SegmentSimulationResults" -Value $Results
             if ($TotalBlockedOrMfaResults -gt 0) {
                 Write-Debug "Asset $($Asset.Name) - $($Asset.Id) has $($TotalBlockedOrMfaResults) blocked or MFA prompted results to display. Will be included in filter."
@@ -961,7 +1060,7 @@ if ($AssetsWithSimulationResults.Count -gt 0) {
     Write-Host "Filtered down to $($AssetsWithSimulationResults.Count) assets that returned relevant segment simulation results" -ForegroundColor Green
     # Iterate over the filtered assets and print the segment simulation results
     foreach ($Asset in $AssetsWithSimulationResults) {
-        Write-AssetSegmentSimulationResults -Asset $Asset
+        Write-AssetSegmentSimulationResults -Asset $Asset -Direction $Direction -IncludeBenign:$IncludeBenign
     }
 } else {
     # Else exit with a warning
