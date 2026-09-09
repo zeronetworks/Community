@@ -1,0 +1,4 @@
+docs/*
+testAssets.csv
+.env
+outputs/*
