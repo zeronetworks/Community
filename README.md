@@ -59,10 +59,39 @@
 <details>
 <summary>Segment (34)</summary>
 
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[install-CloudConnectorAPI.ps1](/home/runner/work/Community/Community/Segment/Segment/install-CloudConnectorAPI.ps1)** - install-CloudConnectorAPI.ps1 [[-CloudConnectorFunction] <string>] [[-CloudConnectorToken] <string>] [[-CloudConnectorSource] <string>] [<CommonParameters>]
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Approve-ZNProposedDeletes.ps1](/home/runner/work/Community/Community/Segment/Segment/Approve-ZNProposedDeletes.ps1)** - Simple script to mass accept proposed delete rules
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Update-ZNBlockRulewithRiskyIps.ps1](/home/runner/work/Community/Community/Segment/Segment/Update-ZNBlockRulewithRiskyIps.ps1)** - Update-ZNBlockRulewithRiskyIps.ps1 
+
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Update-ZNOutboundBlockfromURLFile.ps1](/home/runner/work/Community/Community/Segment/Segment/Update-ZNOutboundBlockfromURLFile.ps1)** - Update-ZNOutboundBlockfromURLFile.ps1 
 
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Update-mfaPolicies.ps1](/home/runner/work/Community/Community/Segment/Segment/Update-mfaPolicies.ps1)** - Audits and optionally updates inbound reactive policies to set `useDefaultIdp` = true.
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[getSecretMicrosoftAuth.ps1](/home/runner/work/Community/Community/Segment/Segment/getSecretMicrosoftAuth.ps1)** - getSecretMicrosoftAuth.ps1 [[-TenantId] <string>] [<CommonParameters>]
+
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[install-CloudConnectorAPI.ps1](/home/runner/work/Community/Community/Segment/Segment/install-CloudConnectorAPI.ps1)** - install-CloudConnectorAPI.ps1 [[-CloudConnectorFunction] <string>] [[-CloudConnectorToken] <string>] [[-CloudConnectorSource] <string>] [<CommonParameters>]
+
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[checkAdmin.ps1](/home/runner/work/Community/Community/Segment/Segment/checkAdmin.ps1)** - checkAdmin.ps1 
+
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[CollectSMBDetails.ps1](/home/runner/work/Community/Community/Segment/Segment/CollectSMBDetails.ps1)** - CollectSMBDetails.ps1 
+
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Network Port Connectivity Check.ps1](/home/runner/work/Community/Community/Segment/Segment/Network%20Port%20Connectivity%20Check.ps1)** - Does network connectivity Test on Clients and Trust Server on the required ports based on the Deployment guide
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[ZN_Troubleshooter_v01.ps1](/home/runner/work/Community/Community/Segment/Segment/ZN_Troubleshooter_v01.ps1)** - ZN_Troubleshooter_v01.ps1 
+
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[ZNConnectivityTest.ps1](/home/runner/work/Community/Community/Segment/Segment/ZNConnectivityTest.ps1)** - ZNConnectivityTest.ps1 
+
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Clear-StaleSmbArtifacts.ps1](/home/runner/work/Community/Community/Segment/Segment/Clear-StaleSmbArtifacts.ps1)** - Disconnects idle SMB client connections and removes Explorer artifacts
+(Quick Access, Recent items, Network Shortcuts, jump lists) that point
+at SMB/UNC paths, plus a full thumbnail cache clear.
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Add-AssetsToLearning.ps1](/home/runner/work/Community/Community/Segment/Segment/Add-AssetsToLearning.ps1)** - Add-AssetsToLearning.ps1 
 
@@ -104,54 +133,25 @@
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Update-ZNGroupMembers.ps1](/home/runner/work/Community/Community/Segment/Segment/Update-ZNGroupMembers.ps1)** - Updates Zero Networks custom group members with IP ranges.
 
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[auditMonitoredAssets.ps1](/home/runner/work/Community/Community/Segment/Segment/auditMonitoredAssets.ps1)** - This script accepts a CSV of assets which SHOULD be monitored, and queries the ZN API to see if they are showing as monitored..
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Parse-AsimilyExport.ps1](/home/runner/work/Community/Community/Segment/Segment/Parse-AsimilyExport.ps1)** - Parses Asimily asset export files and creates OT assets in Zero Networks.
+
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Pin-AssetsToClusters.ps1](/home/runner/work/Community/Community/Segment/Segment/Pin-AssetsToClusters.ps1)** - Manages asset-to-deployment-cluster assignments in Zero Networks Segment.
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[New-OtAsset.ps1](/home/runner/work/Community/Community/Segment/Segment/New-OtAsset.ps1)** - New-OtAsset.ps1 [[-CsvFilePath] <string>] [[-ApiKey] <string>] [[-ip] <string>] [[-fqdn] <string>] [[-name] <string>] [-DryRun]
 
 
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[New-CustomGroupsFromSubnets.ps1](/home/runner/work/Community/Community/Segment/Segment/New-CustomGroupsFromSubnets.ps1)** - Creates Zero Networks custom groups from subnet mappings and populates them with matching assets.
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Get-SegmentSimulationBlocks.ps1](/home/runner/work/Community/Community/Segment/Segment/Get-SegmentSimulationBlocks.ps1)** - Get-SegmentSimulationBlocks.ps1 -ApiKey <string> [-CsvFilePath <string>] [-SkipLearningFilter] [-Direction <string>] [-IgnorePendingRules] [-TrafficType <string>] [-From <string>] [-ShowDisabledRules] [-ShowAllowedConnections <bool>] [-IncludeBenign] [-PortalUrlOverride <string>] [-CustomHeader <hashtable>] [<CommonParameters>]
+Get-SegmentSimulationBlocks.ps1 -ApiKey <string> [-SkipLearningFilter] [-Direction <string>] [-IgnorePendingRules] [-TrafficType <string>] [-From <string>] [-ShowDisabledRules] [-ShowAllowedConnections <bool>] [-IncludeBenign] [-PortalUrlOverride <string>] [-CustomHeader <hashtable>] [<CommonParameters>]
+Get-SegmentSimulationBlocks.ps1 -ApiKey <string> -AssetId <string> [-SkipLearningFilter] [-Direction <string>] [-IgnorePendingRules] [-TrafficType <string>] [-From <string>] [-ShowDisabledRules] [-ShowAllowedConnections <bool>] [-IncludeBenign] [-PortalUrlOverride <string>] [-CustomHeader <hashtable>] [<CommonParameters>]
+
+
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[enrollLinuxAsset.ps1](/home/runner/work/Community/Community/Segment/Segment/enrollLinuxAsset.ps1)** - Reads a CSV of Linux assets (columns matching the ZN API payload) and adds them to
 the Zero Networks dashboard as manual Linux assets, optionally binding them to a
 non-default SSH credential profile and/or pinning them to a deployment cluster.
-
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[New-CustomGroupsFromSubnets.ps1](/home/runner/work/Community/Community/Segment/Segment/New-CustomGroupsFromSubnets.ps1)** - Creates Zero Networks custom groups from subnet mappings and populates them with matching assets.
-
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[auditMonitoredAssets.ps1](/home/runner/work/Community/Community/Segment/Segment/auditMonitoredAssets.ps1)** - This script accepts a CSV of assets which SHOULD be monitored, and queries the ZN API to see if they are showing as monitored..
-
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Get-SegmentSimulationBlocks.ps1](/home/runner/work/Community/Community/Segment/Segment/Get-SegmentSimulationBlocks.ps1)** - Get-SegmentSimulationBlocks.ps1 -ApiKey <string> [-CsvFilePath <string>] [-SkipLearningFilter] [-Direction <string>] [-IgnorePendingRules] [-TrafficType <string>] [-From <string>] [-ShowDisabledRules] [-ShowAllowedConnections <bool>] [-PortalUrlOverride <string>] [-CustomHeader <hashtable>] [<CommonParameters>]
-Get-SegmentSimulationBlocks.ps1 -ApiKey <string> [-SkipLearningFilter] [-Direction <string>] [-IgnorePendingRules] [-TrafficType <string>] [-From <string>] [-ShowDisabledRules] [-ShowAllowedConnections <bool>] [-PortalUrlOverride <string>] [-CustomHeader <hashtable>] [<CommonParameters>]
-Get-SegmentSimulationBlocks.ps1 -ApiKey <string> -AssetId <string> [-SkipLearningFilter] [-Direction <string>] [-IgnorePendingRules] [-TrafficType <string>] [-From <string>] [-ShowDisabledRules] [-ShowAllowedConnections <bool>] [-PortalUrlOverride <string>] [-CustomHeader <hashtable>] [<CommonParameters>]
-
-
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Parse-AsimilyExport.ps1](/home/runner/work/Community/Community/Segment/Segment/Parse-AsimilyExport.ps1)** - Parses Asimily asset export files and creates OT assets in Zero Networks.
-
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[getSecretMicrosoftAuth.ps1](/home/runner/work/Community/Community/Segment/Segment/getSecretMicrosoftAuth.ps1)** - getSecretMicrosoftAuth.ps1 [[-TenantId] <string>] [<CommonParameters>]
-
-
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Approve-ZNProposedDeletes.ps1](/home/runner/work/Community/Community/Segment/Segment/Approve-ZNProposedDeletes.ps1)** - Simple script to mass accept proposed delete rules
-
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Update-ZNBlockRulewithRiskyIps.ps1](/home/runner/work/Community/Community/Segment/Segment/Update-ZNBlockRulewithRiskyIps.ps1)** - Update-ZNBlockRulewithRiskyIps.ps1 
-
-
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Update-ZNOutboundBlockfromURLFile.ps1](/home/runner/work/Community/Community/Segment/Segment/Update-ZNOutboundBlockfromURLFile.ps1)** - Update-ZNOutboundBlockfromURLFile.ps1 
-
-
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[checkAdmin.ps1](/home/runner/work/Community/Community/Segment/Segment/checkAdmin.ps1)** - checkAdmin.ps1 
-
-
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[CollectSMBDetails.ps1](/home/runner/work/Community/Community/Segment/Segment/CollectSMBDetails.ps1)** - CollectSMBDetails.ps1 
-
-
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Network Port Connectivity Check.ps1](/home/runner/work/Community/Community/Segment/Segment/Network%20Port%20Connectivity%20Check.ps1)** - Does network connectivity Test on Clients and Trust Server on the required ports based on the Deployment guide
-
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[ZN_Troubleshooter_v01.ps1](/home/runner/work/Community/Community/Segment/Segment/ZN_Troubleshooter_v01.ps1)** - ZN_Troubleshooter_v01.ps1 
-
-
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[ZNConnectivityTest.ps1](/home/runner/work/Community/Community/Segment/Segment/ZNConnectivityTest.ps1)** - ZNConnectivityTest.ps1 
-
-
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Clear-StaleSmbArtifacts.ps1](/home/runner/work/Community/Community/Segment/Segment/Clear-StaleSmbArtifacts.ps1)** - Disconnects idle SMB client connections and removes Explorer artifacts
-(Quick Access, Recent items, Network Shortcuts, jump lists) that point
-at SMB/UNC paths, plus a full thumbnail cache clear.
 
 
 </details>
@@ -260,4 +260,4 @@ If you have a script you would like to share to the community or improvements on
 - Once the pull request is approved and merged you can pull the changes from `upstream` to your local repo.
 
 <br><br>
-![generated_image](https://img.shields.io/badge/generated%20date-08/21/2026%2020:15:32-blue)
+![generated_image](https://img.shields.io/badge/generated%20date-09/09/2026%2017:21:33-blue)
