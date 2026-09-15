@@ -5,6 +5,12 @@ Bulk-apply a state change and/or classification change to every alert in a Netwo
 ## Requirements
 Running the script has the following requirements:
 - **Zero Networks Full Access API Token**: Generate token within portal at Settings > Integrations > API > Generate token 
+- **Python 3.11+**
+- **[`uv`](https://docs.astral.sh/uv/getting-started/installation/)**: the script is a self-contained `uv` script, so `uv run` installs its dependencies automatically - no `pip install` step needed.
+- **Python packages** (declared inline in `triage_alerts.py`, installed by `uv` on first run):
+  - `httpx`
+  - `python-dotenv`
+  - `tenacity`
 
 ## Usage
 
