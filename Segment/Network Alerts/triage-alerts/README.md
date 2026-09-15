@@ -56,7 +56,6 @@ Provide at least one of `--state`, `--classification`/`--classification-category
 | `--comment` | Optional comment set on every alert. |
 | `--assigneeEmail` | Email of the account to assign every alert to, resolved to its entity ID via `GET /users` (filtered by email). Terminates if no matching account is found. Required before setting `--state` on an alert that doesn't already have an assignee - the API rejects that with "missing assignee". |
 | `--change-ticket` | Optional change ticket value set on every alert. |
-| `--customHeaders` | JSON-encoded object of extra headers appended to every request, e.g. `'{"zn-env-id":"..."}'`. **This is only required if you are an MSP managing multiple environments.** |
 | `--batch-size` | Max concurrent in-flight PATCH calls (default: 10). |
 | `--dry-run` | Log what would be sent for each alert without calling the API. |
 | `--verbose`, `-v` | Debug logging, including per-HTTP-request detail. Standard logging only shows per-alert progress and the final summary. |
