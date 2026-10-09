@@ -24,4 +24,4 @@ pytokens==0.3.0
 pytz==2025.2
 PyYAML==6.0.3
 requests==2.33.0
-urllib3==2.7.0
+urllib3==2.8.0
