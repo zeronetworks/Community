@@ -72,9 +72,14 @@ $ClassificationSlugs = [ordered]@{
 
 
 function Import-DotEnv {
-    <# Same .env loader as Triage-Alerts.ps1: nearest .env walking up from StartDirectory. #>
+    <#
+    Same .env loader as Triage-Alerts.ps1: nearest .env walking up from
+    StartDirectory, returned as a hashtable (never written to the session's
+    environment, so edits to .env take effect on the next run).
+    #>
     param([Parameter(Mandatory)][string]$StartDirectory)
 
+    $values = @{}
     $dir = Get-Item -LiteralPath $StartDirectory
     $envFile = $null
     while ($dir) {
@@ -86,7 +91,7 @@ function Import-DotEnv {
         $dir = $dir.Parent
     }
     if (-not $envFile) {
-        return
+        return $values
     }
 
     foreach ($rawLine in Get-Content -LiteralPath $envFile -Encoding utf8) {
@@ -115,17 +120,30 @@ function Import-DotEnv {
             $value = ($value -replace '\s+#.*$', '').Trim()
         }
 
-        if ($null -eq [Environment]::GetEnvironmentVariable($key)) {
-            [Environment]::SetEnvironmentVariable($key, $value)
-        }
+        $values[$key] = $value
     }
+    return $values
+}
+
+
+function Get-Setting {
+    <# Return an environment variable if set, otherwise the .env value. #>
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][hashtable]$DotEnv
+    )
+    $value = [Environment]::GetEnvironmentVariable($Name)
+    if ($null -ne $value) {
+        return $value
+    }
+    return [string]$DotEnv[$Name]
 }
 
 
 function Get-Config {
-    Import-DotEnv -StartDirectory $PSScriptRoot
-    $baseUrl = ([string]$env:ZN_API_BASE_URL).TrimEnd('/')
-    $apiKey = [string]$env:ZN_API_KEY
+    $dotEnv = Import-DotEnv -StartDirectory $PSScriptRoot
+    $baseUrl = (Get-Setting -Name 'ZN_API_BASE_URL' -DotEnv $dotEnv).TrimEnd('/')
+    $apiKey = Get-Setting -Name 'ZN_API_KEY' -DotEnv $dotEnv
     if (-not $baseUrl -or -not $apiKey) {
         [Console]::Error.WriteLine(
             'Missing ZN_API_BASE_URL / ZN_API_KEY - copy .env.example to .env and fill in.'

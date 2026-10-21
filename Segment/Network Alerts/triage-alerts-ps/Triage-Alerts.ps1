@@ -206,15 +206,19 @@ function Test-Arguments {
 function Import-DotEnv {
     <#
     .SYNOPSIS
-        Load KEY=VALUE pairs from the nearest .env file into the process
-        environment, without overriding variables that are already set.
+        Read KEY=VALUE pairs from the nearest .env file into a hashtable.
 
     .DESCRIPTION
         Searches for .env starting in the given directory and walking up
-        through its parents, stopping at the first one found.
+        through its parents, stopping at the first one found. Values are
+        returned rather than written to the process environment: scripts run
+        with ./Script.ps1 share the interactive session's process, so writing
+        them would leave stale values behind that later runs (after .env
+        changes) would keep using.
     #>
     param([Parameter(Mandatory)][string]$StartDirectory)
 
+    $values = @{}
     $dir = Get-Item -LiteralPath $StartDirectory
     $envFile = $null
     while ($dir) {
@@ -226,7 +230,7 @@ function Import-DotEnv {
         $dir = $dir.Parent
     }
     if (-not $envFile) {
-        return
+        return $values
     }
 
     foreach ($rawLine in Get-Content -LiteralPath $envFile -Encoding utf8) {
@@ -257,10 +261,26 @@ function Import-DotEnv {
             $value = ($value -replace '\s+#.*$', '').Trim()
         }
 
-        if ($null -eq [Environment]::GetEnvironmentVariable($key)) {
-            [Environment]::SetEnvironmentVariable($key, $value)
-        }
+        $values[$key] = $value
     }
+    return $values
+}
+
+
+function Get-Setting {
+    <#
+    .SYNOPSIS
+        Return an environment variable if set, otherwise the .env value.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][hashtable]$DotEnv
+    )
+    $value = [Environment]::GetEnvironmentVariable($Name)
+    if ($null -ne $value) {
+        return $value
+    }
+    return [string]$DotEnv[$Name]
 }
 
 
@@ -273,13 +293,13 @@ function Get-Config {
         Hashtable with BaseUrl (trailing slash stripped, "/api/v1" appended)
         and ApiKey. Exits with code 1 if either required variable is missing.
     #>
-    Import-DotEnv -StartDirectory $PSScriptRoot
+    $dotEnv = Import-DotEnv -StartDirectory $PSScriptRoot
 
-    $baseUrl = ([string]$env:ZN_API_BASE_URL).TrimEnd('/')
+    $baseUrl = (Get-Setting -Name 'ZN_API_BASE_URL' -DotEnv $dotEnv).TrimEnd('/')
     if ($baseUrl) {
         $baseUrl += '/api/v1'
     }
-    $apiKey = [string]$env:ZN_API_KEY
+    $apiKey = Get-Setting -Name 'ZN_API_KEY' -DotEnv $dotEnv
 
     $missing = @()
     if (-not $baseUrl) { $missing += 'ZN_API_BASE_URL' }
