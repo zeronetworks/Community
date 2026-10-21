@@ -19,7 +19,8 @@ if the portal API ever changes.
 state (`state failed custom validation because value must be one of
 [in_progress, closed, reopened]`) - it's the state an alert starts in, not
 one you can transition back to. `state` is otherwise a workflow, not a
-free-form field: an alert can only be `reopened` after it's been `closed`.
+free-form field: an alert can only be `reopened` after it's been `closed`,
+and closing an alert is rejected unless a classification is sent with it.
 
 | `--state` | API slug sent | Confirmed? |
 |---|---|---|

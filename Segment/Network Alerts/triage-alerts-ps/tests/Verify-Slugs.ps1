@@ -269,8 +269,13 @@ function Test-State {
         [Parameter(Mandatory)][string]$CliValue,
         [Parameter(Mandatory)][string]$Slug
     )
-    $response = Invoke-ZnRaw -Client $Client -Method PATCH -Path "/network/alerts/$AlertId" `
-        -Body ([ordered]@{ alertId = $AlertId; state = $Slug })
+    $body = [ordered]@{ alertId = $AlertId; state = $Slug }
+    if ($Slug -eq 'closed') {
+        # Closing is rejected unless a classification (and its comment) is sent too.
+        $body['userAlertClassification'] = 'not_malicious'
+        $body['comment'] = "Verify-Slugs.ps1: $Slug"
+    }
+    $response = Invoke-ZnRaw -Client $Client -Method PATCH -Path "/network/alerts/$AlertId" -Body $body
     if (-not (Test-NoFieldsToUpdate $response)) {
         Assert-Success $response
     }

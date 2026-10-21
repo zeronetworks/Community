@@ -55,7 +55,7 @@ Parameter values tab-complete in PowerShell, and `Get-Help ./Triage-Alerts.ps1 -
 | Parameter | Description |
 |---|---|
 | `-InputFile`, `-i` | Path to the alert CSV export (required). |
-| `-State` | New state to set on every alert. One of: `in-progress`, `closed`, `reopened`. (`new` is not a settable target state - the API rejects it; see below.) |
+| `-State` | New state to set on every alert. One of: `in-progress`, `closed`, `reopened`. (`new` is not a settable target state - the API rejects it; see below.) `closed` also requires `-Classification`/`-ClassificationCategory` (or `-ClassificationSlug`). |
 | `-Classification` | Top-level classification bucket. One of: `true-positive`, `informational`, `false-positive`. Requires `-ClassificationCategory`. |
 | `-ClassificationCategory` | Specific reason within `-Classification`. See table below for valid combinations. |
 | `-ClassificationSlug` | Raw API classification string, sent verbatim. Use instead of `-Classification`/`-ClassificationCategory` to send a value not in the lookup table. |
@@ -70,6 +70,8 @@ Parameter values tab-complete in PowerShell, and `Get-Help ./Triage-Alerts.ps1 -
 
 ***A network alert starts in a `new` state by default - once you move an alert to a different state (e.g., in-progress, closed) you CANNOT move a network alert back to the `new` state. If you close an alert, you can open it again by setting it's state to either `in-progress` or `reopened`.
 
+***Closing an alert requires a classification: `-State closed` must be combined with `-Classification`/`-ClassificationCategory` (or `-ClassificationSlug`) - the API rejects a close without one, so the script errors out before sending anything.
+
 | `-State` |
 |---|
 | `in-progress` |
@@ -78,22 +80,36 @@ Parameter values tab-complete in PowerShell, and `Get-Help ./Triage-Alerts.ps1 -
 
 ### `-Classification` / `-ClassificationCategory` values
 
-| `-Classification` | `-ClassificationCategory` |
-|---|---|
-| `true-positive` | `multi-staged-attack` |
-| `true-positive` | `malware` |
-| `true-positive` | `malicious-user-activity` |
-| `true-positive` | `unwanted-software` |
-| `true-positive` | `phishing` |
-| `true-positive` | `compromised-account` |
-| `true-positive` | `other` |
-| `informational` | `security-testing` |
-| `informational` | `confirmed-activity` |
-| `informational` | `line-of-business-application` |
-| `informational` | `other` |
-| `false-positive` | `not-malicious` |
-| `false-positive` | `not-enough-data` |
-| `false-positive` | `other` |
+Each `-Classification` only accepts the `-ClassificationCategory` values listed in its own table below - e.g. `not-malicious` is only valid with `false-positive`. Any other pairing is rejected and the script lists the valid categories for the `-Classification` you chose.
+
+#### `-Classification true-positive`
+
+| `-ClassificationCategory` |
+|---|
+| `multi-staged-attack` |
+| `malware` |
+| `malicious-user-activity` |
+| `unwanted-software` |
+| `phishing` |
+| `compromised-account` |
+| `other` |
+
+#### `-Classification informational`
+
+| `-ClassificationCategory` |
+|---|
+| `security-testing` |
+| `confirmed-activity` |
+| `line-of-business-application` |
+| `other` |
+
+#### `-Classification false-positive`
+
+| `-ClassificationCategory` |
+|---|
+| `not-malicious` |
+| `not-enough-data` |
+| `other` |
 
 ## Output
 

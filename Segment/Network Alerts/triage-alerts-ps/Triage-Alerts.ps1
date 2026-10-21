@@ -186,6 +186,13 @@ function Test-Arguments {
             '-ClassificationSlug, not both.'
         )
     }
+    # The API rejects closing an alert unless it's also given a classification.
+    if ($State -eq 'closed' -and -not ($Classification -or $ClassificationSlug)) {
+        Exit-WithUsageError (
+            '-State closed requires a classification: provide -Classification/' +
+            '-ClassificationCategory (or -ClassificationSlug).'
+        )
+    }
     if (-not ($State -or $Classification -or $ClassificationSlug -or $AssigneeEmail)) {
         Exit-WithUsageError (
             'Nothing to do: provide -State, -Classification/' +
@@ -308,10 +315,15 @@ function Resolve-ClassificationSlug {
 
     $key = "$Classification|$ClassificationCategory"
     if (-not $ClassificationSlugs.Contains($key)) {
+        $validCategories = $ClassificationSlugs.Keys |
+            Where-Object { $_.StartsWith("$Classification|") } |
+            ForEach-Object { $_.Split('|')[1] } |
+            Sort-Object
         Write-Log ERROR (
             "No known mapping for -Classification $Classification -ClassificationCategory " +
-            "$ClassificationCategory. See README for valid combinations, or pass " +
-            '-ClassificationSlug directly.'
+            "$ClassificationCategory. Valid -ClassificationCategory values for " +
+            "${Classification}: $($validCategories -join ', '). See README for all valid " +
+            'combinations, or pass -ClassificationSlug directly.'
         )
         exit 1
     }
