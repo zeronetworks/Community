@@ -16,12 +16,16 @@ Running the script has the following requirements:
 
 In the portal, navigate to **Network > Alerts**, filter the list down to the alerts you want to triage, then click the **Export to CSV** in the top right of the alerts table.
 
+![Filtering network alerts and exporting them to CSV](images/filter-alerts.png)
+
 ### 2. Set up your `.env` file
 
 ```powershell
 Copy-Item .env.example .env  # then fill in ZN_API_BASE_URL and ZN_API_KEY
-# ZN_API_BASE_URL is your portal base URL, e.g. https://<your-org>-admin.zeronetworks.com
-# (no /api/v1 suffix - the script appends it automatically)
+# ZN_API_BASE_URL is your portal base URL, e.g. 
+ZN_API_BASE_URL=https://<your-org>-admin.zeronetworks.com
+# ZN_API_KEY is your full access API token
+ZN_API_KEY=<api-token>
 ```
 
 To generate an API key, navigate to **Settings > Integrations > API** and generate a **Full Access** API token (super admin).

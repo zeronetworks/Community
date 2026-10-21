@@ -20,6 +20,8 @@ The script is a self-contained `uv` script (dependencies declared inline) — no
 
 In the portal, navigate to **Network > Alerts**, filter the list down to the alerts you want to triage, then click the **Export to CSV** in the top right of the alerts table.
 
+![Filtering network alerts and exporting them to CSV](images/filter-alerts.png)
+
 ### 2. Set up your `.env` file
 
 ```bash
