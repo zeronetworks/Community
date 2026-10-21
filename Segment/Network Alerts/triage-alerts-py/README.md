@@ -44,14 +44,12 @@ uv run triage_alerts.py --input "alerts.csv" \
     [--batch-size 10] [--dry-run] [-v]
 ```
 
-For example, to close every alert in `alerts.csv` and mark it as a **false positive - not malicious**, assigned to you and with a comment:
+For example, to close every alert in `alerts.csv` and mark it as a **false positive - not malicious**:
 
 ```bash
 uv run triage_alerts.py --input "alerts.csv" \
     --state closed \
-    --classification false-positive --classification-category not-malicious \
-    --assigneeEmail "you@example.com" \
-    --comment "Reviewed - expected scanner activity, not malicious"
+    --classification false-positive --classification-category not-malicious
 ```
 
 Provide at least one of `--state`, `--classification`/`--classification-category` (or `--classification-slug`), or `--assigneeEmail`; the script errors out if there's nothing to change. Run with `--dry-run` first to confirm the request bodies look correct before applying changes for real.

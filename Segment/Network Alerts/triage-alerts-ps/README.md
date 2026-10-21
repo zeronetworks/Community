@@ -44,14 +44,12 @@ Provide the CSV you exported in step 1 via `-InputFile`, along with the `-Classi
     [-BatchSize 10] [-DryRun] [-Verbose]
 ```
 
-For example, to close every alert in `alerts.csv` and mark it as a **false positive - not malicious**, assigned to you and with a comment:
+For example, to close every alert in `alerts.csv` and mark it as a **false positive - not malicious**:
 
 ```powershell
 ./Triage-Alerts.ps1 -InputFile "alerts.csv" `
     -State closed `
-    -Classification false-positive -ClassificationCategory not-malicious `
-    -AssigneeEmail "you@example.com" `
-    -Comment "Reviewed - expected scanner activity, not malicious"
+    -Classification false-positive -ClassificationCategory not-malicious
 ```
 
 Provide at least one of `-State`, `-Classification`/`-ClassificationCategory` (or `-ClassificationSlug`), or `-AssigneeEmail`; the script errors out if there's nothing to change. Run with `-DryRun` first to confirm the request bodies look correct before applying changes for real.
