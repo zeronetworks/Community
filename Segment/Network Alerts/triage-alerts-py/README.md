@@ -20,6 +20,8 @@ The script is a self-contained `uv` script (dependencies declared inline) — no
 
 In the portal, navigate to **Network > Alerts**, filter the list down to the alerts you want to triage, then click the **Export to CSV** in the top right of the alerts table.
 
+![Filtering network alerts and exporting them to CSV](images/filter-alerts.png)
+
 ### 2. Set up your `.env` file
 
 ```bash
@@ -42,6 +44,14 @@ uv run triage_alerts.py --input "alerts.csv" \
     [--batch-size 10] [--dry-run] [-v]
 ```
 
+For example, to close every alert in `alerts.csv` and mark it as a **false positive - not malicious**:
+
+```bash
+uv run triage_alerts.py --input "alerts.csv" \
+    --state closed \
+    --classification false-positive --classification-category not-malicious
+```
+
 Provide at least one of `--state`, `--classification`/`--classification-category` (or `--classification-slug`), or `--assigneeEmail`; the script errors out if there's nothing to change. Run with `--dry-run` first to confirm the request bodies look correct before applying changes for real.
 
 ### Flags
@@ -49,7 +59,7 @@ Provide at least one of `--state`, `--classification`/`--classification-category
 | Flag | Description |
 |---|---|
 | `--input`, `-i` | Path to the alert CSV export (required). |
-| `--state` | New state to set on every alert. One of: `in-progress`, `closed`, `reopened`. (`new` is not a settable target state - the API rejects it; see below.) |
+| `--state` | New state to set on every alert. One of: `in-progress`, `closed`, `reopened`. (`new` is not a settable target state - the API rejects it; see below.) `closed` also requires `--classification`/`--classification-category` (or `--classification-slug`). |
 | `--classification` | Top-level classification bucket. One of: `true-positive`, `informational`, `false-positive`. Requires `--classification-category`. |
 | `--classification-category` | Specific reason within `--classification`. See table below for valid combinations. |
 | `--classification-slug` | Raw API classification string, sent verbatim. Use instead of `--classification`/`--classification-category` to send a value not in the lookup table. |
@@ -64,6 +74,8 @@ Provide at least one of `--state`, `--classification`/`--classification-category
 
 ***A network alert starts in a `new` state by default - once you move an alert to a different state (e.g., in-progress, closed) you CANNOT move a network alert back to the `new` state. If you close an alert, you can open it again by setting it's state to either `in-progress` or `reopened`.
 
+***Closing an alert requires a classification: `--state closed` must be combined with `--classification`/`--classification-category` (or `--classification-slug`) - the API rejects a close without one, so the script errors out before sending anything.
+
 | `--state` |
 |---|
 | `in-progress` |
@@ -72,22 +84,36 @@ Provide at least one of `--state`, `--classification`/`--classification-category
 
 ### `--classification` / `--classification-category` values
 
-| `--classification` | `--classification-category` |
-|---|---|
-| `true-positive` | `multi-staged-attack` |
-| `true-positive` | `malware` |
-| `true-positive` | `malicious-user-activity` |
-| `true-positive` | `unwanted-software` |
-| `true-positive` | `phishing` |
-| `true-positive` | `compromised-account` |
-| `true-positive` | `other` |
-| `informational` | `security-testing` |
-| `informational` | `confirmed-activity` |
-| `informational` | `line-of-business-application` |
-| `informational` | `other` |
-| `false-positive` | `not-malicious` |
-| `false-positive` | `not-enough-data` |
-| `false-positive` | `other` |
+Each `--classification` only accepts the `--classification-category` values listed in its own table below - e.g. `not-malicious` is only valid with `false-positive`. Any other pairing is rejected and the script lists the valid categories for the `--classification` you chose.
+
+#### `--classification true-positive`
+
+| `--classification-category` |
+|---|
+| `multi-staged-attack` |
+| `malware` |
+| `malicious-user-activity` |
+| `unwanted-software` |
+| `phishing` |
+| `compromised-account` |
+| `other` |
+
+#### `--classification informational`
+
+| `--classification-category` |
+|---|
+| `security-testing` |
+| `confirmed-activity` |
+| `line-of-business-application` |
+| `other` |
+
+#### `--classification false-positive`
+
+| `--classification-category` |
+|---|
+| `not-malicious` |
+| `not-enough-data` |
+| `other` |
 
 ## Output
 

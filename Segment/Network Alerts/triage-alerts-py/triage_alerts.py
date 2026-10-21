@@ -239,6 +239,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "Use either --classification/--classification-category or "
             "--classification-slug, not both."
         )
+    # The API rejects closing an alert unless it's also given a classification.
+    if args.state == "closed" and not (args.classification or args.classification_slug):
+        parser.error(
+            "--state closed requires a classification: provide --classification/"
+            "--classification-category (or --classification-slug)."
+        )
     if not any(
         (args.state, args.classification, args.classification_slug, args.assignee_email)
     ):
@@ -272,11 +278,17 @@ def resolve_classification_slug(args: argparse.Namespace) -> str | None:
     key = (args.classification, args.classification_category)
     slug = CLASSIFICATION_SLUGS.get(key)
     if slug is None:
+        valid_categories = sorted(
+            cat for c, cat in CLASSIFICATION_SLUGS if c == args.classification
+        )
         logger.error(
             "No known mapping for --classification %s --classification-category %s. "
-            "See README for valid combinations, or pass --classification-slug directly.",
+            "Valid --classification-category values for %s: %s. See README for all "
+            "valid combinations, or pass --classification-slug directly.",
             args.classification,
             args.classification_category,
+            args.classification,
+            ", ".join(valid_categories),
         )
         raise SystemExit(1)
     return slug

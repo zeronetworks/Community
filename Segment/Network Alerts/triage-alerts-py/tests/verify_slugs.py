@@ -148,7 +148,21 @@ async def check_state(client: httpx.AsyncClient, alert_id: str, cli_value: str, 
     # "reopened" after it's been "closed". Callers must run these in the
     # natural pipeline order (in-progress -> closed -> reopened) on the same
     # alert rather than jumping to an arbitrary state.
-    await _patch_field(client, alert_id, "state", slug)
+    if slug == "closed":
+        # Closing is rejected unless a classification (and its comment) is sent too.
+        resp = await client.patch(
+            f"/network/alerts/{alert_id}",
+            json={
+                "alertId": alert_id,
+                "state": slug,
+                "userAlertClassification": "not_malicious",
+                "comment": f"verify_slugs.py: {slug}",
+            },
+        )
+        if not (resp.status_code == 400 and "no fields to update" in resp.text):
+            _raise_with_body(resp)
+    else:
+        await _patch_field(client, alert_id, "state", slug)
     get_resp = await client.get(f"/network/alerts/{alert_id}")
     _raise_with_body(get_resp)
     returned_id = get_resp.json()["alert"]["state"]
