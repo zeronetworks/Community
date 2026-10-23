@@ -7,6 +7,12 @@ Bulk-manage the Zero Networks **client subnets** setting (Settings → Internal 
 - PowerShell 5.1+ or PowerShell 7+
 - A Zero Networks API key with permission to change settings
 
+## Client Subnets Upper Limit
+
+Zero Networks supports **up to 300 unique client subnets**. This is a hard limit - if you have more than 300 unique client subnets, you will need to consolidate the ranges to fit within the limit.
+
+**If the provided CSV has >300 subnets present, the script will fail validation and terminate.**
+
 ## CSV format
 
 Use a `Subnet` column (or `CIDR`) with one IPv4 CIDR per row. IPv6 entries are rejected because the client-subnets API only accepts IPv4. Other columns are ignored, and so are blank lines. A file with no header, just one CIDR per line, also works.
@@ -19,23 +25,31 @@ Subnet
 
 The script validates every entry before calling the API. An entry must be a real address with a valid prefix, and its host bits can't be set: `10.0.0.5/24` is rejected and the script suggests `10.0.0.0/24`. By default, invalid entries are reported and skipped. Pass `-RaiseErrorOnInvalidSubnet` to stop on the first invalid entry instead.
 
+## Modes
+
+**By default, the script appends the CSV subnets to the current client subnet list.** Subnets that are already in the list are skipped. 
+
+The script also supports the following modes/operations if needed:
+
+| Switch | What it does |
+|---|---|
+| `-RemoveSubnets` | Removes the CSV subnets from the current list. |
+| `-ReplaceSubnets` | Replaces the **entire** list with the CSV subnets. You have to type `REPLACE` to confirm. |
+| `-ExportClientSubnets` | Writes the current list to a CSV in the input format, and changes nothing. Default path: `./client-subnets-export-<timestamp>.csv`. |
+
 ## Parameters
+
+The script has several supported parameters outside of the mode options previously discussed. Some are **required** (e.g., `-ApiKey`).
 
 | Parameter | Description |
 |---|---|
 | `-CsvPath` | Input CSV. With `-ExportClientSubnets`, this is the output file. |
 | `-PortalBaseUrl` | Portal URL. Default: `https://portal.zeronetworks.com`. |
 | `-ApiKey` | API key. If you leave it out, you're prompted for it securely. |
-| *(no mode switch)* | **Appends** the CSV subnets to the current list. |
-| `-RemoveSubnets` | Removes the CSV subnets from the current list. |
-| `-ReplaceSubnets` | Replaces the **entire** list with the CSV subnets. You have to type `REPLACE` to confirm. |
-| `-ExportClientSubnets` | Writes the current list to a CSV in the input format. Default path: `./client-subnets-export-<timestamp>.csv`. |
 | `-Force` | With `-ExportClientSubnets`, overwrites an existing output file. |
 | `-RaiseErrorOnInvalidSubnet` | Stops with an error on the first invalid CSV entry. |
 | `-DryRun` | Shows the changes and the request body without applying anything. |
 | `-Verbose` | Shows detailed logging: CSV parsing, per-subnet decisions, and HTTP requests and responses. The API key is masked. |
-
-`-RemoveSubnets`, `-ReplaceSubnets` and `-ExportClientSubnets` can't be combined.
 
 ## Examples
 
