@@ -11,7 +11,7 @@ Bulk-manage the Zero Networks **client subnets** setting (Settings → Internal 
 
 Zero Networks supports **up to 300 unique client subnets**. This is a hard limit - if you have more than 300 unique client subnets, you will need to consolidate the ranges to fit within the limit.
 
-**If the provided CSV has >300 subnets present, the script will fail validation and terminate.**
+**Before making any change, the script reads the limit from the portal and checks the size the list would be afterwards. If that exceeds the limit, the script stops and changes nothing.** For example, in the default append mode a 250-row CSV fails if the portal already has 100 client subnets.
 
 ## CSV format
 
@@ -39,7 +39,7 @@ The script also supports the following modes/operations if needed:
 
 ## Parameters
 
-The script has several supported parameters outside of the mode options previously discussed. Some are **required** (e.g., `-ApiKey`).
+The script has several supported parameters outside of the mode options previously discussed. `-CsvPath` is **required**, except with `-ExportClientSubnets`. If you leave out `-ApiKey`, the script prompts for it securely.
 
 | Parameter | Description |
 |---|---|
