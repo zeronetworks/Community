@@ -54,3 +54,99 @@ CSVs are written to the output directory (default `./outputs`), timestamped by d
 - `mirrored-failures-<YYYY-MM-DD>.csv` — assets that failed validation or the mirror call, with a `reason` column (only written if at least one asset failed)
 
 A summary is also logged to the console at the end of the run.
+
+## Manual mirroring (`manual_mirror_assets.py`)
+
+`manual_mirror_assets.py` copies a source asset's configuration onto a target asset by making individual API calls. It works for any source-to-target pair. The script does not itself require the source or target to be a particular OS, an AD asset, or a Segment Connector asset; the API's own rules still apply, and the categories that only make sense for some targets (identity, RPC) are gated per target.
+
+### What it copies
+
+- **Group memberships:** the target is added to the source's writable custom and tag groups. AD, system and OT groups are read-only through the API and are reported as `skipped_readonly`.
+- **Owner-side network rules:** rules the source owns are recreated with the target as the local asset. The source is replaced by the target in remote lists.
+- **Remote-side network rules:** where the source is a remote source (inbound rules) or a remote destination (outbound rules), a new rule is created whose remote list is `[target]` only. Its description starts with a marker, `[zn-mirror src-rule=<original rule id> src=<S> dst=<T>]`, which records the original rule ID.
+- **MFA (reactive) policies**, inbound and outbound.
+- **Identity rules and identity MFA policies**, only for AD (source 3) and Azure AD (source 9) targets. Other targets get one `incompatible_target` row.
+- **RPC rules**, only for Windows targets. Other targets get an `incompatible_target` row.
+- **Switch rules**, only with `--include-switch`. Rules auto-derived from network rules are skipped as `skipped_derived`.
+- **External access policies**, only with `--include-external-access`.
+- **Connect (VPN) roles:** the target is added next to the source in the allowed assets, excluded assets or destinations of each user access config that references the source.
+
+### How it differs from the native mirror
+
+- The native mirror (`mirror_assets.py`) calls the portal's mirror action (`/assets/actions/mirror`). This script never calls that action. It recreates each object itself, and every copy is a separate row in the report, so results can be reviewed one by one and rolled back.
+- The script never deletes or consolidates existing rules on either side. It is not a duplicate-cleanup tool. Re-runs skip objects the target already has.
+
+### Usage
+
+```bash
+# Dry run (default): GET requests only, writes a plan CSV
+uv run manual_mirror_assets.py --input assets.csv
+
+# Review outputs/manual-mirror-plan-<timestamp>.csv, then perform the writes
+uv run manual_mirror_assets.py --input assets.csv --apply
+```
+
+The input CSV has the columns `srcAssetId,srcAssetName,dstAssetId,dstAssetName`. Credentials come from the same `.env` file used by the native mirror script (`ZN_API_BASE_URL`, `ZN_API_KEY`).
+
+| Flag | Purpose |
+| --- | --- |
+| `--input`, `-i` | Input CSV of source and target pairs. Required unless `--rollback` is given. |
+| `--output-dir` | Directory for reports and state files (default `outputs`). |
+| `--verbose`, `-v` | Enable debug logging. |
+| `--concurrency` | Maximum in-flight API calls (default 5). Connect updates are never concurrent. |
+| `--apply` | Perform writes. Without it, only GET requests are made. |
+| `--skip-groups` | Do not add the target to the source's groups. |
+| `--skip-owner-rules` | Do not copy rules the source owns. |
+| `--skip-inbound-remote` | Do not copy inbound rules where the source is the remote side. |
+| `--skip-outbound-remote` | Do not copy outbound rules where the source is the remote side. |
+| `--include-pending` | Copy pending-review rules and policies to the target as disabled. |
+| `--self-ref-both` | Also emit the remote copy for rules where the source is both local and remote. |
+| `--skip-mfa` | Do not copy MFA (reactive) policies. |
+| `--skip-identity` | Do not copy identity rules or identity MFA policies. |
+| `--skip-rpc` | Do not copy RPC rules. |
+| `--skip-connect` | Do not add the target to Connect roles. |
+| `--include-switch` | Also copy switch rules (off by default). |
+| `--include-external-access` | Also copy external access policies (off by default). |
+| `--resume STATE.csv` | With `--apply`, skip actions the given state file records as done. |
+| `--rollback REPORT.csv` | Delete the objects a results report created (dry run unless `--apply`). |
+
+### Output files
+
+All files go to the output directory (default `outputs/`) with a timestamp suffix:
+
+- `manual-mirror-plan-<ts>.csv`: dry run. One row per planned action, with status and the request body.
+- `manual-mirror-results-<ts>.csv`: `--apply` run. Same columns, with the result of each write and `newObjectId`.
+- `manual-mirror-state-<ts>.csv`: `--apply` run. Progress log used by `--resume`.
+- `manual-mirror-rollback-plan-<ts>.csv` and `manual-mirror-rollback-<ts>.csv`: rollback dry run and rollback run.
+
+Rollback deletes the objects created by a results report. Run it as a dry run first, then add `--apply`. Connect config updates are not reverted automatically; the rollback report marks them `rollback_unsupported` so they can be reverted by hand.
+
+### Statuses
+
+`planned`, `created`, `updated`, `rolled_back`, `skipped_exists`, `skipped_state`, `skipped_pending`, `skipped_expired`, `skipped_group_inherited`, `skipped_readonly`, `skipped_redundant`, `skipped_derived`, `skipped_resumed`, `exclusion_not_mirrored`, `incompatible_target`, `failed`. Pre-checks report `ok`, `warning` or `failed`.
+
+### Idempotency
+
+Before planning, the script reads the target's existing rules and policies. An object is skipped as `skipped_exists` when a `zn-mirror` marker already points from the same source object to the target, or when an identical object already exists. Objects that would duplicate each other within one run are also skipped. A re-run after a partial run therefore creates only what is still missing. `--resume` skips writes that the state file records as done.
+
+### Safety notes
+
+- The script does not change the target's segmentation status.
+- It never calls `/assets/actions/mirror`.
+- Rules that reach the source only through group membership are not copied (`skipped_group_inherited`).
+- AD, system and OT groups are read-only through the API, so the target cannot be added to them.
+- Original rule IDs are written into descriptions. The description is capped at 512 characters; the marker is always kept and any original text is trimmed first.
+- Connect updates run one at a time. Each one re-reads the config and rebuilds the body from the fresh copy, so concurrent edits are not overwritten.
+
+### Verify before first production run
+
+Confirm these behaviours against the live API. The script was written from the OpenAPI spec and has not been run against a live tenant.
+
+- Rule listing with `entityParams` `direction=3` returns rules where the source is only the remote side.
+- Group membership `DELETE` accepts a JSON body (used by rollback).
+- Description length: the script caps descriptions at 512 characters; confirm the API accepts that.
+- Rule create accepts `state` for pending-review objects (the script sends them as disabled).
+- Switch rule create: the spec declares `remoteEntitiesIdList` as a property but requires `remoteEntityIdsList`. The script sends `remoteEntityIdsList`. Confirm which one the API accepts.
+- Connect user access config `PUT` replaces the whole object. Confirm the body rebuilt from the re-read config keeps every other setting.
+- MFA policy listing with `_entityId`: confirm whether it matches the policy destination only or also the source assets.
+- Identity rule listing: the response schema does not declare `nextCursor`. The script stops with an error if a full page arrives without one.
