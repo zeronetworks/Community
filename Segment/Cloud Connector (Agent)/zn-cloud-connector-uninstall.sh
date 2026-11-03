@@ -156,6 +156,13 @@ fi
 
 chmod +x "$INSTALLER"
 
+# zn-cloud-connector-install.sh skips a Mac it has a record of installing. The
+# installer deregisters this Mac in the cloud before it removes the network
+# extension, so an uninstall that fails there leaves the connector running but
+# shown as uninstalled. Dropping the record first lets the next install run put
+# it back.
+rm -f /etc/zero-networks/cloud-connector/install-script-asset-id
+
 say "Uninstalling${FLAGS[*]:+ (${FLAGS[*]})}"
 # Captured rather than left to set -e, so the installer's exit code is
 # reported and its output — which carries no trailing newline — is closed off
