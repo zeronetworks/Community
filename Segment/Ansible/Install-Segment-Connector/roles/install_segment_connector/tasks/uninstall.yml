@@ -34,22 +34,28 @@
           directory, or set install_segment_connector_package_path to its full path.
       when: not (install_segment_connector_package_stat.stat.exists | bool)
 
-    - name: Ensure unzip is installed
-      ansible.builtin.package:
-        name: unzip
-        state: present
-
     - name: Create staging directory
       ansible.builtin.file:
         path: "{{ install_segment_connector_staging_dir }}"
         state: directory
         mode: "0755"
 
-    - name: Extract installer package to staging directory
-      ansible.builtin.unarchive:
+    - name: Copy installer zip to the target staging directory
+      ansible.builtin.copy:
         src: "{{ install_segment_connector_package_path }}"
-        dest: "{{ install_segment_connector_staging_dir }}"
-        remote_src: false
+        dest: "{{ install_segment_connector_staging_dir }}/installer.zip"
+        mode: "0600"
+
+    # Uses the target's own Python (2.7 or 3.x) so no unzip package is needed.
+    - name: Extract installer package to staging directory
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_facts['python']['executable'] }}"
+          - -c
+          - "import zipfile,sys; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])"
+          - "{{ install_segment_connector_staging_dir }}/installer.zip"
+          - "{{ install_segment_connector_staging_dir }}"
+      changed_when: true
 
     - name: Find the segment-connector-linux-installer binary
       ansible.builtin.find:
@@ -58,6 +64,12 @@
         recurse: true
         file_type: file
       register: install_segment_connector_binary_find
+
+  always:
+    - name: Remove copied installer zip
+      ansible.builtin.file:
+        path: "{{ install_segment_connector_staging_dir }}/installer.zip"
+        state: absent
 
 - name: Fail if the installer binary is not available
   ansible.builtin.assert:
@@ -106,6 +118,11 @@
     - name: Remove token file
       ansible.builtin.file:
         path: "{{ install_segment_connector_staging_dir }}/token"
+        state: absent
+
+    - name: Remove copied installer zip
+      ansible.builtin.file:
+        path: "{{ install_segment_connector_staging_dir }}/installer.zip"
         state: absent
 
     - name: Remove staging directory

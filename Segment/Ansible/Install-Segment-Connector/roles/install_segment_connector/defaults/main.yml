@@ -12,8 +12,13 @@ install_segment_connector_package_filename: ""
 # next to the playbook. Override to use a zip stored elsewhere on the controller.
 install_segment_connector_package_path: "{{ playbook_dir }}/installer/{{ install_segment_connector_package_filename }}"
 
-# Directory on the target host where the installer zip is extracted.
+# Directory on the target host where the installer zip is copied and extracted.
+# The copied zip is deleted after extraction. The token file is removed after each run.
 install_segment_connector_staging_dir: /opt/zn-segment-connector-setup
+
+# File the installer writes on a successful install. Its presence means the
+# Segment Connector is already installed (same on systemd and sysvinit hosts).
+install_segment_connector_identity_file: /var/zeronetworks/.zn-internal/identity.json
 
 # Local user the connector runs as: "zn-user" (default) or "root".
 install_segment_connector_run_as: zn-user
@@ -24,9 +29,9 @@ install_segment_connector_force: false
 # Existing asset ID to attach this host to (passed as -assetId). Optional.
 install_segment_connector_asset_id: ""
 
-# Reinstall when the service is already present. When false, an existing
-# installation is left untouched. When true, the installer runs again and
-# handles re-registration itself.
+# Reinstall when the Segment Connector is already installed (identity file present).
+# When false, an existing installation is left untouched. When true, the installer
+# runs again and handles re-registration itself.
 install_segment_connector_reinstall: false
 
 # Create a new asset in the portal for this host if none exists (passes -allow-create).

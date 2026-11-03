@@ -27,10 +27,11 @@ Install-Segment-Connector/
 
 **Target hosts**
 
-- Linux with systemd. The installer runs as root, which the playbook gets with `become: true`.
+- A supported Linux distribution (see [Supported platforms](#supported-platforms)). The installer runs as root, which the playbook gets with `become: true`.
+- Python on the target, for Ansible itself. See [Target host requirements](#target-host-requirements).
 - DNS resolution for the TXT record of the token's audience. The installer looks up this record to find the Zero Networks service.
 - Outbound network access to the Zero Networks segment server. The installer registers with it and downloads the connector package from it.
-- The role installs `unzip` if it is missing.
+- The role does not need `unzip`. It extracts the installer zip with the target's own Python `zipfile` module.
 
 **Zero Networks portal**
 
@@ -83,7 +84,7 @@ Install-Segment-Connector/
    ansible-playbook -i inventory.ini install-segment-connector.yml
    ```
 
-4. Check the result on the host with `systemctl status zn-segment-connector`.
+4. Check the result on the host. The service name is `zn-segment-connector`. On systemd hosts use `systemctl status zn-segment-connector`. On sysvinit hosts (for example RHEL/CentOS 6) use the init script, for example `service zn-segment-connector status`.
 
 ## Common runs
 
@@ -99,7 +100,7 @@ Install-Segment-Connector/
 
 Add `--limit connector01.example.com` to run against a single host.
 
-**Install behaviour when the service already exists.** If `zn-segment-connector` is already installed, the role skips the installer and prints a message. Set `install_segment_connector_reinstall=true` to run the installer again. The installer handles re-registration itself.
+**Install behaviour when the connector already exists.** The role checks for the installer identity file (`install_segment_connector_identity_file`, default `/var/zeronetworks/.zn-internal/identity.json`). If it exists, the connector is already installed, and the role skips the installer and prints a message. Set `install_segment_connector_reinstall=true` to run the installer again. The installer handles re-registration itself.
 
 ## Variables
 
@@ -110,7 +111,8 @@ Set these in `group_vars`, in the inventory, or with `-e`. Defaults are in `role
 | `install_segment_connector_token` | `""` | **Required.** Installation token from the portal. Never commit it. |
 | `install_segment_connector_package_filename` | `""` | **Required.** Filename of the installer zip in `installer/`. |
 | `install_segment_connector_package_path` | `{{ playbook_dir }}/installer/<filename>` | Controller path to the zip. Override to use a zip stored elsewhere. |
-| `install_segment_connector_staging_dir` | `/opt/zn-segment-connector-setup` | Directory on the target where the zip is extracted. |
+| `install_segment_connector_staging_dir` | `/opt/zn-segment-connector-setup` | Directory on the target where the zip is copied and extracted. The copied zip is deleted after extraction. |
+| `install_segment_connector_identity_file` | `/var/zeronetworks/.zn-internal/identity.json` | File the installer writes on success. If it exists, the install is skipped unless `reinstall=true`. |
 | `install_segment_connector_run_as` | `zn-user` | Account the connector runs as: `zn-user` or `root`. Passed as `-run-as`. |
 | `install_segment_connector_force` | `false` | Passes `-force` to the installer. |
 | `install_segment_connector_asset_id` | `""` | Existing asset ID to attach to. Passed as `-assetId`. |
@@ -137,7 +139,14 @@ A host that was installed as root and is reinstalled as `zn-user` fails if the `
 
 ## Troubleshooting
 
-The installer log on each target is `/var/zeronetworks/logs/installer.log`. Check it first. The service is `zn-segment-connector`.
+Check the logs on each target first:
+
+- `/var/zeronetworks/logs/installer.log`. When an install fails, the playbook prints the last 50 lines of this file.
+- `/var/zeronetworks/logs/install-script.log`. Written by the installer script itself, in the same directory. Check it when `installer.log` does not explain the failure.
+
+The service is `zn-segment-connector`.
+
+Non-fatal warnings printed before the install (missing `nft` and `iptables`, or SELinux enabled without `sudo`) do not stop the run. Fix them if the connector does not start.
 
 | Symptom | Likely cause and fix |
 |---|---|
@@ -149,19 +158,68 @@ The installer log on each target is `/var/zeronetworks/logs/installer.log`. Chec
 | Installer cannot reach the segment server | Check outbound access from the target to the Zero Networks segment server. Check proxies and firewalls. |
 | FQDN validation fails | Set `install_segment_connector_asset_fqdn` to a fully qualified name such as `connector01.example.com`, or use `install_segment_connector_with_static_ip=true` with `install_segment_connector_asset_name`. |
 | Installer reports a conflicting assetId | The host is already linked to a different asset. Set `install_segment_connector_force=true` to replace it, or pass the correct `install_segment_connector_asset_id`. |
-| Reinstall did nothing | The service already exists. Set `install_segment_connector_reinstall=true`. |
+| Reinstall did nothing | The connector is already installed (the identity file exists). Set `install_segment_connector_reinstall=true`. |
 | Reinstall as zn-user fails on a root install | The `zn-user` account does not exist. Reinstall with `install_segment_connector_run_as=root`, or uninstall first. |
 
 ## Security notes
 
 - The token is written to a `0600` file in the staging directory on the target. It is removed in an `always` block, so it is removed even when the install fails.
 - The installer takes the token as a command-line argument (`-token`). While the installer runs, the token is visible to other users on the target in the process list (`ps`). This is how the installer works and cannot be changed in this project. Run installs on hosts where only administrators have shell access, and do not run them while others are watching the process list.
+- The installer zip is copied to the staging directory and deleted after extraction, and again in the `always` block if extraction fails.
 - The task that writes the token file uses `no_log`. The installer command reads the token from that file inside the shell, so the token is not in the task arguments or the printed output.
 - Use Ansible Vault or an environment variable for the token. Do not commit a token, a `secrets*.yml` file, or an installer zip. The `.gitignore` in this directory covers these, but check `git status` before you commit.
 
-## Supported distributions
+## Supported platforms
 
-The installer does not restrict the distribution it runs on. The role metadata lists the distributions the role was written for. Confirm the supported distributions and versions with Zero Networks support before you deploy to production.
+Source: the Zero Networks "Supported Operating Systems" documentation. Confirm the current list there before you deploy.
+
+| Distribution | Versions |
+|---|---|
+| Red Hat Enterprise Linux (RHEL) | 6 to 10 |
+| CentOS | 6 to 8 |
+| Ubuntu | 16 to 24 |
+| Fedora | 19 to 40 |
+| AlmaLinux, Rocky Linux | 8 to 10 |
+| Oracle Linux | 7 to 10 |
+| SUSE Linux Enterprise, openSUSE | 15 |
+| Debian | 9 to 13 |
+| Linux Mint | 18 to 22 |
+| Kali Linux | 2017 to 2025 |
+| Amazon Linux | 2 |
+| VMware Photon OS | 4 and 5 |
+
+32-bit systems are not supported.
+
+The role metadata (`roles/install_segment_connector/meta/main.yml`) lists the same families using Galaxy platform names.
+
+## Target host requirements
+
+The installer detects the init system. It creates a systemd unit when systemd is PID 1, and an init.d script otherwise. RHEL/CentOS 6 use sysvinit.
+
+**Python on the target.** Ansible needs Python on the target. See [Legacy platforms](#legacy-platforms).
+
+**Agent runtime packages.** The Segment Connector agent needs these at runtime. The role does **not** install them. Install them before you run the playbook or make sure they are present:
+
+- Firewall backend: `nftables`, or legacy `iptables`.
+- Logging: `rsyslog` or `ulogd2`.
+- `logrotate`.
+- Python: `python2.7` (RHEL/CentOS 6, Ubuntu 16/18) or `python3.4` or later, plus `python3-pip` or `distutils`.
+- RPM-based distributions: `cronie`. On Fedora 35 and later, also `iptables-legacy-libs`.
+- Debian-based distributions: `cron` and `python3-venv`.
+- RHEL/CentOS 6: `ipset`.
+
+**SELinux.** On SELinux-enabled RHEL-family hosts the installer runs `sudo semodule` and `restorecon`. Make sure `sudo` and `policycoreutils` are installed. The role warns, and does not stop, when SELinux is enabled and `sudo` is missing.
+
+## Legacy platforms
+
+RHEL/CentOS 6 and Ubuntu 16/18 ship Python 2.7, 3.5, or 3.6 as their system Python. Current `ansible-core` releases cannot run on those targets:
+
+- Use an `ansible-core` version that still supports Python 2.7 or 3.6+ targets (2.16 or earlier), or
+- Install a newer Python on the target and point Ansible at it with `ansible_python_interpreter` in the inventory (see `inventory.example.ini`). Note that the Segment Connector agent itself still needs Python 2.7 on these legacy releases.
+
+The install step extracts the zip with the target's Python `zipfile` module, so it works on Python 2.7 and 3.x without `unzip`.
+
+**The role has not been tested on these legacy platforms.** Run it against a test host first.
 
 ## License
 

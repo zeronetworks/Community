@@ -46,12 +46,16 @@
     - install_segment_connector_enroll_asset | bool
     - not (install_segment_connector_with_static_ip | bool)
 
-- name: Check whether the Segment Connector service is already present
-  ansible.builtin.service_facts:
+# Presence is detected from the installer identity file. This works on both systemd
+# and sysvinit hosts, because the installer writes this file on either init system.
+- name: Check whether the Segment Connector is already installed
+  ansible.builtin.stat:
+    path: "{{ install_segment_connector_identity_file }}"
+  register: install_segment_connector_identity_stat
 
-- name: Record whether the Segment Connector service is present
+- name: Record whether the Segment Connector is present
   ansible.builtin.set_fact:
-    install_segment_connector_present: "{{ 'zn-segment-connector.service' in (ansible_facts.services | default({})) }}"
+    install_segment_connector_present: "{{ install_segment_connector_identity_stat.stat.exists | bool }}"
 
 - name: Skip installation when the Segment Connector is already installed
   ansible.builtin.debug:
@@ -83,10 +87,53 @@
           You can also set install_segment_connector_package_path to its full path.
       when: not (install_segment_connector_package_stat.stat.exists | bool)
 
-    - name: Ensure unzip is installed
-      ansible.builtin.package:
-        name: unzip
-        state: present
+    # Non-fatal: reports missing runtime prerequisites as warnings only. The installer
+    # itself decides whether the host can run the agent.
+    - name: Probe for nftables
+      ansible.builtin.shell: command -v nft  # noqa: command-instead-of-shell
+      register: install_segment_connector_probe_nft
+      failed_when: false
+      changed_when: false
+
+    - name: Probe for iptables
+      ansible.builtin.shell: command -v iptables  # noqa: command-instead-of-shell
+      register: install_segment_connector_probe_iptables
+      failed_when: false
+      changed_when: false
+
+    # sestatus is missing on non-SELinux distributions. rc is non-zero there and the warning is skipped.
+    - name: Probe for SELinux enforcement
+      ansible.builtin.command: sestatus
+      register: install_segment_connector_probe_selinux
+      failed_when: false
+      changed_when: false
+
+    - name: Probe for sudo
+      ansible.builtin.shell: command -v sudo  # noqa: command-instead-of-shell
+      register: install_segment_connector_probe_sudo
+      failed_when: false
+      changed_when: false
+
+    - name: Warn when no firewall backend is found
+      ansible.builtin.debug:
+        msg: >-
+          WARNING: {{ inventory_hostname }} has neither nft nor iptables on PATH. The Segment
+          Connector needs nftables or legacy iptables at runtime. Install one before relying on
+          this host (this playbook does not install it).
+      when:
+        - install_segment_connector_probe_nft.rc != 0
+        - install_segment_connector_probe_iptables.rc != 0
+
+    - name: Warn when sudo is missing on an SELinux host
+      ansible.builtin.debug:
+        msg: >-
+          WARNING: {{ inventory_hostname }} has SELinux enabled but sudo is not installed. The
+          installer calls sudo to load its SELinux policy module and run restorecon. Install sudo
+          (and policycoreutils) on this host.
+      when:
+        - install_segment_connector_probe_selinux.rc == 0
+        - install_segment_connector_probe_selinux.stdout is search('SELinux status:\\s+enabled')
+        - install_segment_connector_probe_sudo.rc != 0
 
     - name: Create staging directory
       ansible.builtin.file:
@@ -94,11 +141,28 @@
         state: directory
         mode: "0755"
 
-    - name: Extract installer package to staging directory
-      ansible.builtin.unarchive:
+    - name: Copy installer zip to the target staging directory
+      ansible.builtin.copy:
         src: "{{ install_segment_connector_package_path }}"
-        dest: "{{ install_segment_connector_staging_dir }}"
-        remote_src: false
+        dest: "{{ install_segment_connector_staging_dir }}/installer.zip"
+        mode: "0600"
+
+    # Uses the target's own Python (2.7 or 3.x) so no unzip package is needed.
+    # zipfile does not restore file permission bits; the chmod step below covers the binary.
+    - name: Extract installer package to staging directory
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_facts['python']['executable'] }}"
+          - -c
+          - "import zipfile,sys; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])"
+          - "{{ install_segment_connector_staging_dir }}/installer.zip"
+          - "{{ install_segment_connector_staging_dir }}"
+      changed_when: true
+
+    - name: Delete the copied installer zip
+      ansible.builtin.file:
+        path: "{{ install_segment_connector_staging_dir }}/installer.zip"
+        state: absent
 
     - name: Find the segment-connector-linux-installer binary
       ansible.builtin.find:
@@ -167,8 +231,33 @@
       ansible.builtin.debug:
         var: install_segment_connector_result.stdout_lines
 
+  rescue:
+    - name: Read the tail of the installer log
+      ansible.builtin.command:
+        argv:
+          - tail
+          - -n
+          - "50"
+          - /var/zeronetworks/logs/installer.log
+      register: install_segment_connector_log_tail
+      failed_when: false
+      changed_when: false
+
+    - name: Show the tail of the installer log
+      ansible.builtin.debug:
+        msg: "{{ install_segment_connector_log_tail.stdout_lines | default(['(installer log not available)']) }}"
+
+    - name: Fail the play after showing the installer log
+      ansible.builtin.fail:
+        msg: "Segment Connector installation failed; see output above."
+
   always:
     - name: Remove token file
       ansible.builtin.file:
         path: "{{ install_segment_connector_staging_dir }}/token"
+        state: absent
+
+    - name: Remove copied installer zip
+      ansible.builtin.file:
+        path: "{{ install_segment_connector_staging_dir }}/installer.zip"
         state: absent

@@ -5,23 +5,45 @@ galaxy_info:
   description: Installs, reinstalls or uninstalls the Zero Networks Segment Connector (Linux) using the installer zip from the Zero Networks portal.
   license: MIT
   min_ansible_version: "2.12"
-  # The Segment Connector installer does not restrict the distribution it runs on.
-  # This list reflects the distributions the role was written for. Confirm the
-  # supported distributions and versions with Zero Networks support before relying on them.
+  # Platform list mirrors the Zero Networks supported-OS list; Photon, Kali, Mint, Alma/Rocky/Oracle
+  # are covered via EL/Debian families. Confirm at docs.zeronetworks.com Supported Operating Systems.
   platforms:
-    - name: Ubuntu
-      versions:
-        - focal
-        - jammy
-    - name: Debian
-      versions:
-        - bullseye
-        - bookworm
     - name: EL
       versions:
+        - "6"
         - "7"
         - "8"
         - "9"
+        - "10"
+    - name: Ubuntu
+      versions:
+        - xenial
+        - bionic
+        - focal
+        - jammy
+        - noble
+    - name: Debian
+      versions:
+        - stretch
+        - buster
+        - bullseye
+        - bookworm
+        - trixie
+    - name: Fedora
+      versions:
+        - all
+    # Galaxy's SLES, opensuse and Amazon version lists do not include the supported releases
+    # (SLES/openSUSE 15, Amazon Linux 2), so those entries use "all". The supported releases
+    # are listed in README.md (Supported platforms).
+    - name: SLES
+      versions:
+        - all
+    - name: opensuse
+      versions:
+        - all
+    - name: Amazon
+      versions:
+        - all
   galaxy_tags:
     - zeronetworks
     - segmentconnector
