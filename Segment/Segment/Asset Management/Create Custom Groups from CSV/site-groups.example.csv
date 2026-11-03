@@ -1,0 +1,5 @@
+entityName,targetGroupName,newGroupDescription,parentGroup
+,Site_US,US sites (parent of Site_NewYork and Site_Boston),
+10.10.0.0/16,Site_NewYork,New York office subnets,Site_US
+10.11.0.0/16,Site_Boston,Boston office subnet and single host,Site_US
+10.40.7.25,Site_Boston,,Site_US

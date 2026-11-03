@@ -1,0 +1,10 @@
+entityName,targetGroupName,newGroupDescription,parentGroup
+10.30.0.0/24,Finance-Apps,Finance application servers,Finance-All
+FIN-DB-01,Finance-Apps,,
+,Finance-All,Finance tier (parent of Finance-Apps),
+WEB-PROD-01,Production-Web,Production web tier,
+10.20.0.0/16,Production-Web,,
+10.20.5.17,Production-Web,,
+backup.example.com,Production-Web,,
+*.corp.example.com,Production-Web,,
+Helpdesk-Tier1,Support-Access,Support team access,
