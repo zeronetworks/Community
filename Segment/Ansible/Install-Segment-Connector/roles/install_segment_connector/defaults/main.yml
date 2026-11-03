@@ -1,0 +1,46 @@
+---
+# Installation token from the Zero Networks portal. Required.
+# Never put the real value in this file or in git. Pass it with -e @secrets.yml,
+# Ansible Vault, or an environment lookup (see README.md).
+install_segment_connector_token: ""
+
+# Filename of the Segment Connector Linux installer zip. Required.
+# Place the zip in the installer/ directory next to the playbook.
+install_segment_connector_package_filename: ""
+
+# Controller-side path to the installer zip. Defaults to installer/<filename>
+# next to the playbook. Override to use a zip stored elsewhere on the controller.
+install_segment_connector_package_path: "{{ playbook_dir }}/installer/{{ install_segment_connector_package_filename }}"
+
+# Directory on the target host where the installer zip is extracted.
+install_segment_connector_staging_dir: /opt/zn-segment-connector-setup
+
+# Local user the connector runs as: "zn-user" (default) or "root".
+install_segment_connector_run_as: zn-user
+
+# Pass -force to the installer (for example, to replace an existing assetId).
+install_segment_connector_force: false
+
+# Existing asset ID to attach this host to (passed as -assetId). Optional.
+install_segment_connector_asset_id: ""
+
+# Reinstall when the service is already present. When false, an existing
+# installation is left untouched. When true, the installer runs again and
+# handles re-registration itself.
+install_segment_connector_reinstall: false
+
+# Create a new asset in the portal for this host if none exists (passes -allow-create).
+# Only needed for hosts that are not yet registered in the portal.
+install_segment_connector_enroll_asset: false
+
+# FQDN used for the new asset (passes -asset-fqdn). Must be a fully qualified
+# domain name containing a dot. Ignored when install_segment_connector_with_static_ip is true.
+install_segment_connector_asset_fqdn: "{{ ansible_facts.fqdn }}"
+
+# Display name for the new asset (passes -name). Requires enroll_asset.
+# Required when with_static_ip is true.
+install_segment_connector_asset_name: ""
+
+# Enroll with a static IP instead of an FQDN (passes -with-static-ip, which
+# replaces -asset-fqdn). Requires enroll_asset and asset_name.
+install_segment_connector_with_static_ip: false

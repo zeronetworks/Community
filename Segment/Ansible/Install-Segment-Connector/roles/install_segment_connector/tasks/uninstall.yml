@@ -1,0 +1,114 @@
+---
+# Uninstall the Segment Connector from the target host.
+# Use with: ansible.builtin.import_role (tasks_from: uninstall).
+
+- name: Fail if installation token is not set
+  ansible.builtin.assert:
+    that:
+      - install_segment_connector_token | default('') | string | trim | length > 0
+    fail_msg: "install_segment_connector_token must be set to an installation token from the Zero Networks portal."
+
+- name: Look for an existing installer binary in the staging directory
+  ansible.builtin.find:
+    paths: "{{ install_segment_connector_staging_dir }}"
+    patterns: segment-connector-linux-installer
+    recurse: true
+    file_type: file
+  register: install_segment_connector_binary_find
+
+- name: Extract the installer package when the staging directory does not have it
+  when: install_segment_connector_binary_find.files | length == 0
+  block:
+    - name: Check the installer zip exists on the controller
+      ansible.builtin.stat:
+        path: "{{ install_segment_connector_package_path }}"
+      delegate_to: localhost
+      become: false
+      register: install_segment_connector_package_stat
+
+    - name: Fail with guidance if the installer zip is missing
+      ansible.builtin.fail:
+        msg: >-
+          Installer package not found on the controller at {{ install_segment_connector_package_path }}.
+          Uninstall needs the same installer zip that was used to install. Place it in the installer/
+          directory, or set install_segment_connector_package_path to its full path.
+      when: not (install_segment_connector_package_stat.stat.exists | bool)
+
+    - name: Ensure unzip is installed
+      ansible.builtin.package:
+        name: unzip
+        state: present
+
+    - name: Create staging directory
+      ansible.builtin.file:
+        path: "{{ install_segment_connector_staging_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Extract installer package to staging directory
+      ansible.builtin.unarchive:
+        src: "{{ install_segment_connector_package_path }}"
+        dest: "{{ install_segment_connector_staging_dir }}"
+        remote_src: false
+
+    - name: Find the segment-connector-linux-installer binary
+      ansible.builtin.find:
+        paths: "{{ install_segment_connector_staging_dir }}"
+        patterns: segment-connector-linux-installer
+        recurse: true
+        file_type: file
+      register: install_segment_connector_binary_find
+
+- name: Fail if the installer binary is not available
+  ansible.builtin.assert:
+    that:
+      - install_segment_connector_binary_find.files | length > 0
+    fail_msg: "segment-connector-linux-installer was not found in the staging directory or the extracted package."
+
+- name: Record installer binary path
+  ansible.builtin.set_fact:
+    install_segment_connector_binary: "{{ install_segment_connector_binary_find.files[0].path }}"
+
+- name: Ensure installer binary is executable
+  ansible.builtin.file:
+    path: "{{ install_segment_connector_binary }}"
+    mode: "0755"
+
+- name: Run the uninstall
+  block:
+    - name: Write installation token to a restricted file
+      ansible.builtin.copy:
+        content: "{{ install_segment_connector_token | replace('\\r\\n', '\\n') | replace('\\r', '\\n') }}"
+        dest: "{{ install_segment_connector_staging_dir }}/token"
+        mode: "0600"
+      no_log: true
+
+    - name: Build uninstall command arguments
+      ansible.builtin.set_fact:
+        install_segment_connector_uninstall_args: "{{ ['-force'] if install_segment_connector_force | bool else [] }}"
+
+    - name: Run the silent uninstall
+      # The token is read from the restricted file inside the shell, so it is not
+      # part of the task arguments or the printed command.
+      ansible.builtin.shell: |
+        token="$(cat {{ (install_segment_connector_staging_dir ~ '/token') | quote }})"
+        {{ install_segment_connector_binary | quote }} -uninstall -token "$token" {{ install_segment_connector_uninstall_args | map('quote') | join(' ') }}
+      args:
+        chdir: "{{ install_segment_connector_binary | dirname }}"
+      changed_when: true
+      register: install_segment_connector_uninstall_result
+
+    - name: Show uninstall output
+      ansible.builtin.debug:
+        var: install_segment_connector_uninstall_result.stdout_lines
+
+  always:
+    - name: Remove token file
+      ansible.builtin.file:
+        path: "{{ install_segment_connector_staging_dir }}/token"
+        state: absent
+
+    - name: Remove staging directory
+      ansible.builtin.file:
+        path: "{{ install_segment_connector_staging_dir }}"
+        state: absent

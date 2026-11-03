@@ -1,0 +1,174 @@
+---
+# Install or reinstall the Segment Connector on the target host.
+
+- name: Fail if installation token is not set
+  ansible.builtin.assert:
+    that:
+      - install_segment_connector_token | default('') | string | trim | length > 0
+    fail_msg: "install_segment_connector_token must be set to an installation token from the Zero Networks portal."
+
+- name: Fail if package filename is not set
+  ansible.builtin.assert:
+    that:
+      - install_segment_connector_package_filename | default('') | length > 0
+    fail_msg: "install_segment_connector_package_filename must be set to the filename of the Segment Connector installer zip (placed in installer/)."
+
+- name: Fail if run-as user is invalid
+  ansible.builtin.assert:
+    that:
+      - install_segment_connector_run_as in ['root', 'zn-user']
+    fail_msg: "install_segment_connector_run_as must be 'zn-user' or 'root'."
+
+- name: Validate enrollment options
+  ansible.builtin.assert:
+    that:
+      - "not (install_segment_connector_asset_name | length > 0 and not install_segment_connector_enroll_asset)"
+      - "not (install_segment_connector_with_static_ip and not install_segment_connector_enroll_asset)"
+      - "not (install_segment_connector_with_static_ip and install_segment_connector_asset_name | length == 0)"
+    fail_msg: >-
+      Invalid enrollment options. install_segment_connector_asset_name requires
+      install_segment_connector_enroll_asset=true. install_segment_connector_with_static_ip
+      requires both install_segment_connector_enroll_asset=true and a non-empty
+      install_segment_connector_asset_name.
+
+- name: Validate the enrollment FQDN
+  ansible.builtin.assert:
+    that:
+      - "install_segment_connector_asset_fqdn | default('') | length > 0"
+      - "'.' in (install_segment_connector_asset_fqdn | default(''))"
+      - "install_segment_connector_asset_fqdn | default('') is match('^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?([.][A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+$')"
+    fail_msg: >-
+      install_segment_connector_asset_fqdn is not a valid fully qualified domain name
+      ('{{ install_segment_connector_asset_fqdn | default('') }}'). Set it explicitly, for
+      example install_segment_connector_asset_fqdn=connector01.example.com, or use
+      install_segment_connector_with_static_ip=true with install_segment_connector_asset_name.
+  when:
+    - install_segment_connector_enroll_asset | bool
+    - not (install_segment_connector_with_static_ip | bool)
+
+- name: Check whether the Segment Connector service is already present
+  ansible.builtin.service_facts:
+
+- name: Record whether the Segment Connector service is present
+  ansible.builtin.set_fact:
+    install_segment_connector_present: "{{ 'zn-segment-connector.service' in (ansible_facts.services | default({})) }}"
+
+- name: Skip installation when the Segment Connector is already installed
+  ansible.builtin.debug:
+    msg: >-
+      zn-segment-connector is already installed on {{ inventory_hostname }}. Skipping.
+      Set install_segment_connector_reinstall=true to run the installer again.
+  when:
+    - install_segment_connector_present | bool
+    - not (install_segment_connector_reinstall | bool)
+
+- name: Install or reinstall the Segment Connector
+  when:
+    - install_segment_connector_reinstall | bool or not (install_segment_connector_present | bool)
+  block:
+    - name: Check the installer zip exists on the controller
+      ansible.builtin.stat:
+        path: "{{ install_segment_connector_package_path }}"
+      delegate_to: localhost
+      become: false
+      register: install_segment_connector_package_stat
+
+    - name: Fail with guidance if the installer zip is missing
+      ansible.builtin.fail:
+        msg: >-
+          Installer package not found on the controller at {{ install_segment_connector_package_path }}.
+          Download the Segment Connector Linux installer zip from the Zero Networks portal
+          (Settings > Segment > Segment Connector), place it in the installer/ directory next to
+          the playbook, and set install_segment_connector_package_filename to its filename.
+          You can also set install_segment_connector_package_path to its full path.
+      when: not (install_segment_connector_package_stat.stat.exists | bool)
+
+    - name: Ensure unzip is installed
+      ansible.builtin.package:
+        name: unzip
+        state: present
+
+    - name: Create staging directory
+      ansible.builtin.file:
+        path: "{{ install_segment_connector_staging_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Extract installer package to staging directory
+      ansible.builtin.unarchive:
+        src: "{{ install_segment_connector_package_path }}"
+        dest: "{{ install_segment_connector_staging_dir }}"
+        remote_src: false
+
+    - name: Find the segment-connector-linux-installer binary
+      ansible.builtin.find:
+        paths: "{{ install_segment_connector_staging_dir }}"
+        patterns: segment-connector-linux-installer
+        recurse: true
+        file_type: file
+      register: install_segment_connector_binary_find
+
+    - name: Fail if the installer binary is missing from the package
+      ansible.builtin.assert:
+        that:
+          - install_segment_connector_binary_find.files | length > 0
+        fail_msg: "segment-connector-linux-installer was not found in the extracted package. Check that the zip is the Linux installer from the portal."
+
+    - name: Record installer binary path
+      ansible.builtin.set_fact:
+        install_segment_connector_binary: "{{ install_segment_connector_binary_find.files[0].path }}"
+
+    - name: Ensure installer binary is executable
+      ansible.builtin.file:
+        path: "{{ install_segment_connector_binary }}"
+        mode: "0755"
+
+    - name: Write installation token to a restricted file
+      ansible.builtin.copy:
+        content: "{{ install_segment_connector_token | replace('\\r\\n', '\\n') | replace('\\r', '\\n') }}"
+        dest: "{{ install_segment_connector_staging_dir }}/token"
+        mode: "0600"
+      no_log: true
+
+    - name: Build enrollment arguments
+      ansible.builtin.set_fact:
+        install_segment_connector_enroll_args: >-
+          {{
+            (
+              ['-allow-create']
+              + (['-with-static-ip'] if install_segment_connector_with_static_ip | bool
+                 else ['-asset-fqdn', install_segment_connector_asset_fqdn])
+              + (['-name', install_segment_connector_asset_name] if install_segment_connector_asset_name | length > 0 else [])
+            ) if install_segment_connector_enroll_asset | bool else []
+          }}
+
+    - name: Build installer command arguments
+      ansible.builtin.set_fact:
+        install_segment_connector_args: >-
+          {{
+            ['-run-as', install_segment_connector_run_as]
+            + (['-force'] if install_segment_connector_force | bool else [])
+            + (['-assetId', install_segment_connector_asset_id] if install_segment_connector_asset_id | length > 0 else [])
+            + install_segment_connector_enroll_args
+          }}
+
+    - name: Run the silent installation
+      # The token is read from the restricted file inside the shell, so it is not
+      # part of the task arguments or the printed command.
+      ansible.builtin.shell: |
+        token="$(cat {{ (install_segment_connector_staging_dir ~ '/token') | quote }})"
+        {{ install_segment_connector_binary | quote }} -install -token "$token" {{ install_segment_connector_args | map('quote') | join(' ') }}
+      args:
+        chdir: "{{ install_segment_connector_binary | dirname }}"
+      changed_when: true
+      register: install_segment_connector_result
+
+    - name: Show installation output
+      ansible.builtin.debug:
+        var: install_segment_connector_result.stdout_lines
+
+  always:
+    - name: Remove token file
+      ansible.builtin.file:
+        path: "{{ install_segment_connector_staging_dir }}/token"
+        state: absent

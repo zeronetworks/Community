@@ -1,0 +1,29 @@
+---
+galaxy_info:
+  role_name: install_segment_connector
+  author: Zero Networks Community
+  description: Installs, reinstalls or uninstalls the Zero Networks Segment Connector (Linux) using the installer zip from the Zero Networks portal.
+  license: MIT
+  min_ansible_version: "2.12"
+  # The Segment Connector installer does not restrict the distribution it runs on.
+  # This list reflects the distributions the role was written for. Confirm the
+  # supported distributions and versions with Zero Networks support before relying on them.
+  platforms:
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+    - name: EL
+      versions:
+        - "7"
+        - "8"
+        - "9"
+  galaxy_tags:
+    - zeronetworks
+    - segmentconnector
+
+dependencies: []
