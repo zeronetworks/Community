@@ -23,6 +23,7 @@ anything.
 
 -SiteGroups enforces the Zero Networks Sites layout: group names must start with Site_,
 leaf groups may contain only subnets, and parent groups may contain only child Site_ groups.
+It also writes a Markdown site hierarchy map after the rules pass. See SITE-GROUPS.md.
 
 The API key is read from -ApiKey or prompted for as a secure string. It is never written to
 the console or to verbose output.
@@ -48,10 +49,11 @@ Skip member rows that cannot be resolved (missing or ambiguous names) instead of
 
 .PARAMETER SiteGroups
 Validate the CSV against the Sites layout rules before any change is made. Bare IP addresses are
-converted to /32 (IPv4) or /128 (IPv6).
+converted to /32 (IPv4) or /128 (IPv6). A Markdown hierarchy map is written in dry runs and real
+runs; see SITE-GROUPS.md for the rules, the workflow and the map layout.
 
 .PARAMETER SiteMapPath
-Markdown file for the site hierarchy map. Used only with -SiteGroups; the map is always written in that mode. Without this parameter the file is site-hierarchy-<yyyyMMdd-HHmmss>.md in the current directory. An explicit path is overwritten, and its folder is created if needed. Not allowed without -SiteGroups or with a removal switch. Its map is written after validation, both for -WhatIf/-DryRun (statuses Planned and Existing) and for a real run (statuses Created, Updated, Unchanged and Failed).
+Markdown file for the site hierarchy map. Used only with -SiteGroups; a map is written in that mode once validation passes (not when validation fails or the confirmation prompt is declined). Without this parameter the file is site-hierarchy-<yyyyMMdd-HHmmss>.md in the current directory. An explicit path is overwritten, and its folder is created if needed. Not allowed without -SiteGroups or with a removal switch. Its map is written after validation, both for -WhatIf/-DryRun (statuses Planned and Existing) and for a real run (statuses Created, Updated, Unchanged and Failed).
 
 .PARAMETER RemoveMembers
 Remove the listed entityName members from each targetGroupName. Groups are kept. The
@@ -62,8 +64,8 @@ Remove every member from each targetGroupName, unlink the group from its parent 
 delete the group. The entityName column is used only to determine deletion order.
 
 .PARAMETER Force
-Skip the confirmation prompt for the removal modes. Without -Force, a non-interactive session
-aborts.
+Skip the confirmation prompt (create mode and both removal modes). Without -Force, a non-interactive
+session aborts.
 
 .PARAMETER DryRun
 Alias-style switch equivalent to -WhatIf: runs lookups and validation, prints the plan, and makes no changes.
@@ -686,7 +688,7 @@ function Get-ZNSiteViolations {
 function Get-ZNSiteMapModel {
     <#
     .SYNOPSIS
-        Builds the graph model behind the site hierarchy map. Pure: makes no network calls.
+        Builds the hierarchy model behind the site hierarchy map. Pure: makes no network calls.
     .PARAMETER Nodes
         Group node objects in CSV order, with Name, ParentName, Resolved, Status and ExistingId.
         Status is optional; when empty it is derived as Existing (group found in the tenant) or Planned.
