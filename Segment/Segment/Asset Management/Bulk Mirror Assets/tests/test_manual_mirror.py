@@ -1467,10 +1467,11 @@ def test_rule_columns_headers_follow_direction() -> None:
     assert outbound["localEntityId"] == "Original Source Asset ID (rule owner)"
     assert outbound["originalRemoteIds"] == "Original Destination Asset IDs"
     assert outbound["newRemoteNames"] == "New Destination Asset Names"
-    # The new rule owner is never a separate column.
-    for labels in (inbound, outbound):
-        assert not any(label.startswith("New ") and "(rule owner)" in label for label in labels.values())
-        assert "newLocalEntityId" not in labels
+    # The new rule owner (ID and name) is shown next to the original owner.
+    assert inbound["newLocalEntityId"] == "New Destination Asset ID (rule owner)"
+    assert inbound["newLocalEntityName"] == "New Destination Asset Name (rule owner)"
+    assert outbound["newLocalEntityId"] == "New Source Asset ID (rule owner)"
+    assert outbound["newLocalEntityName"] == "New Source Asset Name (rule owner)"
 
 
 def test_rule_columns_exact_order_source_columns_first() -> None:
@@ -1481,9 +1482,11 @@ def test_rule_columns_exact_order_source_columns_first() -> None:
         "Original Source Asset IDs", "Original Source Asset Names",
         "New Source Asset IDs", "New Source Asset Names",
         "Original Destination Asset ID (rule owner)", "Original Destination Asset Name (rule owner)",
+        "New Destination Asset ID (rule owner)", "New Destination Asset Name (rule owner)",
     ] + common_tail
     assert [label for _, label in mma.rule_columns("outbound")] == common_head + [
         "Original Source Asset ID (rule owner)", "Original Source Asset Name (rule owner)",
+        "New Source Asset ID (rule owner)", "New Source Asset Name (rule owner)",
         "Original Destination Asset IDs", "Original Destination Asset Names",
         "New Destination Asset IDs", "New Destination Asset Names",
     ] + common_tail
@@ -1569,16 +1572,24 @@ def test_planned_rule_rows_carry_new_names_and_ids_and_skipped_rows_are_blank() 
     remote_row = mma._verbose_rule_row(remote_actions[0])
     assert remote_row["status"] == mma.STATUS_LABELS["planned"]
     assert remote_row["newRemoteNames"] == "DstHost"
-    assert "newLocalEntityId" not in remote_row
+    # Remote-side copy: the rule owner is unchanged.
+    assert remote_row["newLocalEntityId"] == "a:w:Y"
+    assert remote_row["newLocalEntityName"] == remote_row["localEntityName"]
 
     owner_row = mma._verbose_rule_row(owner_actions[0])
     assert owner_row["newRemoteIds"] == "a:w:X; a:w:Y"
     assert owner_row["newRemoteNames"] == "XHost; a:w:Y"
+    # Owner copy: the target becomes the rule owner, shown by id and by name.
+    assert owner_row["localEntityId"] == SRC
+    assert owner_row["newLocalEntityId"] == DST
+    assert owner_row["newLocalEntityName"] == "DstHost"
 
     skipped_row = mma._verbose_rule_row(skipped_actions[0])
     assert skipped_row["status"] == mma.STATUS_LABELS["skipped_group_inherited"]
     assert skipped_row["newRemoteNames"] == ""
     assert skipped_row["newRemoteIds"] == ""
+    assert skipped_row["newLocalEntityId"] == ""
+    assert skipped_row["newLocalEntityName"] == ""
 
 
 def test_verbose_inbound_and_outbound_files_use_direction_headers(tmp_path: Path) -> None:

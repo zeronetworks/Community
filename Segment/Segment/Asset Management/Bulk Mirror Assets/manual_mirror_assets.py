@@ -2793,6 +2793,8 @@ def rule_columns(direction: str) -> tuple[tuple[str, str], ...]:
     owner_columns = (
         ("localEntityId", f"Original {own} Asset ID (rule owner)"),
         ("localEntityName", f"Original {own} Asset Name (rule owner)"),
+        ("newLocalEntityId", f"New {own} Asset ID (rule owner)"),
+        ("newLocalEntityName", f"New {own} Asset Name (rule owner)"),
     )
     remote_columns = (
         ("originalRemoteIds", f"Original {other} Asset IDs"),
@@ -2897,10 +2899,24 @@ def _new_remote_names(action: Action) -> str:
     return _cell([names.get(rid, rid) for rid in meta.get("newRemoteIds") or []])
 
 
+def _new_owner_columns(action: Action) -> tuple[str, str]:
+    """(id, name) of the asset that will own the created rule (blank unless planned).
+
+    On an owner copy the target becomes the owner, so its id maps to the target name.
+    On a remote-side copy the owner is unchanged and keeps its original name.
+    """
+    if action.body is None or action.status != "planned":
+        return "", ""
+    new_id = _cell(action.body.get("localEntityId"))
+    if new_id == action.pair.dst_id:
+        return new_id, action.pair.dst_name
+    return new_id, _cell(action.meta.get("localEntityName")) or new_id
+
+
 def _verbose_rule_row(action: Action) -> dict[str, str]:
     """One verbose rule-file row for a rule action (keys are internal; values are readable)."""
     meta = action.meta
-    planned = action.body is not None and action.status == "planned"
+    new_owner_id, new_owner_name = _new_owner_columns(action)
     return {
         "status": status_label(action.status, action.category),
         "reason": action.reason,
@@ -2909,6 +2925,8 @@ def _verbose_rule_row(action: Action) -> dict[str, str]:
         "ruleState": rule_state_label(meta.get("ruleState")),
         "localEntityId": _cell(meta.get("localEntityId")),
         "localEntityName": _cell(meta.get("localEntityName")),
+        "newLocalEntityId": new_owner_id,
+        "newLocalEntityName": new_owner_name,
         "originalRemoteIds": _cell(meta.get("originalRemoteIds")),
         "originalRemoteNames": _cell(meta.get("originalRemoteNames")),
         "newRemoteIds": _cell(meta.get("newRemoteIds")),
