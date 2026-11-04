@@ -424,7 +424,7 @@ def test_paginate_offset_stops_on_short_page() -> None:
 def test_precheck_fails_on_same_asset_inactive_target_and_ot() -> None:
     assets = {
         SRC: asset(SRC),
-        DST: asset(DST, inactiveReason="retired"),
+        DST: asset(DST, inactiveReason=2),
         "a:o:OTASSET1": asset("a:o:OTASSET1"),
     }
 
@@ -818,7 +818,7 @@ def test_identity_mfa_body_owner_and_remote_copies() -> None:
 def test_identity_mfa_failure_is_isolated_from_other_categories() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if "identity/reactive-policies" in route_path(request):
-            return httpx.Response(404, json={"error": "gone"})
+            return httpx.Response(400, json={"error": "bad request"})
         return json_ok([])
 
     opts = secondary_opts(skip_mfa=True, skip_connect=True)
@@ -1136,3 +1136,30 @@ def test_secondary_pipeline_is_read_only_in_dry_run() -> None:
     assert {a.method for a in actions if a.status == "planned"} <= {"POST", "PUT"}
     assert any(a.category == "connect_role" and a.method == "PUT" for a in actions)
     assert not any(a.status == "failed" for a in actions)
+
+
+def test_target_inactive_treats_reason_3_none_as_active() -> None:
+    """inactiveReason 3 is the enum value for "None" and is returned for active assets."""
+    assert mma.target_inactive({"inactiveReason": 3}) is False
+    assert mma.target_inactive({"inactiveReason": None}) is False
+    assert mma.target_inactive({}) is False
+    for reason in (1, 2, 4, 5, 6):
+        assert mma.target_inactive({"inactiveReason": reason}) is True
+    assert mma.target_inactive({"inactiveReason": 3, "inactiveSince": 1700000000000}) is True
+
+
+def test_run_category_404_is_skipped_unavailable_not_failed() -> None:
+    """A 404 from a category's list endpoint means the feature is absent, not an error."""
+    request = httpx.Request("GET", "https://zn.test/api/v1/settings/connect/user-access-config")
+
+    async def collector() -> list[Any]:
+        raise httpx.HTTPStatusError("nf", request=request, response=httpx.Response(404, request=request))
+
+    actions = asyncio.run(mma._run_category("connect_role", PAIR, collector))
+    assert [a.status for a in actions] == ["skipped_unavailable"]
+
+    async def forbidden() -> list[Any]:
+        raise httpx.HTTPStatusError("fb", request=request, response=httpx.Response(403, request=request))
+
+    actions = asyncio.run(mma._run_category("connect_role", PAIR, forbidden))
+    assert [a.status for a in actions] == ["failed"]

@@ -694,9 +694,17 @@ def is_ot_or_iot(asset_id: str) -> bool:
     return asset_id.startswith(("a:o", "a:t"))
 
 
+INACTIVE_REASON_NONE = 3  # inactiveReason enum value meaning "None" (asset is active)
+
+
 def target_inactive(asset: dict[str, Any]) -> bool:
-    """Return True if an asset is inactive (inactiveSince set or inactiveReason non-null)."""
-    return bool(asset.get("inactiveSince")) or asset.get("inactiveReason") is not None
+    """Return True if an asset is inactive.
+
+    inactiveReason is an enum where 3 means "None" (active) and is returned for
+    active assets, so only the real reasons (1, 2, 4, 5, 6) count as inactive.
+    """
+    reason = asset.get("inactiveReason")
+    return bool(asset.get("inactiveSince")) or (reason is not None and reason != INACTIVE_REASON_NONE)
 
 
 def is_ad_asset(asset: dict[str, Any]) -> bool:
@@ -1414,6 +1422,16 @@ async def _run_category(
     """Run one category collector; a failure becomes a failed row and does not stop others."""
     try:
         return await collector()
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 404:
+            # Feature not present on this tenant (e.g. Connect not enabled): not an error.
+            logger.info("%s skipped for %s -> %s: endpoint not available on this tenant (404)",
+                        category, pair.src_id, pair.dst_id)
+            return [Action(pair, category, pair.src_id, "skip", status="skipped_unavailable",
+                           reason=f"endpoint not available on this tenant (404): {exc.request.url.path}")]
+        logger.exception("%s planning failed for %s -> %s", category, pair.src_id, pair.dst_id)
+        return [Action(pair, category, pair.src_id, "collect", status="failed",
+                       reason=f"unexpected error: {type(exc).__name__}: {exc}")]
     except Exception as exc:  # noqa: BLE001 - isolated per category
         logger.exception("%s planning failed for %s -> %s", category, pair.src_id, pair.dst_id)
         return [Action(pair, category, pair.src_id, "collect", status="failed",
