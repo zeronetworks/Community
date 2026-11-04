@@ -4,6 +4,26 @@ Bulk-validate and apply Zero Networks asset mirroring relationships from a CSV.
 
 > **Note:** This tool only supports IT assets. OT/IoT assets are not supported, though support could be added if needed.
 
+## Table of contents
+
+- [Bulk mirror assets (`mirror_assets.py`)](#mirroring-prerequisites)
+  - [Mirroring prerequisites](#mirroring-prerequisites)
+  - [What mirroring copies](#what-mirroring-copies)
+  - [Setup](#setup)
+  - [Usage](#usage)
+  - [Output](#output)
+- [Manual mirroring (`manual_mirror_assets.py`)](#manual-mirroring-manual_mirror_assetspy)
+  - [What it copies](#what-it-copies)
+  - [How it differs from the native mirror](#how-it-differs-from-the-native-mirror)
+  - [Usage](#usage-1)
+  - [Output files](#output-files)
+  - [Verbose dry run](#verbose-dry-run)
+  - [Statuses](#statuses)
+  - [Idempotency](#idempotency)
+  - [Safety notes](#safety-notes)
+  - [Tested against a live tenant](#tested-against-a-live-tenant)
+  - [Not yet verified](#not-yet-verified)
+
 ## Mirroring prerequisites
 
 Zero Networks enforces the following rules on any mirror relationship:
@@ -148,9 +168,31 @@ The verbose folders are for review only. The plan CSV is still written as before
 
 ### Statuses
 
-`planned`, `created`, `updated`, `rolled_back`, `skipped_exists`, `skipped_state`, `skipped_pending`, `skipped_expired`, `skipped_group_inherited`, `skipped_readonly`, `skipped_conditional`, `skipped_redundant`, `skipped_derived`, `skipped_resumed`, `skipped_unavailable`, `exclusion_not_mirrored`, `incompatible_target`, `rollback_unsupported`, `failed`. Pre-checks report `ok`, `warning` or `failed`. `skipped_unavailable` means a category's endpoint returned 404, for example Connect on a tenant where it is not enabled.
+The results, state and rollback CSVs use the status codes below. The plan and verbose CSVs show the plain-language label instead.
 
-These are the codes written to the results, state and rollback CSVs. The plan and verbose CSVs show a plain-language label instead, for example "Will be created" for `planned`, "Will be added" for a group membership, and "Skipped: already on target" for `skipped_exists`.
+| Status code | Label in plan / verbose CSVs | Meaning |
+| --- | --- | --- |
+| `planned` | Will be created (group memberships: Will be added) | Dry run: the write the script would send. |
+| `created` | Created | The write succeeded: the object was created or the group membership added. |
+| `updated` | Updated | An existing object was modified instead of a new one being created. Currently only Connect (VPN) configs are reported this way; every other write, including group memberships, reports `created`. |
+| `rolled_back` | Rolled back | `--rollback` removed the object or group membership. |
+| `skipped_exists` | Skipped: already on target | An identical object, or one carrying this rule's `zn-mirror` marker, is already on the target (or the API answered 409). Also: the target is already in the group. |
+| `skipped_group_inherited` | Skipped: matched only through group membership | The source reaches the rule only through a group, so the rule is not copied. The target gets it by joining that group. |
+| `skipped_readonly` | Skipped: read-only group (cannot be changed through the API) | AD, system, OT, OU and similar groups cannot be changed through the API. |
+| `skipped_conditional` | Skipped: group membership is rule-based | The group's membership is defined by conditions, so members cannot be added manually. The target joins it only if it matches. |
+| `skipped_redundant` | Skipped: implied by a more specific group | A more specific group in the list already implies membership. |
+| `skipped_state` | Skipped: rule is deleted, rejected or excluded | The source rule is in a state that is not copied. |
+| `skipped_pending` | Skipped: rule is pending review | Pending-review rules are only copied with `--include-pending` (created disabled). |
+| `skipped_expired` | Skipped: rule has expired | The rule's expiry is in the past. |
+| `skipped_unavailable` | Skipped: feature not available on this tenant | A category's endpoint returned 404, for example Connect on a tenant where it is not enabled. |
+| `skipped_derived` | Skipped: rule is derived from another rule | A switch rule that was auto-created from a network rule. |
+| `skipped_resumed` | Skipped: already done in an earlier run | `--resume` found this write recorded as done in the state file. |
+| `exclusion_not_mirrored` | Not mirrored: source is in the rule's exclusion list | The source is excluded from a rule it does not own, so the rule is left alone. |
+| `incompatible_target` | Skipped: not applicable to this target | The category does not apply to this target: identity needs an AD or Azure AD target, RPC needs a Windows target. |
+| `rollback_unsupported` | Rollback not supported | Connect changes are not reverted automatically; revert them by hand. |
+| `ok` | OK | The pre-check passed. |
+| `warning` | Warning | The pre-check passed with a note, for example a source and target with different operating systems. |
+| `failed` | Failed | The API rejected the write, or a pre-flight check or pre-check failed. The reason column has the details; pre-flight failures start with `pre-flight check:` and are never sent. |
 
 ### Idempotency
 
@@ -164,26 +206,4 @@ Before planning, the script reads the target's existing rules and policies. An o
 - AD, system and OT groups are read-only through the API, so the target cannot be added to them.
 - Original rule IDs are written into descriptions. The API caps descriptions at 100 characters; the marker is always kept and any original text is trimmed with `...` first. Descriptions written by earlier versions of this script (`[zn-mirror src-rule=... src=... dst=...]`) are still recognized when checking whether an object already exists.
 - Pre-flight checks: before anything is sent, each planned write is checked against known API limits (description length; required fields and a non-empty remote list for network rules). A write that fails is reported as `failed` with a reason starting `pre-flight check:` in the dry run and is never sent.
-- Connect updates run one at a time. Each one re-reads the config and rebuilds the body from the fresh copy, so concurrent edits are not overwritten.
 
-### Tested against a live tenant
-
-Run end to end on one source and target pair (dry run, `--apply`, re-run, rollback):
-
-- Dry run with `--verbose-dry-run`: network rules where the source is only the remote side are found (the rule listing with `entityParams` `direction=3` returns them), names resolve, and the per-pair CSVs reconcile with the plan.
-- `--apply` created inbound owner copies, inbound remote-side copies and an outbound remote-side copy. Re-running the dry run afterwards plans nothing new.
-- `--rollback` deleted the created rules, and removed a tag-group membership.
-- The API rejects descriptions over 100 characters (the script caps them), and refuses manual members on rule-based groups (the script skips them).
-
-### Not yet verified
-
-These categories and options have only been exercised against mocked responses, because the test tenant had no matching data. Review their dry-run rows before using `--apply`, or use the `--skip-*` flags to leave them out:
-
-- MFA (reactive) policies. Also confirm whether the `_entityId` listing filter matches the policy destination only or also the source assets.
-- Identity rules and identity MFA policies. The response schema does not declare `nextCursor`; the script stops with an error if a full page arrives without one.
-- RPC rules.
-- Switch rules (`--include-switch`). The spec declares `remoteEntitiesIdList` as a property but requires `remoteEntityIdsList`; the script sends `remoteEntityIdsList`. Confirm which one the API accepts.
-- External access policies (`--include-external-access`).
-- Connect (VPN) roles. The user access config `PUT` replaces the whole object; confirm the body rebuilt from the re-read config keeps every other setting. Connect changes are not rolled back automatically.
-- Pending-review objects (`--include-pending`): confirm create accepts the disabled state the script sends.
-- Block rules: only allow rules were copied in the live test (the block rules found there matched the source through group membership). Block rules take the same code path, except that `ipSecOpt` is omitted.
