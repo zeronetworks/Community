@@ -1561,13 +1561,13 @@ if ($MyInvocation.InvocationName -ne '.') {
 
         $rows = @(Import-ZNGroupCsv -Path $CsvPath)
 
-        $plan = Build-ZNPlan -Rows $rows -Mode $friendlyMode -SiteGroups:$SiteGroups -SkipResolveErrors:$SkipResolveErrors
-
         $ApiKey = Get-ZNApiKey -ApiKey $ApiKey
         $script:ApiBaseUrl = ConvertTo-ZNApiBaseUrl -PortalUrl $PortalUrl
         $script:Headers = @{ Accept = 'application/json'; Authorization = $ApiKey }
         $script:LookupCache = @{}
         Write-Host "Tenant API: $script:ApiBaseUrl (key $(Get-ZNMaskedKey -Key $ApiKey))"
+
+        $plan = Build-ZNPlan -Rows $rows -Mode $friendlyMode -SiteGroups:$SiteGroups -SkipResolveErrors:$SkipResolveErrors
 
         $exitCode = switch ($friendlyMode) {
             'Create' { Invoke-ZNCreateMode -Plan $plan -Force:$Force -Cmdlet $PSCmdlet }
