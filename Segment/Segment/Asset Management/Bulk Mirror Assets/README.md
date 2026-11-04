@@ -131,16 +131,16 @@ Rollback deletes the objects created by a results report. Run it as a dry run fi
 
 With `--verbose-dry-run`, a dry run also writes one folder per pair, `outputs/<YYYY-MM-DD>/<srcHost>_to_<dstHost>/` (for example `outputs/<YYYY-MM-DD>/srv-linux-01_to_srv-win-01/`). The host label is the short name (text before the first `.`), with characters other than letters, digits, `.`, `_` and `-` replaced by `_`. If two different pairs would share a folder, the dst asset id suffix `-<last 8 chars>` is added to the colliding names. Each folder holds six CSVs, named with the run timestamp and header-only when empty:
 
-- `inbound-allow-<ts>.csv`, `inbound-block-<ts>.csv`, `outbound-allow-<ts>.csv`, `outbound-block-<ts>.csv`: network rules, split by direction and action. Includes skipped rules with their status and reason, the copy type, the original and new remote assets (IDs and names), the asset that owns the rule, the rule state, ports, processes, services, expiry and the new rule description. Values are readable (for example "Owner copy (target becomes the rule owner)" or "Never" for no expiry; expiry dates are shown in UTC).
+- `inbound-allow-<ts>.csv`, `inbound-block-<ts>.csv`, `outbound-allow-<ts>.csv`, `outbound-block-<ts>.csv`: network rules, split by direction and action. Includes skipped rules with their status and reason, the copy type, the rule state, the original and new remote assets (IDs and names), the original asset that owns the rule, ports, processes, services, expiry and the new rule description. Source columns come first in both directions: inbound files list the source columns and then the destination (rule owner); outbound files list the source (rule owner) and then the destination columns. The new rule owner is not a separate column: on an owner copy the target becomes the owner, as the Copy Type column says. Values are readable (for example "Owner copy (target becomes the rule owner)" or "Never" for no expiry; expiry dates are shown in UTC).
 - `groups-added-<ts>.csv`: group memberships the run would add (`Group ID`, `Group Name`, `Group Type`, `HTTP Method`, `API Path`).
 - `groups-not-added-<ts>.csv`: groups that are not added, with the status and reason (read-only, already a member, or redundant).
 
 **Who owns the rule depends on the file.** Column headers are chosen per direction:
 
-| File | "Asset ID (rule owner)" column | "Original / New ... Asset IDs" columns |
+| File | "Original ... Asset ID (rule owner)" columns | "Original / New ... Asset IDs" columns |
 | --- | --- | --- |
-| `inbound-*` | `Destination Asset ID (rule owner)`: the asset the rule protects | `Source Asset IDs`: the remote list, i.e. the sources |
-| `outbound-*` | `Source Asset ID (rule owner)`: the asset the rule is written on | `Destination Asset IDs`: the remote list, i.e. the destinations |
+| `inbound-*` | `Original Destination Asset ID (rule owner)`: the asset the original rule protects | `Source Asset IDs`: the remote list, i.e. the sources |
+| `outbound-*` | `Original Source Asset ID (rule owner)`: the asset the original rule is written on | `Destination Asset IDs`: the remote list, i.e. the destinations |
 
 So in an inbound rule the local asset is the destination, not the source. The source appears only in the remote list.
 

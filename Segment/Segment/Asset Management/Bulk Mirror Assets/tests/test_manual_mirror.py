@@ -1338,7 +1338,7 @@ def test_write_verbose_reports_routes_rules_and_groups(tmp_path: Path) -> None:
     assert inbound_block["in-block-remote"]["New Source Asset IDs"] == DST
     assert inbound_block["in-block-remote"]["New Source Asset Names"] == "DstHost"
     # In an inbound rule the local asset is the destination and the rule owner stays put.
-    assert inbound_block["in-block-remote"]["New Destination Asset ID (rule owner)"] == "a:w:Y"
+    assert inbound_block["in-block-remote"]["Original Destination Asset ID (rule owner)"] == "a:w:Y"
 
     outbound_allow = ids("outbound-allow")
     assert set(outbound_allow) == {"out-allow-expired"}
@@ -1350,7 +1350,7 @@ def test_write_verbose_reports_routes_rules_and_groups(tmp_path: Path) -> None:
     outbound_block = ids("outbound-block")
     assert set(outbound_block) == {"out-block-owner"}
     assert outbound_block["out-block-owner"]["Status"] == st["planned"]
-    assert outbound_block["out-block-owner"]["Source Asset ID (rule owner)"] == SRC
+    assert outbound_block["out-block-owner"]["Original Source Asset ID (rule owner)"] == SRC
     assert outbound_block["out-block-owner"]["Original Destination Asset IDs"] == "a:w:X"
 
     added = ids("groups-added")
@@ -1461,14 +1461,32 @@ CAMEL_ID_RE = re.compile(r"\b[a-z]+Ids?\b")
 def test_rule_columns_headers_follow_direction() -> None:
     inbound = dict(mma.rule_columns("inbound"))
     outbound = dict(mma.rule_columns("outbound"))
-    assert inbound["localEntityId"] == "Destination Asset ID (rule owner)"
+    assert inbound["localEntityId"] == "Original Destination Asset ID (rule owner)"
     assert inbound["originalRemoteIds"] == "Original Source Asset IDs"
     assert inbound["newRemoteIds"] == "New Source Asset IDs"
-    assert inbound["newLocalEntityId"] == "New Destination Asset ID (rule owner)"
-    assert outbound["localEntityId"] == "Source Asset ID (rule owner)"
+    assert outbound["localEntityId"] == "Original Source Asset ID (rule owner)"
     assert outbound["originalRemoteIds"] == "Original Destination Asset IDs"
     assert outbound["newRemoteNames"] == "New Destination Asset Names"
-    assert [k for k, _ in mma.rule_columns("inbound")] == [k for k, _ in mma.rule_columns("outbound")]
+    # The new rule owner is never a separate column.
+    for labels in (inbound, outbound):
+        assert not any(label.startswith("New ") and "(rule owner)" in label for label in labels.values())
+        assert "newLocalEntityId" not in labels
+
+
+def test_rule_columns_exact_order_source_columns_first() -> None:
+    """Source columns come first in both directions (inbound: remote then owner; outbound: owner then remote)."""
+    common_head = ["Status", "Reason", "Copy Type", "Source Rule ID", "Rule State"]
+    common_tail = ["Ports", "Processes", "Services", "Expires", "New Rule Description"]
+    assert [label for _, label in mma.rule_columns("inbound")] == common_head + [
+        "Original Source Asset IDs", "Original Source Asset Names",
+        "New Source Asset IDs", "New Source Asset Names",
+        "Original Destination Asset ID (rule owner)", "Original Destination Asset Name (rule owner)",
+    ] + common_tail
+    assert [label for _, label in mma.rule_columns("outbound")] == common_head + [
+        "Original Source Asset ID (rule owner)", "Original Source Asset Name (rule owner)",
+        "Original Destination Asset IDs", "Original Destination Asset Names",
+        "New Destination Asset IDs", "New Destination Asset Names",
+    ] + common_tail
 
 
 def test_status_and_value_labels_map_and_pass_unknown_values_through() -> None:
@@ -1551,17 +1569,15 @@ def test_planned_rule_rows_carry_new_names_and_ids_and_skipped_rows_are_blank() 
     remote_row = mma._verbose_rule_row(remote_actions[0])
     assert remote_row["status"] == mma.STATUS_LABELS["planned"]
     assert remote_row["newRemoteNames"] == "DstHost"
-    assert remote_row["newLocalEntityId"] == "a:w:Y"
+    assert "newLocalEntityId" not in remote_row
 
     owner_row = mma._verbose_rule_row(owner_actions[0])
     assert owner_row["newRemoteIds"] == "a:w:X; a:w:Y"
     assert owner_row["newRemoteNames"] == "XHost; a:w:Y"
-    assert owner_row["newLocalEntityId"] == DST
 
     skipped_row = mma._verbose_rule_row(skipped_actions[0])
     assert skipped_row["status"] == mma.STATUS_LABELS["skipped_group_inherited"]
     assert skipped_row["newRemoteNames"] == ""
-    assert skipped_row["newLocalEntityId"] == ""
     assert skipped_row["newRemoteIds"] == ""
 
 
@@ -1578,10 +1594,10 @@ def test_verbose_inbound_and_outbound_files_use_direction_headers(tmp_path: Path
 
     inbound_header, _ = read_rows(folder / f"inbound-allow-{TS}.csv")
     outbound_header, _ = read_rows(folder / f"outbound-block-{TS}.csv")
-    assert "Destination Asset ID (rule owner)" in inbound_header
+    assert "Original Destination Asset ID (rule owner)" in inbound_header
     assert "Original Source Asset IDs" in inbound_header
-    assert "Source Asset ID (rule owner)" not in inbound_header  # inbound owner is the destination
-    assert "Source Asset ID (rule owner)" in outbound_header
+    assert "Original Source Asset ID (rule owner)" not in inbound_header  # inbound owner is the destination
+    assert "Original Source Asset ID (rule owner)" in outbound_header
     assert "Original Destination Asset IDs" in outbound_header
     assert inbound_header == rule_header("inbound-allow")
     assert outbound_header == rule_header("outbound-block")

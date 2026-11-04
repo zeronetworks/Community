@@ -2790,19 +2790,26 @@ def rule_columns(direction: str) -> tuple[tuple[str, str], ...]:
         own, other = "Destination", "Source"
     else:
         own, other = "Source", "Destination"
+    owner_columns = (
+        ("localEntityId", f"Original {own} Asset ID (rule owner)"),
+        ("localEntityName", f"Original {own} Asset Name (rule owner)"),
+    )
+    remote_columns = (
+        ("originalRemoteIds", f"Original {other} Asset IDs"),
+        ("originalRemoteNames", f"Original {other} Asset Names"),
+        ("newRemoteIds", f"New {other} Asset IDs"),
+        ("newRemoteNames", f"New {other} Asset Names"),
+    )
+    # Source columns come first in both directions: inbound = remote (source) then owner
+    # (destination); outbound = owner (source) then remote (destination).
+    asset_columns = (*remote_columns, *owner_columns) if direction == "inbound" else (*owner_columns, *remote_columns)
     return (
         ("status", "Status"),
         ("reason", "Reason"),
         ("copyType", "Copy Type"),
         ("sourceRuleId", "Source Rule ID"),
         ("ruleState", "Rule State"),
-        ("localEntityId", f"{own} Asset ID (rule owner)"),
-        ("localEntityName", f"{own} Asset Name (rule owner)"),
-        ("originalRemoteIds", f"Original {other} Asset IDs"),
-        ("originalRemoteNames", f"Original {other} Asset Names"),
-        ("newRemoteIds", f"New {other} Asset IDs"),
-        ("newRemoteNames", f"New {other} Asset Names"),
-        ("newLocalEntityId", f"New {own} Asset ID (rule owner)"),
+        *asset_columns,
         ("ports", "Ports"),
         ("processes", "Processes"),
         ("services", "Services"),
@@ -2906,7 +2913,6 @@ def _verbose_rule_row(action: Action) -> dict[str, str]:
         "originalRemoteNames": _cell(meta.get("originalRemoteNames")),
         "newRemoteIds": _cell(meta.get("newRemoteIds")),
         "newRemoteNames": _new_remote_names(action),
-        "newLocalEntityId": _cell(action.body.get("localEntityId")) if planned else "",
         "ports": _cell(meta.get("ports")),
         "processes": _cell(meta.get("processes")),
         "services": _cell(meta.get("services")),
