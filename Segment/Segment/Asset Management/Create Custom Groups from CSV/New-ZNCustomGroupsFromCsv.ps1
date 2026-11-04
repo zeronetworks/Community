@@ -8,7 +8,9 @@ subnet, IP, FQDN, or wildcard domain) to a target custom group. Groups that do n
 are reused and only missing members are added, so the script is safe to re-run. Parent groups
 can be declared with parentGroup, which nests the target group under the parent.
 
-The whole CSV is resolved and validated before anything is written: every entityName is
+Members can be given as an entityName (looked up by name) or, optionally, as an entityId (a tenant
+ID that is checked directly and takes precedence over entityName when both are present).
+The whole CSV is resolved and validated before anything is written: every entityName or entityId is
 classified and looked up, parent and member group references are checked, dependencies are
 ordered (children before parents) and cycles are rejected. Any unresolvable entity stops the run
 unless -SkipResolveErrors is given.
@@ -27,8 +29,12 @@ the console or to verbose output.
 
 .PARAMETER CsvPath
 Path to the CSV file. Required columns: entityName, targetGroupName, newGroupDescription,
-parentGroup. Each row adds one member (entityName) to targetGroupName. A row with an empty
-entityName only defines the group.
+parentGroup. Each row adds one member to targetGroupName. A row with an empty entityName and
+an empty entityId only defines the group. The optional entityId column holds the tenant ID of
+the member (for example a:x:xxxxxxxx or b:120a14000010). When entityId is set it is used
+instead of entityName, which is then ignored for resolution (a warning is printed if the two
+refer to different entities). When entityId is empty the row resolves by entityName as before.
+The column may be left out of the CSV entirely.
 
 .PARAMETER PortalUrl
 Tenant portal host, for example mycompany-admin.zeronetworks.com. A leading scheme, trailing
@@ -72,7 +78,8 @@ Alias-style switch equivalent to -WhatIf: runs lookups and validation, prints th
 Requires PowerShell 7.0 or later.
 Endpoints: POST groups/custom, PUT and DELETE groups/custom/{id}/members, GET groups/custom/{id}/members,
 DELETE groups/custom/{id}, GET assets, groups/custom and groups with _filters on name, and
-GET groups/custom/member-candidates for user accounts and IP aliases.
+GET groups/custom/member-candidates for user accounts and IP aliases. entityId checks use GET assets
+(assetId filter), GET groups (groupId), GET users (userId) and GET ip-aliases/{id}.
 Only targetGroupName and parentGroup must be custom groups; entityName may be any entity kind.
 Exit code 0 on success, 1 if any failure occurred or the run stopped on an error.
 #>
@@ -242,6 +249,46 @@ function ConvertTo-ZNSubnetId {
     return '{0}{1}{2:x2}' -f $typeCode, $hex, $net.Prefix
 }
 
+function ConvertFrom-ZNSubnetId {
+    <#
+    .SYNOPSIS
+        Decodes a Zero Networks IPv4 or IPv6 subnet member ID into an address and prefix.
+    .PARAMETER Id
+        Subnet ID, for example b:120a14000010 (10.20.0.0/16) or b:15 plus 32 hex digits and a 2-digit prefix (IPv6).
+    .OUTPUTS
+        PSCustomObject with Family, Prefix, Address and Display (address/prefix, for example 10.20.0.0/16 or 10.20.5.17/32).
+    .NOTES
+        Inverse of ConvertTo-ZNSubnetId. Throws on malformed IDs or a prefix longer than the address family allows.
+    #>
+    param([Parameter(Mandatory = $true)][string]$Id)
+
+    if ($Id -cmatch '^b:12([0-9a-f]{8})([0-9a-f]{2})$') {
+        $family = 'IPv4'; $maxPrefix = 32; $hexAddress = $Matches[1]; $hexPrefix = $Matches[2]
+    }
+    elseif ($Id -cmatch '^b:15([0-9a-f]{32})([0-9a-f]{2})$') {
+        $family = 'IPv6'; $maxPrefix = 128; $hexAddress = $Matches[1]; $hexPrefix = $Matches[2]
+    }
+    else {
+        throw "'$Id' is not a subnet ID (expected b:12 plus 10 hex digits for IPv4, or b:15 plus 34 hex digits for IPv6)."
+    }
+
+    $prefix = [Convert]::ToInt32($hexPrefix, 16)
+    if ($prefix -gt $maxPrefix) { throw "'$Id' has prefix /$prefix, which is invalid for $family (must be 0-$maxPrefix)." }
+
+    $bytes = [byte[]]::new($hexAddress.Length / 2)
+    for ($i = 0; $i -lt $bytes.Length; $i++) {
+        $bytes[$i] = [Convert]::ToByte($hexAddress.Substring($i * 2, 2), 16)
+    }
+    $address = [System.Net.IPAddress]::new($bytes).ToString()
+
+    return [pscustomobject]@{
+        Family  = $family
+        Prefix  = $prefix
+        Address = $address
+        Display = "$address/$prefix"
+    }
+}
+
 function ConvertTo-ZNFqdnId {
     <#
     .SYNOPSIS
@@ -321,7 +368,9 @@ function Import-ZNGroupCsv {
     .PARAMETER Path
         Path to the CSV file.
     .OUTPUTS
-        PSCustomObject[] with Row, EntityName, TargetGroupName, NewGroupDescription, ParentGroup.
+        PSCustomObject[] with Row, EntityName, EntityId, TargetGroupName, NewGroupDescription, ParentGroup.
+    .NOTES
+        entityId is optional: the column may be absent, and an empty cell means "use entityName".
     #>
     param([Parameter(Mandatory = $true)][string]$Path)
 
@@ -340,6 +389,8 @@ function Import-ZNGroupCsv {
     if ($missingCols.Count -gt 0) {
         throw "CSV '$Path' is missing required column(s): $($missingCols -join ', '). Required: $($required -join ', ')."
     }
+    # Optional column: absent is fine.
+    $entityIdProp = $propNames | Where-Object { $_.Trim() -ieq 'entityId' } | Select-Object -First 1
 
     $rows = [System.Collections.Generic.List[object]]::new()
     for ($i = 0; $i -lt $records.Count; $i++) {
@@ -347,6 +398,7 @@ function Import-ZNGroupCsv {
         $rowNo = $i + 1
         $values = @{}
         foreach ($req in $required) { $values[$req] = ([string]$rec.($propFor[$req])).Trim() }
+        $values['entityId'] = if ($entityIdProp) { ([string]$rec.($entityIdProp)).Trim() } else { '' }
 
         if (@($values.Values | Where-Object { $_ -ne '' }).Count -eq 0) { continue }
         if ($values['targetGroupName'] -eq '') {
@@ -356,6 +408,7 @@ function Import-ZNGroupCsv {
         $rows.Add([pscustomobject]@{
                 Row                 = $rowNo
                 EntityName          = $values['entityName']
+                EntityId            = $values['entityId']
                 TargetGroupName     = $values['targetGroupName']
                 NewGroupDescription = $values['newGroupDescription']
                 ParentGroup         = $values['parentGroup']
@@ -423,8 +476,12 @@ function New-ZNGroupModel {
                 $warnings.Add("Group '$($node.Name)': conflicting parentGroup values; using the first ('$($node.ParentName)').")
             }
         }
-        if ($r.EntityName) {
-            $node.Members.Add([pscustomobject]@{ Row = $r.Row; Text = $r.EntityName })
+        # A row has a member when entityId or entityName is set. entityId supersedes entityName for resolution.
+        # Text is the entityName when present, otherwise the entityId (used in messages and ordering).
+        if ($r.EntityName -or $r.EntityId) {
+            $memberText = if ($r.EntityName) { [string]$r.EntityName } else { [string]$r.EntityId }
+            $memberId = if ($r.EntityId) { [string]$r.EntityId } else { $null }
+            $node.Members.Add([pscustomobject]@{ Row = $r.Row; Text = $memberText; Id = $memberId; EntityName = [string]$r.EntityName })
         }
     }
 
@@ -1119,13 +1176,17 @@ function Get-ZNFilteredItems {
         Collection endpoint, for example assets or groups/custom.
     .PARAMETER Filters
         Filter objects with id and includeValues.
+    .PARAMETER ExtraQuery
+        Additional query parameters, for example showInactive=true.
     .OUTPUTS
         System.Object[] of items.
     #>
-    param([string]$Endpoint, [object[]]$Filters)
+    param([string]$Endpoint, [object[]]$Filters, [hashtable]$ExtraQuery = @{})
 
     $filterJson = ConvertTo-Json -InputObject @($Filters) -Depth 5 -Compress
-    $items = Invoke-PaginatedApiRequest -Method GET -ApiEndpoint $Endpoint -QueryParams @{ _limit = 100; _filters = $filterJson }
+    $query = @{ _limit = 100; _filters = $filterJson }
+    foreach ($k in $ExtraQuery.Keys) { $query[$k] = $ExtraQuery[$k] }
+    $items = Invoke-PaginatedApiRequest -Method GET -ApiEndpoint $Endpoint -QueryParams $query
     return @($items)
 }
 
@@ -1366,6 +1427,220 @@ function Resolve-ZNEntity {
     }
 }
 
+function Find-ZNItemsById {
+    <#
+    .SYNOPSIS
+        Finds items whose id exactly matches, using an id filter on a collection endpoint.
+    .PARAMETER Endpoint
+        Collection endpoint: assets, groups or users.
+    .PARAMETER FilterId
+        Filter name for the id: assetId, groupId or userId.
+    .PARAMETER Id
+        ID to match (case-sensitive).
+    .PARAMETER ShowInactive
+        Also return inactive items (showInactive=true). Used only to explain why an asset ID does not resolve.
+    .OUTPUTS
+        System.Object[] of unique matches.
+    .NOTES
+        Each returned item is checked against the requested ID, so an ignored filter cannot produce a false match.
+        Results are cached per endpoint, ID and showInactive setting for the length of the run.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$Endpoint,
+        [Parameter(Mandatory = $true)][string]$FilterId,
+        [Parameter(Mandatory = $true)][string]$Id,
+        [switch]$ShowInactive
+    )
+
+    $key = "byid|$Endpoint|$FilterId|$Id|$([bool]$ShowInactive)"
+    if ($script:LookupCache.ContainsKey($key)) { return $script:LookupCache[$key] }
+
+    $extra = @{}
+    if ($ShowInactive) { $extra['showInactive'] = 'true' }
+    $items = Get-ZNFilteredItems -Endpoint $Endpoint -Filters @(@{ id = $FilterId; includeValues = @($Id) }) -ExtraQuery $extra
+    $seen = @{}
+    $hits = [System.Collections.Generic.List[object]]::new()
+    foreach ($item in $items) {
+        if ([string]$item.id -cne $Id) { continue }
+        if ($seen.ContainsKey([string]$item.id)) { continue }
+        $seen[[string]$item.id] = $true
+        $hits.Add($item)
+    }
+    $result = $hits.ToArray()
+    $script:LookupCache[$key] = $result
+    return $result
+}
+
+function Find-ZNIpAliasById {
+    <#
+    .SYNOPSIS
+        Looks up one IP alias by ID with GET ip-aliases/{id}.
+    .PARAMETER Id
+        Alias ID (e:i: followed by 8 letters or digits).
+    .OUTPUTS
+        System.Object[] with zero or one alias object.
+    .NOTES
+        HTTP 404 means the alias does not exist. Other errors are thrown. Results are cached for the length of the run.
+    #>
+    param([Parameter(Mandatory = $true)][string]$Id)
+
+    $key = "alias|$Id"
+    if ($script:LookupCache.ContainsKey($key)) { return $script:LookupCache[$key] }
+
+    $found = @()
+    try {
+        $response = Invoke-ApiRequest -Method GET -ApiEndpoint "ip-aliases/$Id"
+        if ($null -ne $response) { $found = @($response) }
+    }
+    catch {
+        if ($_.Exception.Message -notmatch 'failed with HTTP 404\b') { throw }
+    }
+    $script:LookupCache[$key] = $found
+    return $found
+}
+
+function Resolve-ZNEntityId {
+    <#
+    .SYNOPSIS
+        Validates one entityId from the CSV and returns a result in the same shape as Resolve-ZNEntity.
+    .PARAMETER Id
+        The entityId text.
+    .PARAMETER Row
+        CSV row number, used in the mismatch warning.
+    .PARAMETER EntityName
+        The entityName on the same row, if any. It is never used for resolution. It only produces a warning
+        when it differs from the validated entity's real name.
+    .PARAMETER CsvGroupIds
+        Hashtable of existing target group ID to CSV group name. A group ID found here resolves to that CSV group.
+    .OUTPUTS
+        PSCustomObject with Ok, Kind (Subnet, Domain, Fqdn, Asset, Group, User, Alias), Id, Display, CsvGroup,
+        IsBare, IsCustom, Error and Warnings.
+    .NOTES
+        Format is checked against the Zero Networks entity ID patterns, then the entity is checked to exist (and to be active,
+        for assets) with a read-only GET. Subnet, FQDN and wildcard domain IDs are encoded values, so only the format is checked.
+        IP ranges (b:14, b:16) and other prefixes are rejected as unsupported.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$Id,
+        [int]$Row = 0,
+        [string]$EntityName = '',
+        [hashtable]$CsvGroupIds = @{}
+    )
+
+    $v = $Id.Trim()
+    $fail = { param($reason) [pscustomobject]@{ Ok = $false; Kind = $null; Id = $null; Display = $v; CsvGroup = $null; IsBare = $false; IsCustom = $false; Error = $reason; Warnings = @() } }
+    $ok = { param($kind, $id, $display, $csvGroup, $isCustom) [pscustomobject]@{ Ok = $true; Kind = $kind; Id = $id; Display = $display; CsvGroup = $csvGroup; IsBare = $false; IsCustom = [bool]$isCustom; Error = $null; Warnings = @() } }
+
+    # 1. Format (entity ID patterns). Case-sensitive, as the patterns are.
+    $kind = $null
+    $canonical = $v
+    $hostName = $null
+    if ($v -cmatch '^a:[a-z]:[A-Za-z0-9]{8}$') { $kind = 'Asset' }
+    elseif ($v -cmatch '^g:[a-z]:[A-Za-z0-9]{8}$') { $kind = 'Group' }
+    elseif ($v -cmatch '^u:[a-z]:[A-Za-z0-9]{8}$') { $kind = 'User' }
+    elseif ($v -cmatch '^e:i:[A-Za-z0-9]{8}$') { $kind = 'Alias' }
+    elseif (($v -cmatch '^b:12[0-9a-f]{10}$') -or ($v -cmatch '^b:15[0-9a-f]{34}$')) { $kind = 'Subnet' }
+    elseif ($v -cmatch '^b:17(.+)$') {
+        $hostName = $Matches[1].ToLowerInvariant()
+        if (-not (Test-ZNHostname -Value $hostName)) {
+            return & $fail "malformed entity ID '$v': b:17 must be followed by a valid fully qualified domain name."
+        }
+        $kind = 'Fqdn'
+        $canonical = 'b:17' + $hostName
+    }
+    elseif ($v -cmatch '^b:18\*\.(.+)$') {
+        $hostName = $Matches[1].ToLowerInvariant()
+        if (-not (Test-ZNHostname -Value $hostName)) {
+            return & $fail "malformed entity ID '$v': b:18 must be followed by *. and a valid domain name."
+        }
+        $kind = 'Domain'
+        $canonical = 'b:18*.' + $hostName
+    }
+    elseif ($v -cmatch '^a:') { return & $fail "malformed entity ID '$v': an asset ID has the form a:<letter>:<8 letters or digits>." }
+    elseif ($v -cmatch '^g:') { return & $fail "malformed entity ID '$v': a group ID has the form g:<letter>:<8 letters or digits>." }
+    elseif ($v -cmatch '^u:') { return & $fail "malformed entity ID '$v': a user account ID has the form u:<letter>:<8 letters or digits>." }
+    elseif ($v -cmatch '^e:i:') { return & $fail "malformed entity ID '$v': an IP alias ID has the form e:i:<8 letters or digits>." }
+    elseif ($v -cmatch '^b:(12|15|17|18)') { return & $fail "malformed entity ID '$v': subnet, FQDN and domain IDs must follow the encoded formats (b:12 + 10 hex digits, b:15 + 34 hex digits, b:17<fqdn>, b:18*.<domain>)." }
+    elseif ($v -cmatch '^b:') { return & $fail "unsupported entity ID type '$v': IP ranges and other b: entities are not supported. Use individual subnets instead." }
+    elseif ($v -cmatch '^[a-z]:') { return & $fail "unsupported entity ID type '$v' (prefix '$($Matches[0])'). Supported: asset, group, user account, IP alias, subnet, FQDN and wildcard domain IDs." }
+    else { return & $fail "malformed entity ID '$v'; expected a prefix such as a:, g:, u:, e:i:, or b: followed by an encoded value." }
+
+    # 2. Existence (and active state for assets). Subnet, FQDN and domain IDs have no backing object to check.
+    switch ($kind) {
+        'Asset' {
+            $hits = @(Find-ZNItemsById -Endpoint 'assets' -FilterId 'assetId' -Id $v)
+            if ($hits.Count -eq 0) {
+                $inactive = @(Find-ZNItemsById -Endpoint 'assets' -FilterId 'assetId' -Id $v -ShowInactive)
+                if ($inactive.Count -gt 0) { return & $fail "asset ID '$v' exists but is not active; only active assets can be members." }
+                return & $fail "asset ID '$v' was not found."
+            }
+            if ($hits.Count -gt 1) { return & $fail "asset ID '$v' matched $($hits.Count) assets; cannot choose one." }
+            $display = [string]$hits[0].name
+            if (-not $display) { $display = $v }
+            $result = & $ok 'Asset' $v $display $null $false
+        }
+        'Group' {
+            $hits = @(Find-ZNItemsById -Endpoint 'groups' -FilterId 'groupId' -Id $v)
+            if ($hits.Count -eq 0) { return & $fail "group ID '$v' was not found." }
+            if ($hits.Count -gt 1) { return & $fail "group ID '$v' matched $($hits.Count) groups; cannot choose one." }
+            $isCustom = $v.StartsWith('g:c:', [StringComparison]::Ordinal)
+            $display = [string]$hits[0].name
+            if (-not $display) { $display = $v }
+            if ($CsvGroupIds.ContainsKey($v)) {
+                # An existing target group of this CSV: map to the CSV node so ordering and depth stay correct.
+                $csvName = [string]$CsvGroupIds[$v]
+                $result = & $ok 'Group' $null $csvName $csvName $true
+            }
+            else {
+                $result = & $ok 'Group' $v $display $null $isCustom
+            }
+        }
+        'User' {
+            $hits = @(Find-ZNItemsById -Endpoint 'users' -FilterId 'userId' -Id $v)
+            if ($hits.Count -eq 0) { return & $fail "user account ID '$v' was not found." }
+            if ($hits.Count -gt 1) { return & $fail "user account ID '$v' matched $($hits.Count) users; cannot choose one." }
+            $display = [string]$hits[0].name
+            if (-not $display) { $display = $v }
+            $result = & $ok 'User' $v $display $null $false
+        }
+        'Alias' {
+            $hits = @(Find-ZNIpAliasById -Id $v)
+            if ($hits.Count -eq 0) { return & $fail "IP alias ID '$v' was not found." }
+            $display = [string]$hits[0].name
+            if (-not $display) { $display = $v }
+            $result = & $ok 'Alias' $v $display $null $false
+        }
+        'Subnet' {
+            try { $decoded = ConvertFrom-ZNSubnetId -Id $v }
+            catch { return & $fail "malformed entity ID '$v': $($_.Exception.Message)" }
+            $result = & $ok 'Subnet' $v $decoded.Display $null $false
+        }
+        'Fqdn' { $result = & $ok 'Fqdn' $canonical $hostName $null $false }
+        'Domain' { $result = & $ok 'Domain' $canonical ('*.' + $hostName) $null $false }
+    }
+
+    # 3. Warn when entityName (ignored for resolution) names a different entity than entityId.
+    $warn = [System.Collections.Generic.List[string]]::new()
+    $nameText = $EntityName.Trim()
+    if ($nameText) {
+        $nameInfo = Get-ZNEntityKind -Value $nameText
+        $sameEntity = if ($nameInfo.Kind -in @('Subnet', 'Domain')) {
+            [string]::Equals([string]$nameInfo.Id, [string]$result.Id, [StringComparison]::OrdinalIgnoreCase)
+        }
+        elseif ($nameInfo.IsFqdn) {
+            [string]::Equals((ConvertTo-ZNFqdnId -Name $nameText), [string]$result.Id, [StringComparison]::OrdinalIgnoreCase)
+        }
+        else {
+            [string]::Equals($nameText, [string]$result.Display, [StringComparison]::OrdinalIgnoreCase)
+        }
+        if (-not $sameEntity) {
+            $warn.Add("row ${Row}: entityName '$nameText' ignored; entityId resolves to '$($result.Display)'")
+        }
+    }
+    $result.Warnings = $warn.ToArray()
+    return $result
+}
+
 function Get-ZNGroupMemberIds {
     <#
     .SYNOPSIS
@@ -1487,8 +1762,9 @@ function Build-ZNPlan {
     .PARAMETER SkipResolveErrors
         Skip unresolvable member rows instead of throwing.
     .OUTPUTS
-        PSCustomObject with Mode, Nodes, Order (node objects in dependency order), Skipped, Warnings, Collisions
-        (name-collision notes resolved by priority, de-duplicated), MaxDepth.
+        PSCustomObject with Mode, Nodes, Order (node objects in dependency order), Skipped, Warnings (model
+        conflicts, entityId/entityName mismatch notes, depth notes), Collisions (name-collision notes resolved by
+        priority, de-duplicated), MaxDepth.
     .NOTES
         Throws with all fatal problems listed when anything would make the run unsafe. Makes only GET requests.
     #>
@@ -1506,6 +1782,8 @@ function Build-ZNPlan {
     $fatal = [System.Collections.Generic.List[string]]::new()
     $unresolved = [System.Collections.Generic.List[object]]::new()
     $collisions = [System.Collections.Generic.List[string]]::new()
+    $warnings = [System.Collections.Generic.List[string]]::new()
+    foreach ($w in $model.Warnings) { $warnings.Add($w) }
 
     $csvNames = @{}
     if ($isCreate) { foreach ($n in $order) { $csvNames[$n] = $n } }
@@ -1542,19 +1820,44 @@ function Build-ZNPlan {
 
     # 2. Resolve members (not needed for RemoveGroupsAndMembers, which only uses names for ordering).
     if ($Mode -ne 'RemoveGroupsAndMembers') {
+        # Existing target groups that are defined in the CSV, keyed by ID. A group member with one of these IDs
+        # maps back to the CSV node (Create only; removal modes never create CSV nodes).
+        $csvIdMap = @{}
+        if ($isCreate) {
+            foreach ($n in $order) {
+                if ($nodes[$n].ExistingId) { $csvIdMap[[string]$nodes[$n].ExistingId] = $n }
+            }
+        }
         foreach ($name in $order) {
             $node = $nodes[$name]
             if ($node.Missing) { continue }
             $seen = @{}
             foreach ($m in $node.Members) {
-                $res = Resolve-ZNEntity -Text $m.Text -CsvGroupNames $csvNames
-                if (-not $res.Ok) {
-                    $unresolved.Add([pscustomobject]@{ Row = $m.Row; Group = $name; Entity = $m.Text; Reason = $res.Error })
-                    continue
+                if ($m.Id) {
+                    # entityId path: no name lookups. entityName (if any) only feeds the mismatch warning.
+                    $res = Resolve-ZNEntityId -Id $m.Id -Row $m.Row -EntityName $m.EntityName -CsvGroupIds $csvIdMap
+                    $entityLabel = $m.Id
+                    if ($res.Ok) {
+                        $isSelf = ($res.CsvGroup -and $res.CsvGroup -ceq $name) -or ($res.Id -and $node.ExistingId -and $res.Id -ceq [string]$node.ExistingId)
+                        if ($isSelf) {
+                            $res = [pscustomobject]@{ Ok = $false; Error = "entityId '$($m.Id)' is the target group itself; a group cannot be a member of itself." }
+                        }
+                    }
+                    foreach ($c in @($res.Warnings)) {
+                        if ($warnings -notcontains $c) { $warnings.Add($c) }
+                    }
                 }
-                foreach ($c in @($res.Warnings)) {
-                    if ($collisions -notcontains $c) { $collisions.Add($c) }
-                    Write-Verbose "Row $($m.Row): $c."
+                else {
+                    $res = Resolve-ZNEntity -Text $m.Text -CsvGroupNames $csvNames
+                    $entityLabel = $m.Text
+                    foreach ($c in @($res.Warnings)) {
+                        if ($collisions -notcontains $c) { $collisions.Add($c) }
+                        Write-Verbose "Row $($m.Row): $c."
+                    }
+                }
+                if (-not $res.Ok) {
+                    $unresolved.Add([pscustomobject]@{ Row = $m.Row; Group = $name; Entity = $entityLabel; Reason = $res.Error })
+                    continue
                 }
                 $key = if ($res.CsvGroup) { "csv:$($res.CsvGroup)" } else { "$($res.Kind):$($res.Id)" }
                 if ($seen.ContainsKey($key)) {
@@ -1608,8 +1911,6 @@ function Build-ZNPlan {
     $active = @($order | ForEach-Object { $nodes[$_] } | Where-Object { -not $_.Missing })
 
     # 4. Site rules (never skippable).
-    $warnings = [System.Collections.Generic.List[string]]::new()
-    foreach ($w in $model.Warnings) { $warnings.Add($w) }
     if ($SiteGroups) {
         foreach ($v in @(Get-ZNSiteViolations -Nodes $active -Mode $Mode)) { $fatal.Add("Site rule: $v") }
     }
@@ -1693,6 +1994,8 @@ function Write-ZNRunReport {
         Failure messages.
     .PARAMETER Collisions
         Name-collision notes that were resolved by priority.
+    .PARAMETER Warnings
+        Other pre-flight warnings (for example entityName ignored because entityId was given).
     .OUTPUTS
         None.
     #>
@@ -1702,7 +2005,8 @@ function Write-ZNRunReport {
         [object[]]$DetailRows = @(),
         [object[]]$Skipped = @(),
         [string[]]$Failures = @(),
-        [string[]]$Collisions = @()
+        [string[]]$Collisions = @(),
+        [string[]]$Warnings = @()
     )
 
     Write-Host ''
@@ -1711,6 +2015,10 @@ function Write-ZNRunReport {
     if ($DetailRows.Count -gt 0) {
         Write-Host 'Member detail:'
         $DetailRows | Format-Table -AutoSize | Out-String -Width 4096 | Write-Host
+    }
+    if ($Warnings.Count -gt 0) {
+        Write-Host "Warnings ($($Warnings.Count)):" -ForegroundColor Yellow
+        foreach ($w in $Warnings) { Write-Host "  $w" -ForegroundColor Yellow }
     }
     if ($Collisions.Count -gt 0) {
         Write-Host "Name collisions resolved by priority ($($Collisions.Count)):" -ForegroundColor Yellow
@@ -1893,7 +2201,7 @@ function Invoke-ZNCreateMode {
                 ParentLink  = if ($_.Notes) { $_.Notes } else { '' }
             }
         })
-    Write-ZNRunReport -Title 'Create custom groups from CSV' -GroupRows $groupRows -DetailRows $detail.ToArray() -Skipped $Plan.Skipped -Failures $failures.ToArray() -Collisions $Plan.Collisions
+    Write-ZNRunReport -Title 'Create custom groups from CSV' -GroupRows $groupRows -DetailRows $detail.ToArray() -Skipped $Plan.Skipped -Failures $failures.ToArray() -Collisions $Plan.Collisions -Warnings $Plan.Warnings
     if ($Plan.SiteGroups) { Write-Host 'Reminder: enable the Sites feature in Zero Networks once the groups are in place.' }
 
     $totals = @($order | Group-Object Status | ForEach-Object { "$($_.Name)=$($_.Count)" }) -join ', '
@@ -1944,7 +2252,7 @@ function Invoke-ZNRemoveMembersMode {
 
     if ($totalRemove -eq 0) {
         Write-Host 'Nothing to remove.'
-        Write-ZNRunReport -Title 'Remove members from CSV' -Skipped $Plan.Skipped -Collisions $Plan.Collisions
+        Write-ZNRunReport -Title 'Remove members from CSV' -Skipped $Plan.Skipped -Collisions $Plan.Collisions -Warnings $Plan.Warnings
         return 0
     }
     if (-not $Cmdlet.ShouldProcess($script:ApiBaseUrl, "Remove $totalRemove member(s) from custom group(s)")) {
@@ -1973,7 +2281,7 @@ function Invoke-ZNRemoveMembersMode {
     $groupRows = @($work | ForEach-Object {
             [pscustomobject]@{ Group = $_.Node.Name; Id = $_.Node.ExistingId; Removed = $_.Removed; NotAMember = $_.NotMember.Count }
         })
-    Write-ZNRunReport -Title 'Remove members from CSV' -GroupRows $groupRows -DetailRows $detail.ToArray() -Skipped $Plan.Skipped -Failures $failures.ToArray() -Collisions $Plan.Collisions
+    Write-ZNRunReport -Title 'Remove members from CSV' -GroupRows $groupRows -DetailRows $detail.ToArray() -Skipped $Plan.Skipped -Failures $failures.ToArray() -Collisions $Plan.Collisions -Warnings $Plan.Warnings
     if ($failures.Count -gt 0) { return 1 }
     return 0
 }
@@ -2058,7 +2366,7 @@ function Invoke-ZNRemoveGroupsMode {
     $groupRows = @($work | ForEach-Object {
             [pscustomobject]@{ Group = $_.Node.Name; Id = $_.Node.ExistingId; Members = $_.Members.Count; ParentLinks = $_.Parents.Count; Status = $_.Status }
         })
-    Write-ZNRunReport -Title 'Remove groups and members from CSV' -GroupRows $groupRows -Skipped $Plan.Skipped -Failures $failures.ToArray() -Collisions $Plan.Collisions
+    Write-ZNRunReport -Title 'Remove groups and members from CSV' -GroupRows $groupRows -Skipped $Plan.Skipped -Failures $failures.ToArray() -Collisions $Plan.Collisions -Warnings $Plan.Warnings
     if ($failures.Count -gt 0) { return 1 }
     return 0
 }

@@ -1,6 +1,6 @@
 # Create Custom Groups from CSV
 
-A PowerShell script that creates Zero Networks custom groups from a CSV file. Each CSV row adds one member to a target group. A member can be any entity kind: an active asset, a group of any kind (custom, Active Directory, or built-in), a user account, an IP alias, an IP address or subnet, an FQDN, or a wildcard domain. Target groups and parent groups must be custom groups. Groups can be nested through a `parentGroup` column. A `-SiteGroups` mode enforces the rules of the Sites (Early Access) customer guide.
+A PowerShell script that creates Zero Networks custom groups from a CSV file. Each CSV row adds one member to a target group. A member can be any entity kind: an active asset, a group of any kind (custom, Active Directory, or built-in), a user account, an IP alias, an IP address or subnet, an FQDN, or a wildcard domain. Target groups and parent groups must be custom groups. Groups can be nested through a `parentGroup` column. A member can also be given by its tenant ID in an optional `entityId` column (see [Member IDs](#member-ids-entityid)). A `-SiteGroups` mode enforces the rules of the Sites (Early Access) customer guide.
 
 ## Requirements
 
@@ -20,15 +20,22 @@ Do not commit API keys or CSV files that contain tenant-specific data.
 
 ## CSV format
 
-The header row must be exactly:
+The header row must contain these columns. Header names are matched case-insensitively and surrounding spaces are ignored. The `entityId` column is optional and may be left out:
 
 ```csv
 entityName,targetGroupName,newGroupDescription,parentGroup
 ```
 
+With the optional column:
+
+```csv
+entityName,entityId,targetGroupName,newGroupDescription,parentGroup
+```
+
 | Column | Required | Meaning |
 |---|---|---|
-| `entityName` | Yes, except for parent-only rows | The member to add. Leave it empty to define a group with no members (see [Nested groups](#nested-groups)). |
+| `entityName` | Yes, unless `entityId` is set or the row only defines a group | The member to add, by name. Leave it empty to define a group with no members (see [Nested groups](#nested-groups)). |
+| `entityId` | No | The tenant ID of the member, for example `a:x:XXXXXXXX`. When it is set, it is used instead of `entityName` (see [Member IDs](#member-ids-entityid)). |
 | `targetGroupName` | Yes | The custom group the member belongs to. Created if it does not exist. Must be a custom group (see [Custom groups only](#custom-groups-only)). |
 | `newGroupDescription` | No | Description for the group. |
 | `parentGroup` | No | Parent custom group that this group should be added to. Must be a custom group. |
@@ -86,6 +93,58 @@ Only `targetGroupName` and `parentGroup` must be custom groups. A `targetGroupNa
 
 The Zero Networks API itself refuses certain built-in system groups as members, for example the all-servers, all-clients, and quarantined groups. The script does not check for these. When such a group is listed as an `entityName`, it is resolved, but adding it as a member fails with an API error. The target group that holds the row is reported as `Failed`, and the API error is listed under failures. The run continues with the other groups.
 
+## Member IDs (`entityId`)
+
+Use the optional `entityId` column when you already know the tenant ID of a member. The ID identifies one object exactly, so a duplicate name is not a problem when you give the ID of the object you mean.
+
+**Precedence**
+
+- A row with an `entityId` uses that ID. `entityName` is not used for resolution, and no name lookup is made for that row.
+- A row with an empty `entityId` resolves by `entityName`, as described above.
+- If both are set and `entityName` names a different entity from the one `entityId` resolves to, the script prints a warning and continues:
+
+  ```
+  WARNING: row 3: entityName 'WEB-PROD-01' ignored; entityId resolves to 'WEB-PROD-02'
+  ```
+
+  Names are compared case-insensitively. A subnet or FQDN in `entityName` is compared by its encoded value, so `10.20.0.0/16` matches `b:120a14000010`. No warning is printed when the two agree. The warning appears in the pre-flight output (also with `-WhatIf`), in the final report under **Warnings**, and in `-Verbose` output.
+
+**Accepted ID formats and the check for each**
+
+Each ID is classified by its format, and then checked against the tenant before any change is made.
+
+| ID format | Entity | Check |
+|---|---|---|
+| `a:<letter>:<8 letters or digits>` | Asset | Must exist and be **active**. An inactive asset is reported as "exists but is not active". |
+| `g:<letter>:<8 letters or digits>` | Group of any kind (`g:c:` is a custom group) | Must exist. |
+| `u:<letter>:<8 letters or digits>` | User account | Must exist. |
+| `e:i:<8 letters or digits>` | IP alias | Must exist. |
+| `b:12` + 10 hex digits | IPv4 subnet | Format only. Decoded for display, for example `b:120a14000010` is shown as `10.20.0.0/16`. |
+| `b:15` + 34 hex digits | IPv6 subnet | Format only. Decoded for display, for example `2001:db8::/32`. |
+| `b:17` + a fully qualified domain name | FQDN | Format only. |
+| `b:18*.` + a domain name | Wildcard domain | Format only. |
+
+Anything else is an error. IP ranges (`b:14` and `b:16`) and other ID prefixes are rejected as `unsupported entity ID type`. An ID that does not match its format is rejected as `malformed entity ID`. A subnet, FQDN, or wildcard domain ID is an encoded value and has no object to look up, so only its format is checked.
+
+**Rules that still apply**
+
+- An ID that fails a check is a resolve error. The run stops before any change unless `-SkipResolveErrors` is given, in which case the row is skipped and listed at the end of the report.
+- With `-SiteGroups`, the rules apply to the kind of entity the ID resolves to. Subnet IDs are accepted as given, with no automatic `/32` conversion. Assets, user accounts, IP aliases, FQDNs, wildcard domains, and groups that are not custom or do not start with `Site_` are rejected, and a Site rule violation is never skipped.
+- With `-RemoveMembers`, the validated ID is the member that is removed. With `-RemoveGroupsAndMembers`, the entity columns are not resolved; they only set the order of deletions.
+- A group ID that equals an existing `targetGroupName` in the same CSV is treated as that group, so ordering, nesting and cycle detection still apply. A group cannot contain itself: an `entityId` equal to its own `targetGroupName` is a resolve error.
+- `targetGroupName` and `parentGroup` remain name-based and must be custom groups. There are no ID columns for them.
+
+**IDs are specific to each tenant.** The same object has a different ID in another tenant. Take IDs from the tenant you run the script against, and do not reuse them across tenants or keep tenant IDs in a shared CSV.
+
+**Example.** The IDs below are placeholders and will not resolve. Replace them with IDs from your tenant. The shipped `groups.example.csv` does not use `entityId`.
+
+```csv
+entityName,entityId,targetGroupName,newGroupDescription,parentGroup
+WEB-PROD-01,a:x:XXXXXXXX,Web Tier,Production web servers,
+,b:120a14000010,Office Networks,Office subnet,
+Backup Operators,g:a:XXXXXXXX,Backup Admins,Backup operator access,
+```
+
 ## Ordering and nested groups
 
 All rows are checked before anything is changed. The script then creates groups in dependency order:
@@ -127,6 +186,7 @@ Resolution runs over all rows before any change is made. The following are resol
 - A name where one kind of entity matches more than one object, for example two active assets with the same name, two groups with the same name, or two user accounts with the same name.
 - An invalid IP address or CIDR value.
 - A name that matches no asset, group, user account, or IP alias, and is not a valid FQDN.
+- An `entityId` that is malformed, uses an unsupported type, does not exist, or (for an asset) is not active. See [Member IDs](#member-ids-entityid).
 
 Names that match entities of different kinds are not errors. They are resolved by priority and reported as [name collisions](#name-collisions).
 
@@ -198,6 +258,7 @@ At the end of a run the script prints a report with:
 
 - **Groups:** each group with its result (`Created`, `Updated`, or `Unchanged`) and its group ID.
 - **Members:** the members added to each group, with their type (`Asset`, `Group`, `User`, `Alias`, `Subnet`, `Fqdn`, or `Domain`) and resolved ID.
+- **Warnings:** pre-flight warnings, such as an `entityName` that was ignored because an `entityId` was given (only when there are any).
 - **Name collisions resolved by priority:** each colliding name and the kind that was used (only when there are collisions).
 - **Parent links:** each child-to-parent link made.
 - **Skipped entities:** each skipped member and the reason (only with `-SkipResolveErrors`).
@@ -225,6 +286,10 @@ Validate and create the Sites hierarchy:
 - **"'X' was not found as an active asset, group, user account or IP alias ..."** Check the spelling of the name. Inactive assets are not considered. A name that matches nothing and is not a valid FQDN, IP, or subnet is an error.
 - **"N active assets are named ..."** Two active assets share the name. Rename one of them in the portal, or use an IP address for that member.
 - **"N groups are named ..."**, **"N user accounts are named ..."**, or **"N IP aliases are named ..."**. Two objects of the same kind share the name. Rename one of them, or use its IP address.
+- **"unsupported entity ID type"** or **"malformed entity ID"**. The `entityId` is not in a supported format. Copy the ID from your tenant again. IP ranges (`b:14`, `b:16`) are not supported; list the individual subnets instead.
+- **"... exists but is not active"**. The asset ID belongs to an inactive asset. Use an active asset, or remove the row.
+- **"... was not found"** for an `entityId`. The ID does not exist in the tenant you are running against. IDs are tenant-specific.
+- **"entityName '...' ignored; entityId resolves to '...'"** (a warning). The row's `entityId` and `entityName` name different objects, and the ID was used. Fix whichever value is wrong.
 - **"... matched group, user; used group"** (a name collision warning). The script used the higher-priority match. Rename an object if the wrong one was used.
 - **"targetGroupName must be a custom group"** or **"parentGroup must be a custom group"**. The name matches only a non-custom group (for example an Active Directory group). Use a different name for the custom group.
 - **A member fails with an API error when added.** The API refuses some built-in system groups (for example all-servers, all-clients, or quarantined) as members. Remove that entry from the CSV.
