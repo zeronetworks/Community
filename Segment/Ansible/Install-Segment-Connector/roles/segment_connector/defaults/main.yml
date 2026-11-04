@@ -44,7 +44,7 @@ segment_connector_allow_create: false
 # FQDN for the new asset (passed as -asset-fqdn, only when set). Requires allow_create.
 # Must be a fully qualified name containing a dot, not an IP address. When empty, the
 # cloud derives the host's trusted FQDN itself, so the default is empty.
-# Ignored when segment_connector_with_static_ip is true.
+# Cannot be combined with segment_connector_with_static_ip (the role fails the run).
 segment_connector_asset_fqdn: ""
 
 # Display name for the new asset (passes -name). Requires allow_create.
@@ -57,8 +57,9 @@ segment_connector_with_static_ip: false
 
 # Extra environment variables for every installer call (install, uninstall).
 # Mapping of name to string value. Entries with empty or null values are dropped.
-# Values are sent as strings. The named variables below override the same keys
-# here, so set them with the named variables, not in this mapping.
+# Quote the values: other types are converted to text. A named variable below that is
+# switched on (trace, log_to_console, or a non-empty download_timeout) overrides the same
+# key here. When it is off or empty, the value in this mapping is passed through.
 segment_connector_installer_env: {}
 
 # Installer package download timeout (ZN_SEGMENT_CONNECTOR_INSTALL_GET_PKG_TIMEOUT).
