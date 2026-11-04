@@ -1,0 +1,24 @@
+# Installer zips from the Zero Networks portal. Never commit them.
+installer/*.zip
+*.zip
+
+# Tokens and other secrets. Never commit them.
+token*
+secrets*
+
+# Terraform working files and state. State can hold secrets.
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+crash.log
+override.tf
+*_override.tf
+
+# Variable files can hold a token. Only the example files are committed.
+*.tfvars
+!*.tfvars.example
+*.tfplan
+
+# Build output from the offline test script.
+tests/build/

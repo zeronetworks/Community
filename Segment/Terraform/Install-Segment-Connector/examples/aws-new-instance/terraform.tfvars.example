@@ -1,0 +1,23 @@
+# Copy this file to terraform.tfvars and fill in the values.
+# Do not put the token here. Set it with: export TF_VAR_token='<token>'
+
+region        = "us-east-1"
+instance_name = "connector-test-01"
+instance_type = "t3.micro"
+subnet_id     = null
+
+# A new S3 bucket name. It must be unique in AWS.
+bucket_name = "my-segment-connector-test-20261104"
+
+# The installer zip you downloaded from the portal. Put it in the project's installer/ folder.
+installer_zip_local_path = "../../installer/segment-connector-linux-installer-X.Y.Z.W.zip"
+
+# Enrollment. A new instance is not in the portal yet.
+allow_create   = true
+asset_fqdn     = ""
+asset_name     = "connector-test-01"
+with_static_ip = false
+
+# Other options.
+run_as            = "zn-user"
+reinstall_trigger = ""

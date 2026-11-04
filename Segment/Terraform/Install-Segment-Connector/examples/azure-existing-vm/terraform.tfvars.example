@@ -1,0 +1,24 @@
+# Copy this file to terraform.tfvars and fill in the values.
+# Do not put the token here. Set it with: export TF_VAR_token='<token>'
+
+# The existing VM.
+vm_name                = "connector01"
+vm_resource_group_name = "rg-existing-vms"
+
+# An existing storage account and container for the installer files.
+storage_account_name        = "stzsegmentconnector01"
+storage_resource_group_name = "rg-segment-connector"
+storage_container_name      = "segment-connector"
+
+# The installer zip you downloaded from the portal. Put it in the project's installer/ folder.
+installer_zip_local_path = "../../installer/segment-connector-linux-installer-X.Y.Z.W.zip"
+
+# Enrollment. For a host already in the portal, leave these as they are.
+allow_create   = false
+asset_fqdn     = ""
+asset_name     = ""
+with_static_ip = false
+
+# Other options.
+run_as            = "zn-user"
+reinstall_trigger = ""
