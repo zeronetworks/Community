@@ -61,9 +61,9 @@ A summary is also logged to the console at the end of the run.
 
 ### What it copies
 
-- **Group memberships:** the target is added to the source's writable custom and tag groups. AD, system and OT groups are read-only through the API and are reported as `skipped_readonly`.
+- **Group memberships:** the target is added to the source's writable custom and tag groups. AD, system and OT groups are read-only through the API and are reported as `skipped_readonly`. Rule-based (conditional) groups, whose membership is defined by conditions such as `Asset Type: Server`, cannot take manual members (the API answers HTTP 412), so they are reported as `skipped_conditional` with the conditions in the reason; the target joins them automatically only if it matches.
 - **Owner-side network rules:** rules the source owns are recreated with the target as the local asset. The source is replaced by the target in remote lists.
-- **Remote-side network rules:** where the source is a remote source (inbound rules) or a remote destination (outbound rules), a new rule is created whose remote list is `[target]` only. Its description starts with a marker, `[zn-mirror src-rule=<original rule id> src=<S> dst=<T>]`, which records the original rule ID.
+- **Remote-side network rules:** where the source is a remote source (inbound rules) or a remote destination (outbound rules), a new rule is created whose remote list is `[target]` only. Its description starts with a marker, `[zn-mirror rule=<original rule id> dst=<T>]`, which records the original rule ID, followed by as much of the original rule's description as fits. The API limits descriptions to 100 characters.
 - **MFA (reactive) policies**, inbound and outbound.
 - **Identity rules and identity MFA policies**, only for AD (source 3) and Azure AD (source 9) targets. Other targets get one `incompatible_target` row.
 - **RPC rules**, only for Windows targets. Other targets get an `incompatible_target` row.
@@ -148,7 +148,7 @@ The verbose folders are for review only. The plan CSV is still written as before
 
 ### Statuses
 
-`planned`, `created`, `updated`, `rolled_back`, `skipped_exists`, `skipped_state`, `skipped_pending`, `skipped_expired`, `skipped_group_inherited`, `skipped_readonly`, `skipped_redundant`, `skipped_derived`, `skipped_resumed`, `exclusion_not_mirrored`, `incompatible_target`, `failed`. Pre-checks report `ok`, `warning` or `failed`.
+`planned`, `created`, `updated`, `rolled_back`, `skipped_exists`, `skipped_state`, `skipped_pending`, `skipped_expired`, `skipped_group_inherited`, `skipped_readonly`, `skipped_conditional`, `skipped_redundant`, `skipped_derived`, `skipped_resumed`, `exclusion_not_mirrored`, `incompatible_target`, `failed`. Pre-checks report `ok`, `warning` or `failed`.
 
 These are the codes written to the results, state and rollback CSVs. The plan and verbose CSVs show a plain-language label instead, for example "Will be created" for `planned`, "Will be added" for a group membership, and "Skipped: already on target" for `skipped_exists`.
 
@@ -162,7 +162,8 @@ Before planning, the script reads the target's existing rules and policies. An o
 - It never calls `/assets/actions/mirror`.
 - Rules that reach the source only through group membership are not copied (`skipped_group_inherited`).
 - AD, system and OT groups are read-only through the API, so the target cannot be added to them.
-- Original rule IDs are written into descriptions. The description is capped at 512 characters; the marker is always kept and any original text is trimmed first.
+- Original rule IDs are written into descriptions. The API caps descriptions at 100 characters; the marker is always kept and any original text is trimmed with `...` first. Descriptions written by earlier versions of this script (`[zn-mirror src-rule=... src=... dst=...]`) are still recognized when checking whether an object already exists.
+- Pre-flight checks: before anything is sent, each planned write is checked against known API limits (description length; required fields and a non-empty remote list for network rules). A write that fails is reported as `failed` with a reason starting `pre-flight check:` in the dry run and is never sent.
 - Connect updates run one at a time. Each one re-reads the config and rebuilds the body from the fresh copy, so concurrent edits are not overwritten.
 
 ### Verify before first production run
@@ -171,7 +172,6 @@ Confirm these behaviours against the live API. The script was written from the O
 
 - Rule listing with `entityParams` `direction=3` returns rules where the source is only the remote side.
 - Group membership `DELETE` accepts a JSON body (used by rollback).
-- Description length: the script caps descriptions at 512 characters; confirm the API accepts that.
 - Rule create accepts `state` for pending-review objects (the script sends them as disabled).
 - Switch rule create: the spec declares `remoteEntitiesIdList` as a property but requires `remoteEntityIdsList`. The script sends `remoteEntityIdsList`. Confirm which one the API accepts.
 - Connect user access config `PUT` replaces the whole object. Confirm the body rebuilt from the re-read config keeps every other setting.

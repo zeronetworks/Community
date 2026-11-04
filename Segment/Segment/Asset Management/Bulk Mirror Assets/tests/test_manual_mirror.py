@@ -278,19 +278,49 @@ def test_rule_bodies_never_contain_forbidden_fields() -> None:
 def test_make_description_keeps_marker_when_trimming_original() -> None:
     long_original = "x" * 1000
     text = mma.make_description("rule-1", PAIR, long_original)
-    assert len(text) == mma.DESCRIPTION_MAX_LENGTH
-    assert text.startswith(f"[zn-mirror src-rule=rule-1 src={SRC} dst={DST}]")
-    assert " | orig: " in text
+    assert len(text) <= mma.DESCRIPTION_MAX_LENGTH == 100
+    assert text.startswith(f"[zn-mirror rule=rule-1 dst={DST}]")
+    assert text.endswith("...")
 
 
 def test_make_description_appends_original_and_handles_missing() -> None:
     text = mma.make_description("rule-2", PAIR, "block SMB")
-    assert text.startswith(f"[zn-mirror src-rule=rule-2 src={SRC} dst={DST}] Mirrored from rule rule-2")
-    assert text.endswith(" | orig: block SMB")
+    assert text == f"[zn-mirror rule=rule-2 dst={DST}] block SMB"
     plain = mma.make_description("rule-3", PAIR, None)
-    assert " | orig:" not in plain
-    marker = mma.parse_marker(plain)
-    assert marker == ("rule-3", SRC, DST)
+    assert plain == f"[zn-mirror rule=rule-3 dst={DST}]"
+    assert mma.parse_marker(plain) == ("rule-3", "", DST)
+    # Whitespace and newlines in the original text are collapsed.
+    assert mma.make_description("rule-4", PAIR, "a\n  b\tc") == f"[zn-mirror rule=rule-4 dst={DST}] a b c"
+
+
+def test_make_description_never_exceeds_api_limit() -> None:
+    """The API rejects descriptions over 100 characters (HTTP 400 seen on the first --apply)."""
+    rule_id = "75eb64e3-93cd-4bda-870d-9f68adbd56d4"  # 36-char UUID, as on real rules
+    real = mma.AssetPair(src_id="a:a:CiJyNosJ", src_name="S", dst_id="a:a:PxEwq5xP", dst_name="D")
+    odd = mma.AssetPair(src_id=SRC, src_name="S", dst_id="a:w:" + "Z" * 80, dst_name="D")
+    for pair in (real, odd, PAIR):
+        for original in (None, "", "short", "y" * 5000, "word " * 200):
+            text = mma.make_description(rule_id, pair, original)
+            assert len(text) <= mma.DESCRIPTION_MAX_LENGTH, (pair.dst_id, original, len(text))
+            assert rule_id in text  # the original rule id is always traceable
+    # With real ids the marker is 70 chars, leaving room for a trimmed original description.
+    text = mma.make_description(rule_id, real, "Inter-server communication: specific server-to-server traffic")
+    assert text.startswith(f"[zn-mirror rule={rule_id} dst=a:a:PxEwq5xP] Inter-server")
+    assert len(text) <= 100
+
+
+def test_parse_marker_reads_new_and_legacy_formats() -> None:
+    assert mma.parse_marker(f"[zn-mirror rule=r1 dst={DST}] x") == ("r1", "", DST)
+    legacy = f"[zn-mirror src-rule=r2 src={SRC} dst={DST}] Mirrored from rule r2"
+    assert mma.parse_marker(legacy) == ("r2", SRC, DST)
+    assert mma.parse_marker("plain description") is None
+    assert mma.parse_marker(None) is None
+    index = mma.TargetIndex()
+    index.add_rules(1, [{"description": f"[zn-mirror rule=r1 dst={DST}]", "action": 1,
+                         "localEntityId": DST, "remoteEntityIdsList": [], "portsList": []},
+                        {"description": legacy, "action": 1, "localEntityId": DST,
+                         "remoteEntityIdsList": ["q"], "portsList": []}])
+    assert ("r1", DST) in index.markers and ("r2", DST) in index.markers
 
 
 def test_rule_fingerprint_equality_and_inequality() -> None:
@@ -847,7 +877,7 @@ def test_rpc_bodies_owner_and_remote_copies_carry_marker_description() -> None:
     assert body["localAssetId"] == DST
     assert body["remoteAssetIdsList"] == [DST, "a:w:X"]
     assert body["excludedAssetIdsList"] == []
-    assert body["description"].startswith(f"[zn-mirror src-rule=rpc-1 src={SRC} dst={DST}]")
+    assert body["description"].startswith(f"[zn-mirror rule=rpc-1 dst={DST}]")
     for key in ("action", "description", "excludedAssetIdsList", "interfaceUuidsList", "localAssetId",
                 "opNumbersList", "protocolsList", "remoteAssetIdsList", "state", "userIdsList"):
         assert key in body
@@ -948,7 +978,7 @@ def test_external_access_body_is_recreated_for_target_and_skips_existing() -> No
     assert body["dstAssetId"] == DST
     assert body["srcUserIdsList"] == ["u1"]
     assert body["url"] == "https://example.test"
-    assert body["description"].startswith(f"[zn-mirror src-rule=ext-1 src={SRC} dst={DST}]")
+    assert body["description"].startswith(f"[zn-mirror rule=ext-1 dst={DST}]")
 
     existing = {**body, "id": "t-ext", "description": None}
     assert mma.external_access_fingerprint(existing) == mma.external_access_fingerprint(body)
@@ -1682,3 +1712,115 @@ def test_read_result_rows_reads_machine_results_csv(tmp_path: Path) -> None:
     rows = mma.read_result_rows(results)
     assert rows[0]["status"] == "created"
     assert rows[0]["category"] == "owner_rule"
+
+
+
+# ---------------------------------------------------------------------------
+# Conditional groups, 412 safety net, and pre-flight validation
+# ---------------------------------------------------------------------------
+
+CONDITIONS = {"labelConditions": [{"expressions": [
+    {"key": "Asset Type", "operator": 1, "values": ["Server"]},
+    {"key": "OS Type", "operator": 1, "values": ["Linux"]},
+]}]}
+
+
+def test_describe_conditions_and_is_conditional_group() -> None:
+    assert mma.describe_conditions(CONDITIONS) == "Asset Type: Server; OS Type: Linux"
+    assert mma.describe_conditions({"labelConditions": [{"expressions": [
+        {"key": "Env", "values": ["a", "b"]}]}]}) == "Env: a, b"
+    assert mma.describe_conditions(None) == ""
+    assert mma.describe_conditions({}) == ""
+    assert mma.describe_conditions({"labelConditions": [None, {"expressions": ["junk"]}]}) == ""
+    assert mma.is_conditional_group({"id": "g:c:1", "conditions": CONDITIONS}) is True
+    assert mma.is_conditional_group({"id": "g:c:1", "conditions": {"other": 1}}) is True
+    assert mma.is_conditional_group({"id": "g:c:1"}) is False
+    assert mma.is_conditional_group({"id": "g:c:1", "conditions": {}}) is False
+    assert mma.is_conditional_group({"id": "g:c:1", "conditions": None}) is False
+    reason = mma.conditional_group_reason({"conditions": CONDITIONS})
+    assert "Asset Type: Server; OS Type: Linux" in reason and "rule-based" in reason
+
+
+def test_conditional_groups_are_skipped_not_planned() -> None:
+    fake = FakeZN({}, {}, {SRC: [
+        {"id": "g:c:cond0001", "name": "Linux Servers", "conditions": CONDITIONS},
+        {"id": "g:c:cond0002", "name": "Already In", "conditions": CONDITIONS},
+        {"id": "g:c:manual01", "name": "Manual"},
+        {"id": "g:t:tag00001", "name": "Tag"},
+        {"id": "g:a:ad000001", "name": "AD"},
+    ], DST: [{"id": "g:c:cond0002", "name": "Already In"}]})
+    actions = run_with_client(fake, lambda c: mma.collect_group_actions(c, PAIR))
+    by_id = {a.source_object_id: a for a in actions}
+    assert by_id["g:c:cond0001"].status == "skipped_conditional"
+    assert by_id["g:c:cond0001"].method == ""  # nothing to send
+    assert "Asset Type: Server" in by_id["g:c:cond0001"].reason
+    assert by_id["g:c:cond0002"].status == "skipped_exists"  # membership wins over conditions
+    assert by_id["g:c:manual01"].status == "planned" and by_id["g:c:manual01"].method == "PUT"
+    assert by_id["g:t:tag00001"].status == "planned"
+    assert by_id["g:a:ad000001"].status == "skipped_readonly"
+    assert mma.status_label("skipped_conditional", "group") == "Skipped: group membership is rule-based"
+
+
+def test_execute_action_412_conditional_group_is_skipped_other_412_fails() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "cond" in request.url.path:
+            return httpx.Response(412, json={"error": "precondition failed", "message":
+                                             "cant add members to a conditional group"})
+        return httpx.Response(412, json={"error": "precondition failed", "message": "something else"})
+
+    cond = mma.Action(PAIR, "group", "g:c:cond0001", "add_member", "PUT",
+                      "/groups/custom/g:c:cond0001/members", {"membersId": [DST]})
+    other = mma.Action(PAIR, "group", "g:c:other001", "add_member", "PUT",
+                       "/groups/custom/g:c:other001/members", {"membersId": [DST]})
+
+    async def go(client: httpx.AsyncClient) -> None:
+        sem = asyncio.Semaphore(2)
+        await mma.execute_action(client, sem, cond, None, {})
+        await mma.execute_action(client, sem, other, None, {})
+
+    run_with_client(handler, go)
+    assert cond.status == "skipped_conditional"
+    assert other.status == "failed" and "412" in other.reason
+
+
+def test_preflight_check_flags_long_description_and_missing_required_fields() -> None:
+    good = {"action": 1, "localEntityId": DST, "localProcessesList": ["*"], "portsList": [],
+            "remoteEntityIdsList": ["a:w:X"], "state": 1, "description": "ok"}
+    path = "/protection/rules/inbound"
+
+    def act(body: dict, category: str = "owner_rule", status: str = "planned") -> mma.Action:
+        return mma.Action(PAIR, category, "r1", "create_inbound_rule", "POST", path, body, status=status)
+
+    assert mma.preflight_check(act(good)) is None
+    too_long = {**good, "description": "d" * 101}
+    assert "101 characters" in mma.preflight_check(act(too_long))
+    assert "remoteEntityIdsList" in mma.preflight_check(act({k: v for k, v in good.items()
+                                                             if k != "remoteEntityIdsList"}))
+    assert "remote asset list is empty" in mma.preflight_check(act({**good, "remoteEntityIdsList": []}))
+    # Non-rule bodies only get the description check; group PUTs and GET-style actions are untouched.
+    group = mma.Action(PAIR, "group", "g:c:1", "add_member", "PUT", "/groups/custom/g:c:1/members",
+                       {"membersId": [DST]})
+    assert mma.preflight_check(group) is None
+    assert mma.preflight_check(mma.Action(PAIR, "precheck", "x", "validate")) is None
+
+    actions = [act(too_long), act(good), act(too_long, status="skipped_exists")]
+    mma.apply_preflight_checks(actions)
+    assert actions[0].status == "failed" and actions[0].reason.startswith("pre-flight check: ")
+    assert actions[1].status == "planned"
+    assert actions[2].status == "skipped_exists"  # only planned writes are checked
+
+
+def test_preflight_failure_is_never_sent_on_apply() -> None:
+    sent: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(request.method)
+        return httpx.Response(200, json={"item": {"id": "new"}})
+
+    bad = mma.Action(PAIR, "owner_rule", "r1", "create_inbound_rule", "POST", "/protection/rules/inbound",
+                     {"action": 1, "localEntityId": DST, "localProcessesList": [], "portsList": [],
+                      "remoteEntityIdsList": ["a:w:X"], "state": 1, "description": "d" * 150})
+    mma.apply_preflight_checks([bad])
+    run_with_client(handler, lambda c: mma.execute_actions(c, [bad], 2, None, {}))
+    assert sent == []
+    assert bad.status == "failed"

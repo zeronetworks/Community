@@ -85,8 +85,8 @@ STATE_COLUMNS = (
 PAGE_LIMIT = 400
 RETRY_ATTEMPTS = 3
 RETRY_STATUS_CODES = {429, 500, 502, 503, 504}
-DESCRIPTION_MAX_LENGTH = 512
-DESCRIPTION_ORIG_PREFIX = " | orig: "
+DESCRIPTION_MAX_LENGTH = 100  # API: "description length must be between 0-100"
+DESCRIPTION_MIN_ORIGINAL_ROOM = 4  # smallest slice of the original text worth appending
 
 ACTION_ALLOW = 1
 ACTION_BLOCK = 2
@@ -148,7 +148,9 @@ CONNECT_LIST_LABELS = {
     "excludedAssetIds": "excluded assets",
     "allowedDestinations": "allowed destinations",
 }
-MARKER_RE = re.compile(r"\[zn-mirror src-rule=([^\s\]]+) src=([^\s\]]+) dst=([^\s\]]+)\]")
+MARKER_RE = re.compile(r"\[zn-mirror rule=([^\s\]]+) dst=([^\s\]]+)\]")
+# Format written by earlier versions; still recognized so idempotency keeps working.
+LEGACY_MARKER_RE = re.compile(r"\[zn-mirror src-rule=([^\s\]]+) src=([^\s\]]+) dst=([^\s\]]+)\]")
 
 logger = logging.getLogger("manual_mirror_assets")
 
@@ -804,11 +806,12 @@ def effective_state(rule: dict[str, Any]) -> int:
 
 
 def make_description(rule_id: str, pair: AssetPair, original: str | None) -> str:
-    """Build the description for a mirrored rule.
+    """Build the description for a mirrored object (the API allows at most 100 characters).
 
-    The marker "[zn-mirror src-rule=<id> src=<S> dst=<T>]" is always kept. The
-    original description is appended after " | orig: " and is trimmed first when
-    the total would exceed 512 characters.
+    The marker "[zn-mirror rule=<id> dst=<T>]" (traceability back to the original rule, and
+    idempotency) always comes first. If room remains, the original description is appended,
+    whitespace-collapsed and trimmed with "..." to fit. The result never exceeds
+    DESCRIPTION_MAX_LENGTH.
 
     Args:
         rule_id: id of the source rule being mirrored.
@@ -816,24 +819,33 @@ def make_description(rule_id: str, pair: AssetPair, original: str | None) -> str
         original: the source rule's description, if any.
 
     Returns:
-        The description string (at most 512 characters).
+        The description string (at most DESCRIPTION_MAX_LENGTH characters).
     """
-    marker = f"[zn-mirror src-rule={rule_id} src={pair.src_id} dst={pair.dst_id}]"
-    head = f"{marker} Mirrored from rule {rule_id} ({pair.src_name} -> {pair.dst_name})"
-    if len(head) > DESCRIPTION_MAX_LENGTH:
-        head = f"{marker} Mirrored from rule {rule_id}"
+    marker = f"[zn-mirror rule={rule_id} dst={pair.dst_id}]"
+    if len(marker) > DESCRIPTION_MAX_LENGTH:
+        marker = f"[zn-mirror rule={rule_id}]"[:DESCRIPTION_MAX_LENGTH]
 
-    original_text = (original or "").strip()
-    room = DESCRIPTION_MAX_LENGTH - len(head) - len(DESCRIPTION_ORIG_PREFIX)
-    if not original_text or room <= 0:
-        return head
-    return f"{head}{DESCRIPTION_ORIG_PREFIX}{original_text[:room]}"
+    text = " ".join((original or "").split())
+    room = DESCRIPTION_MAX_LENGTH - len(marker) - 1
+    if not text or room < DESCRIPTION_MIN_ORIGINAL_ROOM:
+        return marker
+    if len(text) > room:
+        text = text[: room - 3].rstrip() + "..."
+    return f"{marker} {text}"
 
 
 def parse_marker(description: str | None) -> tuple[str, str, str] | None:
-    """Extract (origRuleId, srcId, dstId) from a zn-mirror marker, if present."""
-    match = MARKER_RE.search(description or "")
-    return match.groups() if match else None
+    """Extract (origRuleId, srcId, dstId) from a zn-mirror marker, if present.
+
+    The current marker has no source id, so srcId is "" for it. The legacy marker
+    format written by earlier versions is also recognized.
+    """
+    text = description or ""
+    match = MARKER_RE.search(text)
+    if match:
+        return match.group(1), "", match.group(2)
+    legacy = LEGACY_MARKER_RE.search(text)
+    return legacy.groups() if legacy else None
 
 
 def _dedupe(items: list[str]) -> list[str]:
@@ -1282,6 +1294,39 @@ async def precheck_pair(
     return result(status, "; ".join(warnings), tgt.get("protectionState"), tgt)
 
 
+def describe_conditions(conditions: Any) -> str:
+    """Render a group's `conditions` block as "Key: value, value; Key2: value".
+
+    The structure seen on live groups is {"labelConditions": [{"expressions":
+    [{"key": ..., "operator": n, "values": [...]}]}]}. Operator codes are undocumented, so
+    they are not rendered. Returns "" when there is nothing to describe.
+    """
+    parts: list[str] = []
+    if isinstance(conditions, dict):
+        for label_condition in conditions.get("labelConditions") or []:
+            for expression in (label_condition or {}).get("expressions") or []:
+                if not isinstance(expression, dict):
+                    continue
+                key = str(expression.get("key") or "").strip()
+                values = ", ".join(str(v) for v in expression.get("values") or [])
+                if key or values:
+                    parts.append(f"{key}: {values}".strip(": ").strip())
+    return "; ".join(parts)
+
+
+def is_conditional_group(group: dict[str, Any]) -> bool:
+    """True if a group's membership is rule-based, so members cannot be added directly."""
+    conditions = group.get("conditions")
+    return bool(conditions) and (bool(describe_conditions(conditions)) or isinstance(conditions, dict))
+
+
+def conditional_group_reason(group: dict[str, Any]) -> str:
+    """Reason text for a rule-based group that is not added to manually."""
+    text = describe_conditions(group.get("conditions")) or "see the group's conditions in the portal"
+    return (f"membership is rule-based ({text}); the target joins automatically only if it "
+            "matches, so it is not added manually")
+
+
 async def collect_group_actions(client: httpx.AsyncClient, pair: AssetPair) -> list[Action]:
     """Plan group memberships to add T to (read-only).
 
@@ -1310,6 +1355,9 @@ async def collect_group_actions(client: httpx.AsyncClient, pair: AssetPair) -> l
         elif gid in target_group_ids:
             actions.append(Action(pair, "group", gid, "skip", status="skipped_exists",
                                   reason="target is already a member", meta=metas[gid]))
+        elif is_conditional_group(group):
+            actions.append(Action(pair, "group", gid, "skip", status="skipped_conditional",
+                                  reason=conditional_group_reason(group), meta=metas[gid]))
         else:
             writable.append(gid)
             kinds[gid] = kind
@@ -1388,6 +1436,44 @@ async def collect_pair_actions(
     return actions, before
 
 
+RULE_BODY_REQUIRED = (
+    "action", "localEntityId", "localProcessesList", "portsList", "remoteEntityIdsList", "state",
+)
+
+
+def preflight_check(action: Action) -> str | None:
+    """Check a planned write against known API constraints before anything is sent.
+
+    Returns a human-readable problem, or None if the action looks sendable. Mirrors errors
+    the API has been seen to return (so a dry run predicts them): description over the
+    length limit, and for network rules the required fields.
+    """
+    body = action.body
+    if action.method not in ("POST", "PUT") or not isinstance(body, dict):
+        return None
+    description = body.get("description")
+    if isinstance(description, str) and len(description) > DESCRIPTION_MAX_LENGTH:
+        return f"description is {len(description)} characters (API limit {DESCRIPTION_MAX_LENGTH})"
+    if action.category in RULE_CATEGORIES:
+        missing = [key for key in RULE_BODY_REQUIRED if body.get(key) is None]
+        if missing:
+            return "missing required field(s): " + ", ".join(missing)
+        if not body.get("remoteEntityIdsList"):
+            return "the remote asset list is empty"
+    return None
+
+
+def apply_preflight_checks(actions: list[Action]) -> None:
+    """Turn planned writes that fail preflight_check into failed rows (they are never sent)."""
+    for action in actions:
+        if action.status != "planned":
+            continue
+        problem = preflight_check(action)
+        if problem:
+            action.status = "failed"
+            action.reason = f"pre-flight check: {problem}"
+
+
 async def build_plan(
     client: httpx.AsyncClient, pairs: list[AssetPair], opts: RunOptions
 ) -> tuple[list[Action], dict[AssetPair, str | None]]:
@@ -1423,6 +1509,7 @@ async def build_plan(
         actions.extend(pair_actions)
         if before is not None:
             befores[pair] = before
+    apply_preflight_checks(actions)
     return actions, befores
 
 
@@ -2471,6 +2558,11 @@ async def execute_action(
         _finish(action, success, "", state_path, "done", _extract_id(response))
     elif code == 409 and action.method == "POST":
         _finish(action, "skipped_exists", "HTTP 409: already exists", state_path, "done")
+    elif code == 412 and "conditional group" in response.text.lower():
+        # Safety net: a rule-based group that slipped past is_conditional_group().
+        _finish(action, "skipped_conditional",
+                "HTTP 412: group membership is rule-based; members cannot be added directly",
+                state_path, "done")
     else:
         _finish(action, "failed", f"HTTP {code}: {response.text[:300]}", state_path, "failed")
     logger.debug("%s %s -> %s", action.method, action.path, action.status)
@@ -2670,6 +2762,7 @@ STATUS_LABELS = {
     "skipped_exists": "Skipped: already on target",
     "skipped_group_inherited": "Skipped: matched only through group membership",
     "skipped_readonly": "Skipped: read-only group (cannot be changed through the API)",
+    "skipped_conditional": "Skipped: group membership is rule-based",
     "skipped_redundant": "Skipped: implied by a more specific group",
     "skipped_state": "Skipped: rule is deleted, rejected or excluded",
     "skipped_pending": "Skipped: rule is pending review",
