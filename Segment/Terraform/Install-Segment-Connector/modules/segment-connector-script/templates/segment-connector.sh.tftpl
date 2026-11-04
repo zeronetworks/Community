@@ -1,0 +1,646 @@
+#!/bin/bash
+# Installs, reinstalls or removes the Zero Networks Segment Connector on one Linux host.
+#
+# This file is a Terraform template. Terraform fills in the values written as
+# dollar-brace names (for example the action or the staging folder) before the script
+# is sent to a host. Bash variables in this file are written with two dollar signs so
+# Terraform leaves them alone. The rendered result is a plain bash script.
+#
+# Actions: install (default) or uninstall.
+# The enrollment token is read from one place (token_source) and is never printed or
+# written to the log.
+#
+# Exit codes: 0 = done, 1 = a required step failed, the installer's own code when the
+# installer fails, 2 = connection check failed while verify_strict is true.
+# The last line printed is a summary: ZN_SEGMENT_CONNECTOR_RESULT action=... state=... version=...
+
+# Stop when an unset variable is used.
+set -u
+
+# Files and folders created by this script are readable by root only.
+umask 077
+
+# ---------------------------------------------------------------------------
+# Values from Terraform
+# ---------------------------------------------------------------------------
+ACTION='${action}'
+STAGING_DIR='${staging_dir}'
+IDENTITY_FILE='${identity_file}'
+INSTALLER_URL='${installer_url}'
+INSTALLER_ZIP_PATH='${installer_zip_path}'
+TOKEN_SOURCE='${token_source}'
+TOKEN_FILE='${token_file_path}'
+KV_NAME='${kv_name}'
+KV_SECRET='${kv_secret}'
+MI_CLIENT_ID='${mi_client_id}'
+REINSTALL='${reinstall}'
+REPORT_VERSION='${report_version}'
+VERIFY_CONNECTION='${verify_connection}'
+VERIFY_TIMEOUT='${verify_timeout}'
+VERIFY_STRICT='${verify_strict}'
+LOG_FILE='${log_file}'
+
+# The embedded token (base64) is only written into the script when token_source is embedded.
+EMBEDDED_TOKEN_B64=""
+%{ if token_source == "embedded" ~}
+EMBEDDED_TOKEN_B64='${token_b64}'
+%{ endif ~}
+
+# Environment settings for the installer (for example trace or log output switches).
+%{ for l in env_lines ~}
+${l}
+%{ endfor ~}
+
+# Fixed locations used by the Zero Networks software on this host.
+CONNECTOR_LOG=/var/zeronetworks/logs/zn-segment-connector.log
+INSTALLER_LOG=/var/zeronetworks/logs/installer.log
+INSTALLER_NAME=segment-connector-linux-installer
+
+# Folder that holds this script. A zip path given as relative is resolved from here.
+SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
+[ -n "$SCRIPT_DIR" ] || SCRIPT_DIR="$PWD"
+
+# Python interpreter for small helper scripts (used for JSON and the connection check).
+# It may be python3 or an older python 2.7. Empty when neither exists.
+PY="$(command -v python3 || command -v python || true)"
+
+# Values that change while the script runs.
+RESULT_STATE="failed"
+VERSION="unknown"
+CONNECTION_STATE="unknown"
+BIN=""
+TOKEN=""
+SINCE=""
+ZIP_FILE=""
+ZIP_DOWNLOADED="false"
+
+# ---------------------------------------------------------------------------
+# Helper functions
+# ---------------------------------------------------------------------------
+
+# Writes one line to stderr and to the log file. A failed log write does not stop the script.
+log() {
+  local msg
+  msg="$(date -u +%Y-%m-%dT%H:%M:%SZ) $*"
+  printf '%s\n' "$msg" >&2
+  printf '%s\n' "$msg" 2>/dev/null >>"$LOG_FILE" || true
+}
+
+# Prints the summary line and exits with the given code. $1 = exit code.
+finish() {
+  log "ZN_SEGMENT_CONNECTOR_RESULT action=$ACTION state=$RESULT_STATE version=$VERSION"
+  exit "$1"
+}
+
+# Logs an error message and ends the script with exit code 1. $1 = message.
+fail() {
+  log "ERROR: $1"
+  finish 1
+}
+
+# Removes files that must not stay on the host: the token file (for token_source = file)
+# and the zip this script downloaded itself. A zip given by path is never removed.
+# This function is run by the EXIT trap below, not called by name.
+# shellcheck disable=SC2329
+cleanup() {
+  if [ "$TOKEN_SOURCE" = "file" ]; then
+    rm -f -- "$TOKEN_FILE"
+  fi
+  if [ "$ZIP_DOWNLOADED" = "true" ]; then
+    rm -f -- "$ZIP_FILE"
+  fi
+}
+trap cleanup EXIT
+# Turn Ctrl-C and kill into a normal exit, so the cleanup above still runs.
+trap 'exit 130' INT TERM
+
+# Downloads a URL to a file. $1 = URL, $2 = destination file.
+download() {
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL --retry 3 -o "$2" "$1"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -q -O "$2" "$1"
+  elif [ -n "$PY" ]; then
+    "$PY" -I - "$1" "$2" <<'PYEOF'
+import sys
+try:
+    from urllib.request import urlretrieve
+except ImportError:
+    from urllib import urlretrieve
+urlretrieve(sys.argv[1], sys.argv[2])
+PYEOF
+  else
+    log "ERROR: none of curl, wget or python is available to download the installer."
+    return 1
+  fi
+}
+
+# Makes sure the installer zip is available as ZIP_FILE.
+# Order: runtime override (ZN_SEGMENT_CONNECTOR_INSTALLER_ZIP), then installer_url,
+# then installer_zip_path (relative paths are taken from this script's folder).
+get_installer_zip() {
+  if [ -n "$${ZN_SEGMENT_CONNECTOR_INSTALLER_ZIP:-}" ]; then
+    ZIP_FILE="$${ZN_SEGMENT_CONNECTOR_INSTALLER_ZIP}"
+  elif [ -n "$INSTALLER_URL" ]; then
+    ZIP_FILE="$STAGING_DIR/installer.zip"
+    log "Downloading the installer package."
+    download "$INSTALLER_URL" "$ZIP_FILE" || fail "Could not download the installer package from installer_url."
+    ZIP_DOWNLOADED="true"
+  else
+    case "$INSTALLER_ZIP_PATH" in
+      /*) ZIP_FILE="$INSTALLER_ZIP_PATH" ;;
+      *) ZIP_FILE="$SCRIPT_DIR/$INSTALLER_ZIP_PATH" ;;
+    esac
+  fi
+  [ -f "$ZIP_FILE" ] || fail "Installer package not found at $ZIP_FILE."
+}
+
+# Unpacks the installer zip into the staging folder.
+# Uses unzip when it exists, otherwise Python's zipfile module.
+extract_installer() {
+  log "Extracting the installer package to $STAGING_DIR."
+  if command -v unzip >/dev/null 2>&1; then
+    unzip -oq "$ZIP_FILE" -d "$STAGING_DIR" || fail "unzip could not extract the installer package."
+  elif [ -n "$PY" ]; then
+    "$PY" -I - "$ZIP_FILE" "$STAGING_DIR" <<'PYEOF' || fail "Python could not extract the installer package."
+import sys, zipfile
+zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])
+PYEOF
+  else
+    fail "Neither unzip nor python is available to extract the installer package."
+  fi
+}
+
+# Prints the path of the installer binary inside the staging folder (empty when not found).
+find_binary() {
+  find "$STAGING_DIR" -type f -name "$INSTALLER_NAME" 2>/dev/null | head -n 1
+}
+
+# Reads the installer version and stores it in VERSION (reported when report_version is true).
+# The installer prints its version on stderr, so both streams are read.
+report_installer_version() {
+  local out
+  out="$(cd "$(dirname "$BIN")" && "$BIN" -version 2>&1 || true)"
+  VERSION="$(printf '%s\n' "$out" | sed -n 's/.*installer version: *\([^ ]*\).*/\1/p' | head -n 1)"
+  [ -n "$VERSION" ] || VERSION="unknown"
+  log "Installer version: $VERSION"
+}
+
+# Gets a managed identity token from the Azure metadata service, then reads the secret
+# from Key Vault. Prints the secret value on stdout. Nothing else is printed.
+token_from_key_vault() {
+  local meta_query access secret
+  if [ -z "$KV_NAME" ] || [ -z "$KV_SECRET" ]; then
+    log "ERROR: azure_key_vault_name and azure_key_vault_secret_name must be set."
+    return 1
+  fi
+  if [ -z "$PY" ]; then
+    log "ERROR: python is needed to read the Key Vault response."
+    return 1
+  fi
+
+  meta_query="api-version=2018-02-01&resource=https%3A%2F%2Fvault.azure.net"
+  if [ -n "$MI_CLIENT_ID" ]; then
+    meta_query="$meta_query&client_id=$MI_CLIENT_ID"
+  fi
+  access="$(curl -fsS -H 'Metadata: true' "http://169.254.169.254/metadata/identity/oauth2/token?$meta_query" \
+    | "$PY" -I -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')" \
+    || { log "ERROR: could not get a managed identity token from the metadata service."; return 1; }
+
+  # The bearer header is passed through curl's config input so it is not visible in the process list.
+  secret="$(printf 'header = "Authorization: Bearer %s"\n' "$access" \
+    | curl -fsS -K - "https://$KV_NAME.vault.azure.net/secrets/$KV_SECRET?api-version=7.4" \
+    | "$PY" -I -c 'import json,sys; print(json.load(sys.stdin).get("value", ""))')" \
+    || { log "ERROR: could not read the secret from Key Vault."; return 1; }
+  printf '%s' "$secret"
+}
+
+# Sets TOKEN from the place chosen by token_source. Never prints the token.
+read_token() {
+  TOKEN=""
+  case "$TOKEN_SOURCE" in
+    env)
+      # Base64 token from the runtime environment, or the plain token.
+      if [ -n "$${ZN_SEGMENT_CONNECTOR_TOKEN_B64:-}" ]; then
+        TOKEN="$(printf '%s' "$${ZN_SEGMENT_CONNECTOR_TOKEN_B64}" | base64 -d 2>/dev/null || true)"
+      else
+        TOKEN="$${ZN_SEGMENT_CONNECTOR_TOKEN:-}"
+      fi
+      ;;
+    file)
+      # Read the token from a file, then delete the file at once.
+      if [ -f "$TOKEN_FILE" ]; then
+        TOKEN="$(cat "$TOKEN_FILE")"
+        rm -f -- "$TOKEN_FILE"
+      fi
+      ;;
+    azure_key_vault)
+      TOKEN="$(token_from_key_vault)" || TOKEN=""
+      ;;
+    embedded)
+      # Base64 token written into this script by Terraform.
+      TOKEN="$(printf '%s' "$EMBEDDED_TOKEN_B64" | base64 -d 2>/dev/null || true)"
+      ;;
+  esac
+  # Remove carriage returns and line breaks that an editor may have added.
+  TOKEN="$(printf '%s' "$TOKEN" | tr -d '\r\n')"
+  [ -n "$TOKEN" ] || fail "No enrollment token was found (token_source is $TOKEN_SOURCE)."
+}
+
+# Prints a hint line when the lowercase text contains the phrase.
+# Hints are added to HINTS. $1 = lowercase text, $2 = phrase, $3 = hint text.
+hint_if() {
+  case "$1" in
+    *"$2"*) HINTS="$HINTS$3"$'\n' ;;
+  esac
+}
+
+# Looks at the installer output (and the installer log, when the output is empty) and
+# prints the hints that match a known failure. $1 = file with the installer output.
+show_failure_hints() {
+  local out_file="$1" text="" tail_text="" line prereq
+  text="$(tr '[:upper:]' '[:lower:]' <"$out_file")"
+
+  # Show the last 50 lines of the installer log.
+  if [ -f "$INSTALLER_LOG" ]; then
+    tail_text="$(tail -n 50 "$INSTALLER_LOG" 2>/dev/null | tr '[:upper:]' '[:lower:]')"
+    log "Last 50 lines of $INSTALLER_LOG:"
+    tail -n 50 "$INSTALLER_LOG" 2>/dev/null | while IFS= read -r line; do
+      log "  $line"
+    done
+  fi
+  # The log keeps lines from earlier runs, so it is only searched when this run printed nothing.
+  if [ -z "$(tr -d ' \t\r\n' <"$out_file")" ]; then
+    text="$text
+$tail_text"
+  fi
+
+  HINTS=""
+  prereq="Check /var/zeronetworks/logs/install-script.log and the runtime package list in the README (sudo and policycoreutils on SELinux hosts, firewall tooling, cron, logrotate)."
+
+  # Install hints.
+  hint_if "$text" "invalid token" "The installation token is invalid or expired. Generate a new one in the portal (Settings > Segment > Segment Connector) and update the token settings (token_source, token, token_file_path or the Key Vault variables)."
+  hint_if "$text" "failed to perform dns query" "The host could not resolve the DNS TXT record for the token audience. Check DNS resolution, DNS filtering and proxies on the host."
+  hint_if "$text" "failed to communicate with segment servers" "The host cannot reach the Zero Networks segment server. Check outbound access (TCP 443 by default) and proxies."
+  hint_if "$text" "does not match existing assetid stored locally" "The host already has a different asset ID. Remove asset_id, or set force = true to overwrite it."
+  hint_if "$text" "mismatching assetid" "The host already has a different asset ID. Remove asset_id, or set force = true to overwrite it."
+  hint_if "$text" "couldn't find asset" "The host is not registered in the portal. Set allow_create = true to create it, or set asset_id."
+  hint_if "$text" "asset not found or couldn't be created" "The host is not registered in the portal. Set allow_create = true to create it, or set asset_id."
+  hint_if "$text" "no trusted fqdn available" "The portal could not determine an FQDN for this host. Set asset_fqdn, or use with_static_ip = true together with asset_name."
+  hint_if "$text" "found more than one asset" "More than one portal asset matches this host. Set asset_id."
+  hint_if "$text" "provided fqdn is invalid" "asset_fqdn is not a valid FQDN (it needs a dot and cannot be an IP address)."
+  hint_if "$text" "requires --name" "Static-IP enrollment needs a display name. Set asset_name."
+  hint_if "$text" "an ot asset" "The Segment Connector cannot be installed on an OT asset."
+  hint_if "$text" "asset is inactive" "The asset is inactive in the portal. Check its state there."
+  hint_if "$text" "chassis/os/kernel information is not valid" "The portal rejected this host's hardware/OS information; confirm the platform is supported (see Supported platforms in the README)."
+  hint_if "$text" "zn-user is missing" "This host was installed with run-as root. Uninstall first, or set run_as = 'root'."
+  hint_if "$text" "failed to get package from the segment server" "Downloading the connector package failed. Increase download_timeout and check bandwidth and proxies."
+  hint_if "$text" "windows version is not supported" "The installer reports this Linux distribution/version as unsupported; see Supported platforms in the README."
+  hint_if "$text" "must run with sudo" "The installer was not run as root. This script must run as root; check the user that runs it."
+  hint_if "$text" "failed to verify installation prerequisites" "$prereq"
+  hint_if "$text" "failed to install package" "$prereq"
+
+  # Uninstall hints.
+  hint_if "$text" "failed to get asset id" "Uninstall: no asset identity was found on this host; the connector may not be installed."
+  hint_if "$text" "asset unregistration failed" "Uninstall: the portal refused the unregistration. Try force = true."
+  hint_if "$text" "cleanup did not complete" "The host was unregistered, but removing the service or the local zn-user did not finish. Check installer.log and install-script.log in /var/zeronetworks/logs and remove what remains manually."
+
+  if [ -n "$HINTS" ]; then
+    log "Hints:"
+    printf '%s' "$HINTS" | awk 'NF && !seen[$0]++' | while IFS= read -r line; do
+      log "  - $line"
+    done
+  else
+    log "No known cause matched. See the installer output above and $INSTALLER_LOG and install-script.log in /var/zeronetworks/logs on the host."
+  fi
+}
+
+# Runs the installer from its own folder. Stdout and stderr go to one file, which is logged
+# and searched for hints when the run fails. Returns the installer's exit code.
+run_installer() {
+  local out_file rc line
+  out_file="$(mktemp "$STAGING_DIR/run-output.XXXXXX")"
+  # The token is passed as an argument, which is how the installer takes it.
+  if [ "$ACTION" = "install" ]; then
+    (
+      cd "$(dirname "$BIN")" && "$BIN" -install -token "$TOKEN" %{ for a in q_install_args ~}${a} %{ endfor ~}
+    ) >"$out_file" 2>&1
+  else
+    (
+      cd "$(dirname "$BIN")" && "$BIN" -uninstall -token "$TOKEN" %{ for a in q_uninstall_args ~}${a} %{ endfor ~}
+    ) >"$out_file" 2>&1
+  fi
+  rc=$?
+
+  # Log the installer output one line at a time.
+  while IFS= read -r line; do
+    log "installer: $line"
+  done <"$out_file"
+
+  if [ "$rc" -ne 0 ]; then
+    log "ERROR: the installer exited with code $rc."
+    show_failure_hints "$out_file"
+  fi
+  rm -f -- "$out_file"
+  return "$rc"
+}
+
+# Checks the connector log for a connection to a segment server.
+#   $1 = seconds to wait for a connection (0 = read the log once)
+#   $2 = start time of this run (empty = read the whole log)
+# Sets CONNECTION_STATE and RESULT_STATE. Logs a summary. Returns 0 when connected, 1 otherwise.
+check_connection() {
+  local wait_secs="$1" since="$2" out_file state server collector last_error hints host
+  local extra="" wait_text="" err_text="" line
+
+  CONNECTION_STATE="unknown"
+  if [ -z "$PY" ]; then
+    log "WARNING: python is not available, so the connection check was not run."
+    RESULT_STATE="$CONNECTION_STATE"
+    return 1
+  fi
+
+  # The helper below reads the connector log (JSON lines) and prints key=value lines.
+  # It waits and re-reads the log every 5 seconds until connected or the time is up.
+  # It only reads the log and never prints the token.
+  out_file="$(mktemp "$STAGING_DIR/connection.XXXXXX")"
+  "$PY" -I - "$CONNECTOR_LOG" "$since" "$wait_secs" >"$out_file" 2>&1 <<'PYEOF'
+import io, json, re, sys, time
+
+path = sys.argv[1]
+since = sys.argv[2][:19]
+timeout = int(sys.argv[3])
+
+NET_HINT = "The host cannot reach the segment server on TCP 443. Check the firewall, routing and any proxy between this host and the segment server."
+TLS_HINT = "TLS to the segment server failed. Check for TLS inspection on the path and that the host clock is correct."
+DNS_HINT = "The host cannot resolve the segment server name {server}. Fix DNS for that name (a DNS forwarder, or a hosts entry) on this host."
+NOT_STARTED_HINT = "No new connector start was found in the log. Check systemctl status zn-segment-connector (or service zn-segment-connector status), /var/zeronetworks/logs/shell-std-err.log and /var/zeronetworks/logs/zn-segment-connector.log.panic."
+
+# Pairs of (text to find in the last error, hint). The text is compared in lowercase.
+ERROR_HINTS = [
+    ("name resolver error", DNS_HINT),
+    ("produced zero addresses", DNS_HINT),
+    ("failed to lookup txt records", "The host cannot do the DNS TXT lookup the connector needs to find its segment servers. Allow DNS to the host's resolver and to public DNS (UDP and TCP 53)."),
+    ("connection refused", NET_HINT),
+    ("i/o timeout", NET_HINT),
+    ("deadline exceeded", NET_HINT),
+    ("network is unreachable", NET_HINT),
+    ("no route to host", NET_HINT),
+    ("x509", TLS_HINT),
+    ("certificate", TLS_HINT),
+    ("tls handshake", TLS_HINT),
+    ("asset is not known for this segment server", "The host is enrolled, but the segment server does not know this asset yet. This usually clears within a few minutes; if it persists, check the asset in the portal."),
+]
+
+
+def read_status():
+    # Reads the whole log once and works out the state from the events after the start time.
+    out = {"state": "unknown", "server": "", "last_error": "", "collector": False, "started": False, "events": []}
+    last = None
+    try:
+        handle = io.open(path, "r", encoding="utf-8", errors="replace")
+    except (IOError, OSError):
+        handle = None
+    if handle is not None:
+        for line in handle:
+            line = line.strip()
+            if not line.startswith("{"):
+                continue
+            try:
+                rec = json.loads(line)
+            except ValueError:
+                continue
+            ts = rec.get("ts", "")[:19]
+            if since and ts < since:
+                continue
+            msg = rec.get("msg", "")
+            err = rec.get("error", "")
+            if rec.get("serverAddress"):
+                out["server"] = rec["serverAddress"]
+            if msg in ("zero networks segment connector is starting", "segment connector initialized"):
+                out["started"] = True
+                last = None
+                out["collector"] = False
+            elif msg == "connected successfully to segment server":
+                last = "connected"
+                out["last_error"] = ""
+                out["collector"] = False
+            elif msg == "starting collector":
+                if last == "connected":
+                    out["collector"] = True
+            elif rec.get("level") == "fatal" or msg in (
+                "failed to create stream", "failed to create client",
+                "couldn't connect to a segment server",
+                "couldn't subscribe to the segment server stream",
+            ):
+                last = "error"
+                out["collector"] = False
+                if err and err != "no response from any segment server":
+                    out["last_error"] = err
+                elif err and not out["last_error"]:
+                    out["last_error"] = err
+            else:
+                continue
+            out["events"].append(ts + " " + msg + ((": " + err) if err else ""))
+            out["events"] = out["events"][-5:]
+        handle.close()
+    if last == "connected":
+        out["state"] = "operational" if out["collector"] else "connected"
+    elif last == "error":
+        out["state"] = "failing"
+    elif since and not out["started"]:
+        out["state"] = "not_started"
+    return out
+
+
+def main():
+    deadline = time.time() + timeout
+    while True:
+        status = read_status()
+        if status["state"] in ("connected", "operational") or time.time() >= deadline:
+            break
+        time.sleep(5)
+
+    # Work out the hints for the last error (or the missing start).
+    host = re.sub(r":[0-9]+$", "", status["server"]) or "the segment server"
+    lowered = status["last_error"].lower()
+    hints = []
+    for pattern, text in ERROR_HINTS:
+        if pattern in lowered and text not in hints:
+            hints.append(text)
+    if status["state"] == "not_started":
+        hints.append(NOT_STARTED_HINT)
+    hints = [h.replace("{server}", host) for h in hints]
+    if not hints and status["state"] not in ("connected", "operational"):
+        hints = ["No known cause matched. Last connector events: " + ("; ".join(status["events"]) or "none") + "."]
+
+    print("state=" + status["state"])
+    print("server=" + status["server"])
+    print("collector=" + ("1" if status["collector"] else "0"))
+    print("last_error=" + status["last_error"].replace("\n", " "))
+    for hint in hints:
+        print("hint=" + hint)
+
+
+main()
+PYEOF
+
+  state="$(sed -n 's/^state=//p' "$out_file" | head -n 1)"
+  server="$(sed -n 's/^server=//p' "$out_file" | head -n 1)"
+  collector="$(sed -n 's/^collector=//p' "$out_file" | head -n 1)"
+  last_error="$(sed -n 's/^last_error=//p' "$out_file" | head -n 1)"
+  hints="$(sed -n 's/^hint=//p' "$out_file")"
+  rm -f -- "$out_file"
+
+  [ -n "$state" ] || state="unknown"
+  CONNECTION_STATE="$state"
+  RESULT_STATE="$state"
+  host="$(hostname 2>/dev/null || true)"
+  [ -n "$host" ] || host="this host"
+
+  if [ "$state" = "connected" ] || [ "$state" = "operational" ]; then
+    [ "$collector" = "1" ] && extra=" (collector started)"
+    log "Segment Connector on $host is connected to $server$extra."
+    return 0
+  fi
+
+  # Not connected: warn with the hints that match.
+  if [ "$wait_secs" -gt 0 ]; then
+    wait_text=" within $wait_secs seconds"
+  fi
+  err_text="$last_error"
+  [ -n "$err_text" ] || err_text="none"
+  log "WARNING: the Segment Connector was installed on $host, but it did not report a connection to a segment server$wait_text. State: $state. Last error: $err_text."
+  printf '%s\n' "$hints" | while IFS= read -r line; do
+    if [ -n "$line" ]; then
+      log "  - $line"
+    fi
+  done
+  log "The installer succeeded; this only reports what the connector log shows. Set verify_strict = true to fail the run instead."
+  return 1
+}
+
+# Ends the script after the connection check. $1 = result of the check (0 = connected).
+# Exit code 2 only when verify_strict is true and the connector is not connected.
+finish_after_check() {
+  if [ "$1" -eq 0 ]; then
+    finish 0
+  fi
+  if [ "$VERIFY_STRICT" = "true" ]; then
+    log "ERROR: the Segment Connector is not connected and verify_strict is true."
+    finish 2
+  fi
+  finish 0
+}
+
+# Runs the warning-only checks for things the installer needs on the host.
+# Nothing here stops the install; the installer decides what the host can run.
+probe_runtime_prerequisites() {
+  if ! command -v nft >/dev/null 2>&1 && ! command -v iptables >/dev/null 2>&1; then
+    log "WARNING: this host has neither nft nor iptables on PATH. The Segment Connector needs nftables or legacy iptables at runtime. Install one before relying on this host."
+  fi
+  if command -v sestatus >/dev/null 2>&1 && sestatus 2>/dev/null | grep -q 'SELinux status:[[:space:]]*enabled'; then
+    if ! command -v sudo >/dev/null 2>&1; then
+      log "WARNING: SELinux is enabled but sudo is not installed. The installer calls sudo to load its SELinux policy module and run restorecon. Install sudo (and policycoreutils) on this host."
+    fi
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# Main steps
+# ---------------------------------------------------------------------------
+
+# Make sure the log and staging folders exist. Refuse an empty or root staging folder,
+# because it is deleted on uninstall.
+case "$STAGING_DIR" in
+  ""|/) printf 'ERROR: staging_dir must be a folder other than / or empty.\n' >&2; exit 1 ;;
+esac
+mkdir -p "$(dirname "$LOG_FILE")" "$STAGING_DIR" 2>/dev/null || true
+chmod 0700 "$STAGING_DIR" 2>/dev/null || true
+
+# Check the action value.
+case "$ACTION" in
+  install|uninstall) ;;
+  *) fail "action must be install or uninstall, not $ACTION." ;;
+esac
+
+# The installer must run as root.
+if [ "$(id -u)" -ne 0 ]; then
+  fail "this script must run as root."
+fi
+
+# Step: skip the install when the connector is already installed (unless reinstall is true).
+# A single connection check is still made, so the result is reported.
+if [ "$ACTION" = "install" ] && [ -f "$IDENTITY_FILE" ] && [ "$REINSTALL" != "true" ]; then
+  log "zn-segment-connector is already installed (found $IDENTITY_FILE). Skipping the install. Set reinstall = true to run the installer again."
+  if [ "$VERIFY_CONNECTION" = "true" ]; then
+    rc=0
+    check_connection 0 "" || rc=$?
+    finish_after_check "$rc"
+  fi
+  RESULT_STATE="not_checked"
+  finish 0
+fi
+
+# Step: warning-only checks, only for install.
+if [ "$ACTION" = "install" ]; then
+  probe_runtime_prerequisites
+fi
+
+# Step: get the installer binary. Uninstall reuses a binary that is already in the staging folder.
+if [ "$ACTION" = "uninstall" ]; then
+  BIN="$(find_binary)"
+fi
+if [ -z "$BIN" ]; then
+  get_installer_zip
+  extract_installer
+  BIN="$(find_binary)"
+fi
+[ -n "$BIN" ] || fail "$INSTALLER_NAME was not found in the installer package."
+chmod 0755 "$BIN"
+
+if [ "$REPORT_VERSION" = "true" ]; then
+  report_installer_version
+fi
+
+# Step: read the token. Install and uninstall both need it.
+read_token
+
+# Step: record the start time, so the connection check ignores older log lines.
+SINCE="$(date -u +%Y-%m-%dT%H:%M:%S)"
+
+# Step: run the installer or the uninstaller.
+rc=0
+run_installer || rc=$?
+if [ "$rc" -ne 0 ]; then
+  if [ "$ACTION" = "install" ]; then
+    RESULT_STATE="install_failed"
+  else
+    RESULT_STATE="uninstall_failed"
+  fi
+  finish "$rc"
+fi
+
+# Step: uninstall is done. Remove the staging folder, unless this script itself lives inside it.
+if [ "$ACTION" = "uninstall" ]; then
+  log "The Segment Connector was uninstalled."
+  case "$SCRIPT_DIR/" in
+    "$STAGING_DIR/"*)
+      log "The script is inside $STAGING_DIR, so that folder was kept." ;;
+    *)
+      rm -rf -- "$STAGING_DIR" ;;
+  esac
+  RESULT_STATE="removed"
+  finish 0
+fi
+
+# Step: install is done. Check the connection to the segment server.
+log "The Segment Connector was installed."
+if [ "$VERIFY_CONNECTION" = "true" ]; then
+  rc=0
+  check_connection "$VERIFY_TIMEOUT" "$SINCE" || rc=$?
+  finish_after_check "$rc"
+fi
+
+RESULT_STATE="not_checked"
+finish 0
