@@ -45,6 +45,9 @@ stopping. Skipped rows are listed at the end of the run. Site rule violations ar
 Validate the CSV against the Sites layout rules before any change is made. Bare IP addresses are
 converted to /32 (IPv4) or /128 (IPv6).
 
+.PARAMETER SiteMapPath
+Markdown file for the site hierarchy map. Used only with -SiteGroups; the map is always written in that mode. Without this parameter the file is site-hierarchy-<yyyyMMdd-HHmmss>.md in the current directory. An explicit path is overwritten, and its folder is created if needed. Not allowed without -SiteGroups or with a removal switch. Its map is written after validation, both for -WhatIf/-DryRun (statuses Planned and Existing) and for a real run (statuses Created, Updated, Unchanged and Failed).
+
 .PARAMETER RemoveMembers
 Remove the listed entityName members from each targetGroupName. Groups are kept. The
 newGroupDescription and parentGroup columns are ignored in this mode.
@@ -87,6 +90,8 @@ param(
     [switch]$SkipResolveErrors,
 
     [switch]$SiteGroups,
+
+    [string]$SiteMapPath,
 
     [Parameter(ParameterSetName = 'RemoveMembers')]
     [switch]$RemoveMembers,
@@ -607,6 +612,328 @@ function Get-ZNSiteViolations {
         }
     }
     return $violations.ToArray()
+}
+
+function Get-ZNSiteMapModel {
+    <#
+    .SYNOPSIS
+        Builds the graph model behind the site hierarchy map. Pure: makes no network calls.
+    .PARAMETER Nodes
+        Group node objects in CSV order, with Name, ParentName, Resolved, Status and ExistingId.
+        Status is optional; when empty it is derived as Existing (group found in the tenant) or Planned.
+    .OUTPUTS
+        PSCustomObject with Groups (CSV groups in CSV order, then groups outside the CSV that are
+        referenced as a parent or a member group), Edges (Parent, Child), GroupCount, SubnetCount,
+        ExistingCount and MaxDepth (from Get-ZNSiteDepth). Each group has Name, IsExternal, Status,
+        Level, Parents, Children and Subnets.
+    #>
+    param([object[]]$Nodes)
+
+    $nodeList = @($Nodes | Where-Object { $null -ne $_ })
+    $items = [System.Collections.Generic.List[object]]::new()
+    $index = @{}
+
+    foreach ($n in $nodeList) {
+        $status = if ($n.Status) { [string]$n.Status } elseif ($n.ExistingId) { 'Existing' } else { 'Planned' }
+        $subnets = [System.Collections.Generic.List[string]]::new()
+        foreach ($r in @($n.Resolved)) {
+            if ($r.Kind -eq 'Subnet') { $subnets.Add([string]$r.Display) }
+        }
+        $index[[string]$n.Name] = $items.Count
+        $items.Add([pscustomobject]@{
+                Name       = [string]$n.Name
+                IsExternal = $false
+                Status     = $status
+                Level      = 1
+                Parents    = [System.Collections.Generic.List[string]]::new()
+                Children   = [System.Collections.Generic.List[string]]::new()
+                Subnets    = $subnets
+            })
+    }
+
+    # Groups outside the CSV: an existing parent (parentGroup) or an existing child group (member).
+    foreach ($n in $nodeList) {
+        $refs = [System.Collections.Generic.List[string]]::new()
+        if ($n.ParentName) { $refs.Add([string]$n.ParentName) }
+        foreach ($r in @($n.Resolved)) {
+            if ($r.Kind -eq 'Group' -and -not $r.CsvGroup) { $refs.Add([string]$r.Display) }
+        }
+        foreach ($ref in $refs) {
+            if ($index.ContainsKey($ref)) { continue }
+            $index[$ref] = $items.Count
+            $items.Add([pscustomobject]@{
+                    Name       = $ref
+                    IsExternal = $true
+                    Status     = 'External'
+                    Level      = 0
+                    Parents    = [System.Collections.Generic.List[string]]::new()
+                    Children   = [System.Collections.Generic.List[string]]::new()
+                    Subnets    = [System.Collections.Generic.List[string]]::new()
+                })
+        }
+    }
+
+    # Parent -> child edges, de-duplicated, in CSV order.
+    $pairs = [System.Collections.Generic.List[object]]::new()
+    foreach ($n in $nodeList) {
+        if ($n.ParentName) { $pairs.Add(@([string]$n.ParentName, [string]$n.Name)) }
+        foreach ($r in @($n.Resolved)) {
+            if ($r.Kind -eq 'Group') {
+                $child = if ($r.CsvGroup) { [string]$r.CsvGroup } else { [string]$r.Display }
+                $pairs.Add(@([string]$n.Name, $child))
+            }
+        }
+    }
+    $edgeKeys = @{}
+    $edges = [System.Collections.Generic.List[object]]::new()
+    foreach ($p in $pairs) {
+        $key = "$($p[0])`t$($p[1])"
+        if ($edgeKeys.ContainsKey($key)) { continue }
+        $edgeKeys[$key] = $true
+        $edges.Add([pscustomobject]@{ Parent = $p[0]; Child = $p[1] })
+        $items[$index[$p[1]]].Parents.Add($p[0])
+        $items[$index[$p[0]]].Children.Add($p[1])
+    }
+
+    # Level: 1 for top-level groups, 0 for an existing group that has no parent, otherwise parent level + 1.
+    # The relaxation is bounded so a cycle (already rejected by the planner) cannot loop forever.
+    for ($pass = 0; $pass -le $items.Count; $pass++) {
+        $changed = $false
+        foreach ($it in $items) {
+            foreach ($pn in $it.Parents) {
+                $candidate = $items[$index[$pn]].Level + 1
+                if ($candidate -gt $it.Level) { $it.Level = $candidate; $changed = $true }
+            }
+        }
+        if (-not $changed) { break }
+    }
+
+    $subnetTotal = 0
+    foreach ($n in $nodeList) {
+        foreach ($r in @($n.Resolved)) { if ($r.Kind -eq 'Subnet') { $subnetTotal++ } }
+    }
+
+    return [pscustomobject]@{
+        Groups        = $items.ToArray()
+        Edges         = $edges.ToArray()
+        GroupCount    = $nodeList.Count
+        SubnetCount   = $subnetTotal
+        ExistingCount = @($items | Where-Object { $_.IsExternal }).Count
+        MaxDepth      = Get-ZNSiteDepth -Nodes $nodeList
+    }
+}
+
+function ConvertTo-ZNSiteMapMarkdown {
+    <#
+    .SYNOPSIS
+        Renders the site hierarchy model as Markdown: header, Mermaid graph, text tree and table.
+    .PARAMETER Model
+        Output of Get-ZNSiteMapModel.
+    .PARAMETER Mode
+        Mode text for the header, for example 'Dry run preview' or 'Executed'.
+    .PARAMETER TenantHost
+        Tenant host name only (no scheme, path or API key).
+    .PARAMETER CsvName
+        File name of the CSV (not the full path).
+    .PARAMETER Generated
+        Timestamp shown in the header.
+    .OUTPUTS
+        System.String of Markdown with LF line endings.
+    .NOTES
+        Table cells and prose escape | ` < > \ and newlines. Mermaid labels escape " # < > and backtick
+        as entity codes. The text tree sits in a fenced block, where backslash escapes would show
+        literally, so its names are not escaped; the fence is made longer than any backtick run inside it.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][object]$Model,
+        [Parameter(Mandatory = $true)][string]$Mode,
+        [Parameter(Mandatory = $true)][string]$TenantHost,
+        [Parameter(Mandatory = $true)][string]$CsvName,
+        [Parameter(Mandatory = $true)][datetime]$Generated
+    )
+
+    # Markdown prose and table cells.
+    $mdEsc = {
+        param([string]$Text)
+        $t = $Text -replace '[\r\n]+', ' '
+        return $t.Replace('\', '\\').Replace('|', '\|').Replace('`', '\`').Replace('<', '&lt;').Replace('>', '&gt;')
+    }
+    # Mermaid quoted labels. '#' goes first so the entity codes it introduces are not re-escaped.
+    $mmEsc = {
+        param([string]$Text)
+        $t = $Text -replace '[\r\n]+', ' '
+        return $t.Replace('#', '#35;').Replace('"', '#quot;').Replace('<', '#lt;').Replace('>', '#gt;').Replace('`', '#96;')
+    }
+
+    $groups = @($Model.Groups)
+    $pos = @{}
+    for ($i = 0; $i -lt $groups.Count; $i++) { $pos[$groups[$i].Name] = $i }
+    $classOf = @{ Planned = 'planned'; Created = 'created'; Updated = 'updated'; Unchanged = 'unchanged'; Existing = 'unchanged'; Failed = 'failed'; External = 'external' }
+
+    # Mermaid graph. Node ids are generated, so group names only appear inside quoted labels.
+    $mm = [System.Collections.Generic.List[string]]::new()
+    $mm.Add('flowchart TD')
+    for ($i = 0; $i -lt $groups.Count; $i++) {
+        $g = $groups[$i]
+        $parts = [System.Collections.Generic.List[string]]::new()
+        $parts.Add((& $mmEsc $g.Name))
+        if ($g.IsExternal) {
+            $parts.Add('(existing)')
+        }
+        else {
+            $subs = @($g.Subnets)
+            foreach ($s in @($subs | Select-Object -First 10)) { $parts.Add((& $mmEsc $s)) }
+            if ($subs.Count -gt 10) { $parts.Add("+$($subs.Count - 10) more") }
+        }
+        $mm.Add(('    n{0}["{1}"]' -f $i, ($parts -join '<br/>')))
+    }
+    foreach ($e in @($Model.Edges)) {
+        $mm.Add(('    n{0} --> n{1}' -f $pos[$e.Parent], $pos[$e.Child]))
+    }
+    $mm.Add('    classDef planned fill:#C6C6FF,stroke:#667FFF,color:#08084C')
+    $mm.Add('    classDef created fill:#04B88E,stroke:#04B88E,color:#FFFFFF')
+    $mm.Add('    classDef updated fill:#667FFF,stroke:#08084C,color:#FFFFFF')
+    $mm.Add('    classDef unchanged fill:#EDEDF9,stroke:#08084C,color:#08084C')
+    $mm.Add('    classDef failed fill:#FFFFFF,stroke:#B3261E,color:#B3261E,stroke-width:3px')
+    $mm.Add('    classDef external fill:#FFFFFF,stroke:#08084C,color:#08084C,stroke-dasharray:5 5')
+    foreach ($c in @('planned', 'created', 'updated', 'unchanged', 'failed', 'external')) {
+        $ids = @()
+        for ($i = 0; $i -lt $groups.Count; $i++) {
+            if ($classOf[[string]$groups[$i].Status] -eq $c) { $ids += "n$i" }
+        }
+        if ($ids.Count -gt 0) { $mm.Add("    class $($ids -join ',') $c") }
+    }
+
+    # Text tree. Roots are groups with no parent; children follow CSV order.
+    $byName = @{}
+    foreach ($g in $groups) { $byName[$g.Name] = $g }
+    $labelOf = {
+        param($g)
+        if ($g.IsExternal) { return "$($g.Name) (existing)" }
+        $n = @($g.Subnets).Count
+        $unit = if ($n -eq 1) { 'subnet' } else { 'subnets' }
+        return "$($g.Name)  ($n $unit)  [$($g.Status)]"
+    }
+    $sortedChildren = {
+        param($g)
+        return @($g.Children | Sort-Object { $pos[$_] })
+    }
+    $teeText = ('{0}{1}{1} ' -f [char]0x251C, [char]0x2500)
+    $elbowText = ('{0}{1}{1} ' -f [char]0x2514, [char]0x2500)
+    $barText = ('{0}   ' -f [char]0x2502)
+    $gapText = '    '
+    $treeLines = [System.Collections.Generic.List[string]]::new()
+    $render = $null
+    $render = {
+        param([string]$Name, [string]$Prefix, [bool]$IsRoot, [bool]$IsLast, [string[]]$Trail)
+        $g = $byName[$Name]
+        if ($IsRoot) {
+            $line = [string](& $labelOf $g)
+            $childPrefix = ''
+        }
+        else {
+            $connector = if ($IsLast) { $elbowText } else { $teeText }
+            $line = $Prefix + $connector + [string](& $labelOf $g)
+            $childPrefix = $Prefix + $(if ($IsLast) { $gapText } else { $barText })
+        }
+        if ($Trail -contains $Name) { $treeLines.Add($line + ' (cycle)'); return }
+        $treeLines.Add($line)
+        $kids = @(& $sortedChildren $g)
+        for ($k = 0; $k -lt $kids.Count; $k++) {
+            & $render ([string]$kids[$k]) $childPrefix $false ($k -eq ($kids.Count - 1)) (@($Trail) + $Name)
+        }
+    }
+    foreach ($g in $groups) {
+        if (@($g.Parents).Count -eq 0) { & $render $g.Name '' $true $false @() }
+    }
+    $treeText = $treeLines -join "`n"
+    $maxRun = 0
+    foreach ($m in [regex]::Matches($treeText, '`+')) { if ($m.Length -gt $maxRun) { $maxRun = $m.Length } }
+    $fence = '`' * [Math]::Max(3, $maxRun + 1)
+
+    # Table with the full subnet list.
+    $rows = [System.Collections.Generic.List[string]]::new()
+    $rows.Add('| Group | Parent | Level | Status | Subnet count | Subnets |')
+    $rows.Add('|---|---|---|---|---|---|')
+    foreach ($g in $groups) {
+        $name = & $mdEsc $g.Name
+        $status = & $mdEsc $g.Status
+        $parentText = if (@($g.Parents).Count -gt 0) { (@($g.Parents | ForEach-Object { & $mdEsc $_ })) -join ', ' } else { '-' }
+        if ($g.IsExternal) {
+            $name = "$name (existing)"
+            $level = '-'
+            $count = '-'
+            $subsText = '-'
+        }
+        else {
+            $level = [string]$g.Level
+            $count = [string]@($g.Subnets).Count
+            $subsText = if (@($g.Subnets).Count -gt 0) { (@($g.Subnets | ForEach-Object { & $mdEsc $_ })) -join ', ' } else { '-' }
+        }
+        $rows.Add("| $name | $parentText | $level | $status | $count | $subsText |")
+    }
+
+    # Assemble the document.
+    $out = [System.Collections.Generic.List[string]]::new()
+    $out.Add('# Site hierarchy map')
+    $out.Add('')
+    $out.Add("- **Generated:** $($Generated.ToString('yyyy-MM-dd HH:mm:ss'))")
+    $out.Add("- **Tenant:** $(& $mdEsc $TenantHost)")
+    $out.Add("- **CSV file:** $(& $mdEsc $CsvName)")
+    $out.Add("- **Mode:** $(& $mdEsc $Mode)")
+    $out.Add("- **Groups:** $($Model.GroupCount)")
+    $out.Add("- **Subnets:** $($Model.SubnetCount)")
+    $out.Add("- **Max depth:** $($Model.MaxDepth) level(s)")
+    if ($Model.ExistingCount -gt 0) { $out.Add("- **Existing groups outside the CSV:** $($Model.ExistingCount)") }
+    $out.Add('')
+    if ($Model.MaxDepth -gt 3) {
+        $out.Add("> **Warning:** the hierarchy is $($Model.MaxDepth) levels deep. The Sites guide recommends 2 to 3 levels.")
+        $out.Add('')
+    }
+    $out.Add('## Graph (Mermaid)')
+    $out.Add('')
+    $out.Add('```mermaid')
+    foreach ($line in $mm) { $out.Add($line) }
+    $out.Add('```')
+    $out.Add('')
+    $out.Add('## Tree')
+    $out.Add('')
+    $out.Add($fence + 'text')
+    foreach ($line in $treeLines) { $out.Add($line) }
+    $out.Add($fence)
+    $out.Add('')
+    $out.Add('## Table')
+    $out.Add('')
+    foreach ($line in $rows) { $out.Add($line) }
+    $out.Add('')
+    $out.Add('> **Reminder:** Zero Networks must enable Sites after these groups exist.')
+    return (($out -join "`n") + "`n")
+}
+
+function Write-ZNSiteMap {
+    <#
+    .SYNOPSIS
+        Writes the site hierarchy map as UTF-8 without BOM, creating its folder if needed.
+    .PARAMETER Path
+        Target file path. Relative paths are resolved against the current PowerShell location.
+    .PARAMETER Content
+        Markdown text to write.
+    .OUTPUTS
+        System.String: the full path of the file written.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Content
+    )
+
+    $full = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
+    $dir = Split-Path -Parent $full
+    # -WhatIf:$false: the map is still written in a dry run, and creating its folder is not a tenant change.
+    if ($dir -and -not (Test-Path -LiteralPath $dir -PathType Container)) {
+        [void](New-Item -ItemType Directory -Path $dir -Force -WhatIf:$false)
+    }
+    [System.IO.File]::WriteAllText($full, $Content, [System.Text.UTF8Encoding]::new($false))
+    return $full
 }
 
 function Confirm-ZNRun {
@@ -1190,6 +1517,7 @@ function Build-ZNPlan {
         SiteGroups = [bool]$SiteGroups
         Nodes      = $nodes
         Order      = $ordered
+        CsvNodes   = @($active)
         Skipped    = $unresolved.ToArray()
         Warnings   = $warnings.ToArray()
         MaxDepth   = $maxDepth
@@ -1256,12 +1584,36 @@ function Invoke-ZNCreateMode {
         Skip the confirmation prompt.
     .PARAMETER Cmdlet
         The calling cmdlet's $PSCmdlet, used for ShouldProcess.
+    .PARAMETER SiteMapPath
+        Site map file path (only used when Plan.SiteGroups is set). Empty means the default file name in the current directory.
+    .PARAMETER CsvName
+        CSV file name shown in the site map header.
     .OUTPUTS
         System.Int32 exit code.
     #>
-    param($Plan, [switch]$Force, [System.Management.Automation.PSCmdlet]$Cmdlet)
+    param($Plan, [switch]$Force, [System.Management.Automation.PSCmdlet]$Cmdlet, [string]$SiteMapPath = '', [string]$CsvName = '')
 
     $nodes = $Plan.Nodes
+
+    # Writes the site hierarchy map (only with -SiteGroups). A failure is a warning, never a run failure.
+    $writeSiteMap = {
+        param([string]$ModeText)
+        try {
+            $mapPath = if ($SiteMapPath) {
+                $SiteMapPath
+            }
+            else {
+                Join-Path -Path (Get-Location).Path -ChildPath ('site-hierarchy-{0}.md' -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
+            }
+            $siteModel = Get-ZNSiteMapModel -Nodes $Plan.CsvNodes
+            $md = ConvertTo-ZNSiteMapMarkdown -Model $siteModel -Mode $ModeText -TenantHost ([uri]$script:ApiBaseUrl).Host -CsvName $CsvName -Generated (Get-Date)
+            $written = Write-ZNSiteMap -Path $mapPath -Content $md
+            Write-Host "Site hierarchy map written: $written"
+        }
+        catch {
+            Write-Warning "Could not write the site hierarchy map: $($_.Exception.Message)"
+        }
+    }
     $order = @($Plan.Order)
     $failures = [System.Collections.Generic.List[string]]::new()
 
@@ -1278,6 +1630,7 @@ function Invoke-ZNCreateMode {
 
     if (-not $Cmdlet.ShouldProcess($script:ApiBaseUrl, "Create or update $($order.Count) custom group(s)")) {
         Write-Host 'No changes made (WhatIf or declined).'
+        if ($Plan.SiteGroups -and $WhatIfPreference) { & $writeSiteMap 'Dry run preview' }
         return 0
     }
     if (-not (Confirm-ZNRun -Prompt 'Apply these changes' -Force:$Force)) {
@@ -1388,6 +1741,7 @@ function Invoke-ZNCreateMode {
 
     $totals = @($order | Group-Object Status | ForEach-Object { "$($_.Name)=$($_.Count)" }) -join ', '
     Write-Host "Totals: $totals; skipped=$($Plan.Skipped.Count); failures=$($failures.Count)"
+    if ($Plan.SiteGroups) { & $writeSiteMap 'Executed' }
     if ($failures.Count -gt 0) { return 1 }
     return 0
 }
@@ -1565,6 +1919,12 @@ if ($MyInvocation.InvocationName -ne '.') {
             default { 'Create' }
         }
 
+        if ($PSBoundParameters.ContainsKey('SiteMapPath')) {
+            if ([string]::IsNullOrWhiteSpace($SiteMapPath)) { throw '-SiteMapPath must not be empty.' }
+            if (-not $SiteGroups) { throw '-SiteMapPath can only be used together with -SiteGroups.' }
+            if ($friendlyMode -ne 'Create') { throw '-SiteMapPath cannot be used with -RemoveMembers or -RemoveGroupsAndMembers; the site map is only written in create mode.' }
+        }
+
         $rows = @(Import-ZNGroupCsv -Path $CsvPath)
 
         $ApiKey = Get-ZNApiKey -ApiKey $ApiKey
@@ -1576,7 +1936,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         $plan = Build-ZNPlan -Rows $rows -Mode $friendlyMode -SiteGroups:$SiteGroups -SkipResolveErrors:$SkipResolveErrors
 
         $exitCode = switch ($friendlyMode) {
-            'Create' { Invoke-ZNCreateMode -Plan $plan -Force:$Force -Cmdlet $PSCmdlet }
+            'Create' { Invoke-ZNCreateMode -Plan $plan -Force:$Force -Cmdlet $PSCmdlet -SiteMapPath $SiteMapPath -CsvName (Split-Path -Leaf $CsvPath) }
             'RemoveMembers' { Invoke-ZNRemoveMembersMode -Plan $plan -Force:$Force -Cmdlet $PSCmdlet }
             'RemoveGroupsAndMembers' { Invoke-ZNRemoveGroupsMode -Plan $plan -Force:$Force -Cmdlet $PSCmdlet }
         }

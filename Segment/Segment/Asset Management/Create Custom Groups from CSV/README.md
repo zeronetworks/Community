@@ -87,6 +87,7 @@ To nest a group, put its name in `parentGroup` on its rows. The parent is define
 | `-ApiKey` | No | Zero Networks API key. If omitted, the script prompts for it. The key is masked in logs. |
 | `-SkipResolveErrors` | No | Skip members that cannot be resolved, and list them at the end, instead of stopping. See [Resolve errors](#resolve-errors). |
 | `-SiteGroups` | No | Validate the CSV against the Sites rules. See [Site groups](#site-groups--sitegroups). |
+| `-SiteMapPath` | No | Markdown file for the site hierarchy map. Requires `-SiteGroups`; not allowed with a removal switch. See [Site hierarchy map](#site-hierarchy-map). |
 | `-RemoveMembers` | No | **Destructive.** Remove the listed members from their groups. See [Warning](#warning-destructive-switches). |
 | `-RemoveGroupsAndMembers` | No | **Destructive.** Empty and delete the groups named in the CSV. See [Warning](#warning-destructive-switches). |
 | `-Force` | No | Skip the confirmation prompt for the removal modes. |
@@ -140,6 +141,32 @@ The `-SiteGroups` checks are:
 After the groups are created, Zero Networks must enable the Sites feature for your tenant. There is no portal switch. Contact your Zero Networks representative or open a support request once the Site groups are ready. Zero Networks then handles the migration of existing rules.
 
 See [site-groups.example.csv](site-groups.example.csv) for a valid Sites sample: a `Site_US` parent with `Site_NewYork` and `Site_Boston` children holding subnets, and a single host added as a bare IP.
+
+## Site hierarchy map
+
+With `-SiteGroups`, the script also writes a Markdown map of the group hierarchy. The map is written after the Sites rules pass, in both dry runs (`-WhatIf` or `-DryRun`) and real runs. If validation fails, no map is written.
+
+The map contains:
+
+- **Header:** generation time, tenant host, CSV file name, mode (`Dry run preview` or `Executed`), group and subnet totals, maximum depth, and a warning when the hierarchy is more than 3 levels deep. The footer reminds you to enable Sites in Zero Networks.
+- **Mermaid graph:** one node per group and one edge from each parent to each child. Leaf groups list their subnets. Colors show each group's status.
+- **Text tree:** the same hierarchy with subnet counts, for viewers that cannot render Mermaid.
+- **Table:** each group with its parent, level, status, subnet count, and full subnet list.
+
+A parent group that exists in the tenant but is not defined in the CSV is shown as an extra node labelled `(existing)`.
+
+Statuses depend on the mode. A dry run shows `Planned` (the group will be created) or `Existing` (the group already exists and will be reused). A real run shows `Created`, `Updated`, `Unchanged`, or `Failed`.
+
+By default the file is `site-hierarchy-<yyyyMMdd-HHmmss>.md` in the current directory, meaning the folder you run the script from. Use `-SiteMapPath` to choose another file. An existing file at that path is overwritten, and any missing folders are created. The script prints the final path at the end of the run. If the map cannot be written, a warning is printed and the run is not marked as failed.
+
+`-SiteMapPath` is an error without `-SiteGroups`, and it is also an error with `-RemoveMembers` or `-RemoveGroupsAndMembers`, because the map is not written in the removal modes.
+
+To view the map:
+
+- **GitHub:** the Mermaid block is drawn when the Markdown file is viewed on github.com.
+- **VS Code:** the built-in Markdown preview does not draw Mermaid diagrams. Install a Markdown extension that supports Mermaid, for example "Markdown Preview Mermaid Support", then open the Markdown preview. The tree and table are readable without it.
+
+See [site-hierarchy.example.md](site-hierarchy.example.md) for an example map. It was generated in dry-run mode from a sample Sites structure, with a fixed timestamp.
 
 ## Report output
 
