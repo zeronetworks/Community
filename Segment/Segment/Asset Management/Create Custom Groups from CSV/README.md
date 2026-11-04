@@ -233,11 +233,10 @@ With `-SiteGroups`, the script also writes a Markdown map of the group hierarchy
 The map contains:
 
 - **Header:** generation time, tenant host, CSV file name, mode (`Dry run preview` or `Executed`), group and subnet totals, maximum depth, and a warning when the hierarchy is more than 3 levels deep. The footer reminds you to enable Sites in Zero Networks.
-- **Mermaid graph:** one node per group and one edge from each parent to each child. Leaf groups list their subnets. Colors show each group's status.
-- **Text tree:** the same hierarchy with subnet counts, for viewers that cannot render Mermaid.
+- **Hierarchy:** a text tree in a code block. Each line is one group with its status and subnet count, for example `Site_US  [Planned]`. Child groups are listed under their parent, in CSV order. Each group's subnets are listed in full as leaf lines under it, with no status tag, so you can tell them apart from groups. A group with no parent is shown at the top level.
 - **Table:** each group with its parent, level, status, subnet count, and full subnet list.
 
-A parent group that exists in the tenant but is not defined in the CSV is shown as an extra node labelled `(existing)`.
+A parent group that exists in the tenant but is not defined in the CSV is shown in the tree with `(existing)` in place of a status.
 
 Statuses depend on the mode. A dry run shows `Planned` (the group will be created) or `Existing` (the group already exists and will be reused). A real run shows `Created`, `Updated`, `Unchanged`, or `Failed`.
 
@@ -245,10 +244,7 @@ By default the file is `site-hierarchy-<yyyyMMdd-HHmmss>.md` in the current dire
 
 `-SiteMapPath` is an error without `-SiteGroups`, and it is also an error with `-RemoveMembers` or `-RemoveGroupsAndMembers`, because the map is not written in the removal modes.
 
-To view the map:
-
-- **GitHub:** the Mermaid block is drawn when the Markdown file is viewed on github.com.
-- **VS Code:** the built-in Markdown preview does not draw Mermaid diagrams. Install a Markdown extension that supports Mermaid, for example "Markdown Preview Mermaid Support", then open the Markdown preview. The tree and table are readable without it.
+The hierarchy is plain text, so it reads the same in any Markdown viewer, editor, or plain text editor. The table is standard Markdown.
 
 See [site-hierarchy.example.md](site-hierarchy.example.md) for an example map. It was generated in dry-run mode from a sample Sites structure, with a fixed timestamp.
 

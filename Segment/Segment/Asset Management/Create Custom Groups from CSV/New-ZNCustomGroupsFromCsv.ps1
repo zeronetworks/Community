@@ -795,7 +795,7 @@ function Get-ZNSiteMapModel {
 function ConvertTo-ZNSiteMapMarkdown {
     <#
     .SYNOPSIS
-        Renders the site hierarchy model as Markdown: header, Mermaid graph, text tree and table.
+        Renders the site hierarchy model as Markdown: header, text hierarchy tree and table.
     .PARAMETER Model
         Output of Get-ZNSiteMapModel.
     .PARAMETER Mode
@@ -809,9 +809,9 @@ function ConvertTo-ZNSiteMapMarkdown {
     .OUTPUTS
         System.String of Markdown with LF line endings.
     .NOTES
-        Table cells and prose escape | ` < > \ and newlines. Mermaid labels escape " # < > and backtick
-        as entity codes. The text tree sits in a fenced block, where backslash escapes would show
-        literally, so its names are not escaped; the fence is made longer than any backtick run inside it.
+        Table cells and prose escape | ` < > \ and newlines. The tree sits in a fenced block, where
+        backslash escapes would show literally, so its names are not escaped; the fence is made longer
+        than any backtick run inside it. Each group's subnets are listed in full as leaf lines.
     #>
     param(
         [Parameter(Mandatory = $true)][object]$Model,
@@ -827,61 +827,21 @@ function ConvertTo-ZNSiteMapMarkdown {
         $t = $Text -replace '[\r\n]+', ' '
         return $t.Replace('\', '\\').Replace('|', '\|').Replace('`', '\`').Replace('<', '&lt;').Replace('>', '&gt;')
     }
-    # Mermaid quoted labels. '#' goes first so the entity codes it introduces are not re-escaped.
-    $mmEsc = {
-        param([string]$Text)
-        $t = $Text -replace '[\r\n]+', ' '
-        return $t.Replace('#', '#35;').Replace('"', '#quot;').Replace('<', '#lt;').Replace('>', '#gt;').Replace('`', '#96;')
-    }
 
     $groups = @($Model.Groups)
     $pos = @{}
     for ($i = 0; $i -lt $groups.Count; $i++) { $pos[$groups[$i].Name] = $i }
-    $classOf = @{ Planned = 'planned'; Created = 'created'; Updated = 'updated'; Unchanged = 'unchanged'; Existing = 'unchanged'; Failed = 'failed'; External = 'external' }
 
-    # Mermaid graph. Node ids are generated, so group names only appear inside quoted labels.
-    $mm = [System.Collections.Generic.List[string]]::new()
-    $mm.Add('flowchart TD')
-    for ($i = 0; $i -lt $groups.Count; $i++) {
-        $g = $groups[$i]
-        $parts = [System.Collections.Generic.List[string]]::new()
-        $parts.Add((& $mmEsc $g.Name))
-        if ($g.IsExternal) {
-            $parts.Add('(existing)')
-        }
-        else {
-            $subs = @($g.Subnets)
-            foreach ($s in @($subs | Select-Object -First 10)) { $parts.Add((& $mmEsc $s)) }
-            if ($subs.Count -gt 10) { $parts.Add("+$($subs.Count - 10) more") }
-        }
-        $mm.Add(('    n{0}["{1}"]' -f $i, ($parts -join '<br/>')))
-    }
-    foreach ($e in @($Model.Edges)) {
-        $mm.Add(('    n{0} --> n{1}' -f $pos[$e.Parent], $pos[$e.Child]))
-    }
-    $mm.Add('    classDef planned fill:#C6C6FF,stroke:#667FFF,color:#08084C')
-    $mm.Add('    classDef created fill:#04B88E,stroke:#04B88E,color:#FFFFFF')
-    $mm.Add('    classDef updated fill:#667FFF,stroke:#08084C,color:#FFFFFF')
-    $mm.Add('    classDef unchanged fill:#EDEDF9,stroke:#08084C,color:#08084C')
-    $mm.Add('    classDef failed fill:#FFFFFF,stroke:#B3261E,color:#B3261E,stroke-width:3px')
-    $mm.Add('    classDef external fill:#FFFFFF,stroke:#08084C,color:#08084C,stroke-dasharray:5 5')
-    foreach ($c in @('planned', 'created', 'updated', 'unchanged', 'failed', 'external')) {
-        $ids = @()
-        for ($i = 0; $i -lt $groups.Count; $i++) {
-            if ($classOf[[string]$groups[$i].Status] -eq $c) { $ids += "n$i" }
-        }
-        if ($ids.Count -gt 0) { $mm.Add("    class $($ids -join ',') $c") }
-    }
-
-    # Text tree. Roots are groups with no parent; children follow CSV order.
+    # Text tree. Roots are groups with no parent; child groups follow CSV order, then the group's own subnets.
     $byName = @{}
     foreach ($g in $groups) { $byName[$g.Name] = $g }
     $labelOf = {
         param($g)
-        if ($g.IsExternal) { return "$($g.Name) (existing)" }
+        if ($g.IsExternal) { return "$($g.Name)  (existing)" }
         $n = @($g.Subnets).Count
+        if ($n -eq 0) { return "$($g.Name)  [$($g.Status)]" }
         $unit = if ($n -eq 1) { 'subnet' } else { 'subnets' }
-        return "$($g.Name)  ($n $unit)  [$($g.Status)]"
+        return "$($g.Name)  [$($g.Status)]  ($n $unit)"
     }
     $sortedChildren = {
         param($g)
@@ -907,9 +867,17 @@ function ConvertTo-ZNSiteMapMarkdown {
         }
         if ($Trail -contains $Name) { $treeLines.Add($line + ' (cycle)'); return }
         $treeLines.Add($line)
-        $kids = @(& $sortedChildren $g)
-        for ($k = 0; $k -lt $kids.Count; $k++) {
-            & $render ([string]$kids[$k]) $childPrefix $false ($k -eq ($kids.Count - 1)) (@($Trail) + $Name)
+        $childGroups = @(& $sortedChildren $g)
+        $subs = @($g.Subnets)
+        # A root with no child groups indents its subnet leaves under it.
+        if ($IsRoot -and $childGroups.Count -eq 0) { $childPrefix = $gapText }
+        $total = $childGroups.Count + $subs.Count
+        for ($k = 0; $k -lt $childGroups.Count; $k++) {
+            & $render ([string]$childGroups[$k]) $childPrefix $false ($k -eq ($total - 1)) (@($Trail) + $Name)
+        }
+        for ($s = 0; $s -lt $subs.Count; $s++) {
+            $connector = if (($childGroups.Count + $s) -eq ($total - 1)) { $elbowText } else { $teeText }
+            $treeLines.Add($childPrefix + $connector + [string]$subs[$s])
         }
     }
     foreach ($g in $groups) {
@@ -959,13 +927,7 @@ function ConvertTo-ZNSiteMapMarkdown {
         $out.Add("> **Warning:** the hierarchy is $($Model.MaxDepth) levels deep. The Sites guide recommends 2 to 3 levels.")
         $out.Add('')
     }
-    $out.Add('## Graph (Mermaid)')
-    $out.Add('')
-    $out.Add('```mermaid')
-    foreach ($line in $mm) { $out.Add($line) }
-    $out.Add('```')
-    $out.Add('')
-    $out.Add('## Tree')
+    $out.Add('## Hierarchy')
     $out.Add('')
     $out.Add($fence + 'text')
     foreach ($line in $treeLines) { $out.Add($line) }
