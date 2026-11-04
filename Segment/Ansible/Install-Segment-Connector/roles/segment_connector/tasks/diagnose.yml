@@ -42,9 +42,15 @@
            (ansible_failed_result | default({})).stderr | default('', true) | string,
            (ansible_failed_result | default({})).stdout | default('', true) | string,
            (__segment_connector_log_tail | default({})).stdout | default('', true) | string
+           if (__segment_connector_run_output | trim | length == 0) else ''
          ] | join(__segment_connector_nl) | lower }}
   vars:
     __segment_connector_nl: "\n"
+    # The log keeps lines from earlier runs, so it is only matched when this run
+    # printed nothing itself (for example when the failure was not in the installer).
+    __segment_connector_run_output: >-
+      {{ ((__segment_connector_run_result | default({})).stdout | default('', true) | string)
+         ~ ((__segment_connector_run_result | default({})).stderr | default('', true) | string) }}
 
 - name: Compute the hints
   ansible.builtin.set_fact:
