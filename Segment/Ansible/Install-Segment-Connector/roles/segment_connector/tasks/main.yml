@@ -1,0 +1,5 @@
+---
+# Default entry point: install or reinstall the Segment Connector.
+# Uninstall is available with tasks_from: uninstall.
+- name: Install or reinstall the Segment Connector
+  ansible.builtin.import_tasks: install.yml

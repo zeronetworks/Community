@@ -1,0 +1,16 @@
+# Installer packages are proprietary. Download them from the Zero Networks portal.
+installer/*.zip
+
+# Installation tokens and secrets
+token*
+secrets*.yml
+*.vault.yml
+vault*.yml
+.vault_pass*
+
+# Local copies of the example files
+inventory.ini
+group_vars/segment_connector_hosts.yml
+
+# Ansible retry files
+*.retry

@@ -1,0 +1,56 @@
+---
+# Report the version of the Segment Connector installer binary.
+#
+# Included from install.yml (after the installer is extracted and made executable)
+# and from uninstall.yml (before the uninstall runs).
+#
+# Contract - variables that must exist when this file is included:
+#   __segment_connector_binary  absolute path to segment-connector-linux-installer
+#   __segment_connector_env     dict of environment variables for installer calls
+#   segment_connector_report_version  bool, default true; set false to skip
+#   ansible_check_mode          provided by Ansible
+#
+# Runs "<binary> -version" (needs root, no token). The installer prints the version
+# to STDERR. This never fails the play: if the version cannot be determined the
+# fact is set to 'unknown' and a warning is shown instead.
+
+- name: Report the installer version
+  when:
+    - segment_connector_report_version | bool
+    - not ansible_check_mode
+  block:
+    - name: Query the installer version
+      ansible.builtin.command:
+        argv:
+          - "{{ __segment_connector_binary }}"
+          - "-version"
+      environment: "{{ __segment_connector_env }}"
+      register: __segment_connector_version_result
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Record the installer version
+      ansible.builtin.set_fact:
+        segment_connector_installer_version: >-
+          {{ ((__segment_connector_version_result.stdout | default('')) ~ ' ' ~ (__segment_connector_version_result.stderr | default('')))
+             | regex_findall('installer version: *([^\s]+)') | first | default('unknown') }}
+
+    - name: Show the installer version
+      ansible.builtin.debug:
+        msg: "Segment Connector installer version on {{ inventory_hostname }}: {{ segment_connector_installer_version }}"
+
+    - name: Warn when the installer version could not be determined
+      ansible.builtin.debug:
+        msg: >-
+          Could not determine the Segment Connector installer version on {{ inventory_hostname }}
+          (rc={{ __segment_connector_version_result.rc | default('n/a') }}).
+          Installer output: {{ __segment_connector_version_text }}
+          {{ "The installer reports this Linux distribution/version as unsupported;
+             see 'Supported platforms' in the README."
+             if ('windows version is not supported' in (__segment_connector_version_text | lower))
+             else '' }}
+      vars:
+        __segment_connector_version_text: >-
+          {{ ((__segment_connector_version_result.stdout | default('')) ~ ' ' ~ (__segment_connector_version_result.stderr | default(''))) | trim }}
+      when: segment_connector_installer_version == 'unknown'

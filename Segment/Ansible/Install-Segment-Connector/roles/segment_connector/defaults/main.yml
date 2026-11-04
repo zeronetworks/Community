@@ -1,0 +1,89 @@
+---
+# Installation token from the Zero Networks portal. Required.
+# Never put the real value in this file or in git. Pass it with -e @secrets.yml,
+# Ansible Vault, or an environment lookup (see README.md).
+segment_connector_token: ""
+
+# Filename of the Segment Connector Linux installer zip. Required.
+# Place the zip in the installer/ directory next to the playbook.
+segment_connector_package_filename: ""
+
+# Controller-side path to the installer zip. Defaults to installer/<filename>
+# next to the playbook. Override to use a zip stored elsewhere on the controller.
+segment_connector_package_path: "{{ playbook_dir }}/installer/{{ segment_connector_package_filename }}"
+
+# Directory on the target host where the installer zip is copied and extracted.
+# The copied zip is deleted after extraction. The token file is removed after each run.
+segment_connector_staging_dir: /opt/zn-segment-connector-setup
+
+# File the installer writes on a successful install. Its presence means the
+# Segment Connector is already installed (same on systemd and sysvinit hosts).
+segment_connector_identity_file: /var/zeronetworks/.zn-internal/identity.json
+
+# Local user the connector runs as: "zn-user" (default) or "root".
+segment_connector_run_as: zn-user
+
+# Pass -force to the installer (for example, to replace an existing assetId).
+# Also passed on uninstall. Enrollment flags are ignored on a plain reinstall
+# unless this is true.
+segment_connector_force: false
+
+# Existing asset ID to attach this host to (passed as -assetId). Optional.
+segment_connector_asset_id: ""
+
+# Reinstall when the Segment Connector is already installed (identity file present).
+# When false, an existing installation is left untouched. When true, the installer
+# runs again and handles re-registration itself.
+segment_connector_reinstall: false
+
+# Enroll a NEW asset for this host (passes -allow-create). Only for hosts that are
+# NOT yet in the portal. Hosts already registered (matched by asset id, or by exactly
+# one FQDN match) need no enrollment flags, so leave this false for them.
+segment_connector_allow_create: false
+
+# FQDN for the new asset (passed as -asset-fqdn, only when set). Requires allow_create.
+# Must be a fully qualified name containing a dot, not an IP address. When empty, the
+# cloud derives the host's trusted FQDN itself, so the default is empty.
+# Cannot be combined with segment_connector_with_static_ip (the role fails the run).
+segment_connector_asset_fqdn: ""
+
+# Display name for the new asset (passes -name). Requires allow_create.
+# Required when with_static_ip is true.
+segment_connector_asset_name: ""
+
+# Enroll with a static IP instead of an FQDN (passes -with-static-ip, which
+# replaces -asset-fqdn). Requires allow_create and asset_name.
+segment_connector_with_static_ip: false
+
+# Extra environment variables for every installer call (install, uninstall).
+# Mapping of name to string value. Entries with empty or null values are dropped.
+# Quote the values: other types are converted to text. A named variable below that is
+# switched on (trace, log_to_console, or a non-empty download_timeout) overrides the same
+# key here. When it is off or empty, the value in this mapping is passed through.
+segment_connector_installer_env: {}
+
+# Installer package download timeout (ZN_SEGMENT_CONNECTOR_INSTALL_GET_PKG_TIMEOUT).
+# Accepts a Go duration such as 10m or 90s. A bare number such as 600 is treated
+# as seconds (600s), because the installer parses bare numbers as nanoseconds.
+# Empty leaves the installer default in place.
+segment_connector_download_timeout: ""
+
+# Enable installer trace logging (ZN_AGENT_INSTALLER_TRACE_ENABLED=true when true).
+segment_connector_trace: false
+
+# Echo installer log lines to the console (ZN_AGENT_INSTALLER_LOG_PRINT_TO_CONSOLE=true
+# when true). Console output appears in Ansible and AWX job logs and is not redacted.
+segment_connector_log_to_console: false
+
+# Show the installed Segment Connector version before install and uninstall runs.
+segment_connector_report_version: true
+
+# Check, after the install, that the connector reached its segment server. Reads the connector's
+# own log on the host. Also runs as a health check on hosts where the install is skipped.
+segment_connector_verify_connection: true
+# Seconds to wait for the connection after an install (the connector retries every 10 s).
+# Digits only, at least 10. Hosts where the install is skipped get a single check, no waiting.
+segment_connector_verify_timeout: 180
+# Fail the play when the connector does not connect. When false (default) a warning is shown,
+# because the installation itself succeeded.
+segment_connector_verify_strict: false

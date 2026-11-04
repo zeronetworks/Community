@@ -1,0 +1,148 @@
+---
+# Uninstall the Segment Connector from the target host.
+# Use with: ansible.builtin.import_role (tasks_from: uninstall).
+
+- name: Fail if installation token is not set
+  ansible.builtin.assert:
+    that:
+      - segment_connector_token | default('') | string | trim | length > 0
+    fail_msg: "segment_connector_token must be set to an installation token from the Zero Networks portal."
+
+- name: Look for an existing installer binary in the staging directory
+  ansible.builtin.find:
+    paths: "{{ segment_connector_staging_dir }}"
+    patterns: segment-connector-linux-installer
+    recurse: true
+    file_type: file
+  register: __segment_connector_binary_find
+
+- name: Extract the installer package when the staging directory does not have it
+  when: __segment_connector_binary_find.files | length == 0
+  block:
+    - name: Check the installer zip exists on the controller
+      ansible.builtin.stat:
+        path: "{{ segment_connector_package_path }}"
+      delegate_to: localhost
+      become: false
+      register: __segment_connector_package_stat
+
+    - name: Fail with guidance if the installer zip is missing
+      ansible.builtin.fail:
+        msg: >-
+          Installer package not found on the controller at {{ segment_connector_package_path }}.
+          Uninstall needs the same installer zip that was used to install. Place it in the installer/
+          directory, or set segment_connector_package_path to its full path.
+      when: not (__segment_connector_package_stat.stat.exists | bool)
+
+    - name: Create staging directory
+      ansible.builtin.file:
+        path: "{{ segment_connector_staging_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Copy installer zip to the target staging directory
+      ansible.builtin.copy:
+        src: "{{ segment_connector_package_path }}"
+        dest: "{{ segment_connector_staging_dir }}/installer.zip"
+        mode: "0600"
+
+    # Uses the target's own Python (2.7 or 3.x) so no unzip package is needed.
+    - name: Extract installer package to staging directory
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_facts['python']['executable'] }}"
+          - -c
+          - "import zipfile,sys; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])"
+          - "{{ segment_connector_staging_dir }}/installer.zip"
+          - "{{ segment_connector_staging_dir }}"
+      changed_when: true
+
+    - name: Find the segment-connector-linux-installer binary
+      ansible.builtin.find:
+        paths: "{{ segment_connector_staging_dir }}"
+        patterns: segment-connector-linux-installer
+        recurse: true
+        file_type: file
+      register: __segment_connector_binary_find_extracted
+
+  always:
+    - name: Remove copied installer zip
+      ansible.builtin.file:
+        path: "{{ segment_connector_staging_dir }}/installer.zip"
+        state: absent
+
+# The two find results are kept in separate variables on purpose: when the extraction
+# block above is skipped, Ansible overwrites the registers of its tasks with a "skipped"
+# result that has no files.
+- name: Collect the installer binary candidates
+  ansible.builtin.set_fact:
+    __segment_connector_binary_candidates: >-
+      {{ (__segment_connector_binary_find.files | default([]))
+         + (__segment_connector_binary_find_extracted.files | default([])) }}
+
+- name: Fail if the installer binary is not available
+  ansible.builtin.assert:
+    that:
+      - __segment_connector_binary_candidates | length > 0
+    fail_msg: "segment-connector-linux-installer was not found in the staging directory or the extracted package."
+
+- name: Record installer binary path
+  ansible.builtin.set_fact:
+    __segment_connector_binary: "{{ __segment_connector_binary_candidates[0].path }}"
+
+- name: Ensure installer binary is executable
+  ansible.builtin.file:
+    path: "{{ __segment_connector_binary }}"
+    mode: "0755"
+
+- name: Report the installed Segment Connector version
+  ansible.builtin.include_tasks: report_version.yml
+  when: segment_connector_report_version | bool
+
+- name: Run the uninstall
+  block:
+    - name: Write installation token to a restricted file
+      ansible.builtin.copy:
+        content: "{{ segment_connector_token | replace('\\r\\n', '\\n') | replace('\\r', '\\n') }}"
+        dest: "{{ segment_connector_staging_dir }}/token"
+        mode: "0600"
+      no_log: true
+
+    - name: Run the silent uninstall
+      # The token is read from the restricted file inside the shell, so it is not
+      # part of the task arguments or the printed command.
+      ansible.builtin.shell: |
+        token="$(cat {{ (segment_connector_staging_dir ~ '/token') | quote }})"
+        {{ __segment_connector_binary | quote }} -uninstall -token "$token" {{ __segment_connector_uninstall_args | map('quote') | join(' ') }}
+      args:
+        chdir: "{{ __segment_connector_binary | dirname }}"
+      environment: "{{ __segment_connector_env }}"
+      changed_when: true
+      register: __segment_connector_run_result
+
+    # The installer prints its messages to stderr, so show both streams.
+    - name: Show uninstall output
+      ansible.builtin.debug:
+        msg: "{{ (__segment_connector_run_result.stdout_lines | default([])) + (__segment_connector_run_result.stderr_lines | default([])) }}"
+
+  rescue:
+    - name: Show diagnostics for the failed uninstall
+      ansible.builtin.include_tasks: diagnose.yml
+      vars:
+        __segment_connector_action: uninstall
+
+  always:
+    - name: Remove token file
+      ansible.builtin.file:
+        path: "{{ segment_connector_staging_dir }}/token"
+        state: absent
+
+    - name: Remove copied installer zip
+      ansible.builtin.file:
+        path: "{{ segment_connector_staging_dir }}/installer.zip"
+        state: absent
+
+    - name: Remove staging directory
+      ansible.builtin.file:
+        path: "{{ segment_connector_staging_dir }}"
+        state: absent

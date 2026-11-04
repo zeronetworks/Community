@@ -1,0 +1,28 @@
+---
+# Uninstall the Zero Networks Segment Connector (Linux).
+# See README.md for usage.
+- name: Uninstall the Zero Networks Segment Connector
+  hosts: segment_connector_hosts
+  become: true
+  gather_facts: true
+
+  pre_tasks:
+    - name: Verify the target is Linux
+      ansible.builtin.assert:
+        that:
+          - ansible_facts['system'] == 'Linux'
+        fail_msg: "The Segment Connector Linux installer only runs on Linux. Detected: {{ ansible_facts['system'] | default('unknown') }}."
+
+    # Informational only. Nothing here fails the play.
+    - name: Report the target Python version
+      ansible.builtin.debug:
+        msg: >-
+          {{ inventory_hostname }} runs Python {{ ansible_facts['python_version'] | default('unknown') }}.
+          This is informational only. Ansible runs on this interpreter. See README.md
+          (Legacy platforms) if it is Python 2.x.
+
+  tasks:
+    - name: Uninstall the Segment Connector
+      ansible.builtin.import_role:
+        name: segment_connector
+        tasks_from: uninstall

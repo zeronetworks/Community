@@ -1,0 +1,57 @@
+---
+# Internal values derived from the segment_connector_* settings in defaults/main.yml.
+# Do not set these directly. Set the user-facing variables instead.
+
+# Installer log written on the target host. Read by tasks/diagnose.yml on failure.
+__segment_connector_installer_log: /var/zeronetworks/logs/installer.log
+
+# Connector log on the target host. Read by tasks/verify_connection.yml.
+__segment_connector_connector_log: /var/zeronetworks/logs/zn-segment-connector.log
+
+# Environment variables derived from the named settings (download timeout, trace,
+# console logging). Named values win over the same keys in segment_connector_installer_env.
+__segment_connector_named_env: >-
+  {{
+    {}
+    | combine(
+        {'ZN_SEGMENT_CONNECTOR_INSTALL_GET_PKG_TIMEOUT':
+          ((segment_connector_download_timeout | string) ~ 's')
+          if ((segment_connector_download_timeout | string) is match('^[0-9]+$'))
+          else (segment_connector_download_timeout | string)}
+        if (segment_connector_download_timeout | string | length > 0) else {})
+    | combine({'ZN_AGENT_INSTALLER_TRACE_ENABLED': 'true'} if (segment_connector_trace | bool) else {})
+    | combine({'ZN_AGENT_INSTALLER_LOG_PRINT_TO_CONSOLE': 'true'} if (segment_connector_log_to_console | bool) else {})
+  }}
+
+# Full environment for every installer call: extra variables with empty and null
+# values dropped and all values as strings, then the named variables on top.
+__segment_connector_env: >-
+  {{
+    dict(
+      (segment_connector_installer_env | default({}, true) | dict2items
+        | rejectattr('value', 'none') | rejectattr('value', 'equalto', '') | list
+      ) | map(attribute='key') | list
+      | zip(
+          segment_connector_installer_env | default({}, true) | dict2items
+          | rejectattr('value', 'none') | rejectattr('value', 'equalto', '') | list
+          | map(attribute='value') | map('string') | list
+        )
+    ) | combine(__segment_connector_named_env)
+  }}
+
+# Arguments for the install run: always -run-as; enrollment flags only with allow_create.
+__segment_connector_install_args: >-
+  {{
+    ['-run-as', segment_connector_run_as]
+    + (['-force'] if segment_connector_force | bool else [])
+    + (['-assetId', segment_connector_asset_id] if segment_connector_asset_id | length > 0 else [])
+    + ((
+        ['-allow-create']
+        + (['-with-static-ip'] if segment_connector_with_static_ip | bool
+           else (['-asset-fqdn', segment_connector_asset_fqdn] if segment_connector_asset_fqdn | length > 0 else []))
+        + (['-name', segment_connector_asset_name] if segment_connector_asset_name | length > 0 else [])
+      ) if segment_connector_allow_create | bool else [])
+  }}
+
+# Arguments for the uninstall run.
+__segment_connector_uninstall_args: "{{ ['-force'] if segment_connector_force | bool else [] }}"
