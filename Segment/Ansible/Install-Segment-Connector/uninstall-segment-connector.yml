@@ -17,7 +17,7 @@
     - name: Report the target Python version
       ansible.builtin.debug:
         msg: >-
-          {{ inventory_hostname }} runs Python {{ ansible_facts['python']['version']['string'] | default('unknown') }}.
+          {{ inventory_hostname }} runs Python {{ ansible_facts['python_version'] | default('unknown') }}.
           This is informational only. Ansible runs on this interpreter. See README.md
           (Legacy platforms) if it is Python 2.x.
 
