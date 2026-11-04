@@ -3,8 +3,8 @@
 Creates, updates, or removes Zero Networks custom groups in bulk from a CSV file.
 
 .DESCRIPTION
-Reads a CSV in which each row adds one member (asset, subnet, IP, FQDN, wildcard domain, or
-another group) to a target custom group. Groups that do not exist are created; existing groups
+Reads a CSV in which each row adds one member (asset, group of any kind, user account, IP alias,
+subnet, IP, FQDN, or wildcard domain) to a target custom group. Groups that do not exist are created; existing groups
 are reused and only missing members are added, so the script is safe to re-run. Parent groups
 can be declared with parentGroup, which nests the target group under the parent.
 
@@ -38,8 +38,7 @@ slash, or /api/v1 suffix is accepted and removed.
 Zero Networks API key. If omitted, the script prompts for it as a secure string.
 
 .PARAMETER SkipResolveErrors
-Skip member rows that cannot be resolved (missing or ambiguous assets and groups) instead of
-stopping. Skipped rows are listed at the end of the run. Site rule violations are never skipped.
+Skip member rows that cannot be resolved (missing or ambiguous names) instead of stopping. Skipped rows are listed at the end of the run. Site rule violations are never skipped.
 
 .PARAMETER SiteGroups
 Validate the CSV against the Sites layout rules before any change is made. Bare IP addresses are
@@ -72,7 +71,9 @@ Alias-style switch equivalent to -WhatIf: runs lookups and validation, prints th
 .NOTES
 Requires PowerShell 7.0 or later.
 Endpoints: POST groups/custom, PUT and DELETE groups/custom/{id}/members, GET groups/custom/{id}/members,
-DELETE groups/custom/{id}, and GET assets, groups/custom, and groups with _filters on name.
+DELETE groups/custom/{id}, GET assets, groups/custom and groups with _filters on name, and
+GET groups/custom/member-candidates for user accounts and IP aliases.
+Only targetGroupName and parentGroup must be custom groups; entityName may be any entity kind.
 Exit code 0 on success, 1 if any failure occurred or the run stopped on an error.
 #>
 #requires -Version 7.0
@@ -596,14 +597,25 @@ function Get-ZNSiteViolations {
                     if ($r.IsBare) { Write-Verbose "Site rule: bare address '$($r.Text)' in $where converted to $($r.Display)." }
                 }
                 'Group' {
-                    $hasChildGroup = $true
                     $gname = if ($r.CsvGroup) { $r.CsvGroup } else { $r.Display }
-                    if (-not $gname.StartsWith('Site_', [StringComparison]::Ordinal)) {
+                    if ($r.CsvGroup -or $r.IsCustom) { $hasChildGroup = $true }
+                    if (-not $r.CsvGroup -and -not $r.IsCustom) {
+                        $violations.Add("$where contains '$gname', which is a non-custom group; Site groups accept only subnets and custom Site_ groups (as child groups).")
+                    }
+                    elseif (-not $gname.StartsWith('Site_', [StringComparison]::Ordinal)) {
                         $violations.Add("$where contains group '$gname', which is not a Site_ group.")
                     }
                 }
                 default {
-                    $violations.Add("$where contains '$($r.Text)' ($($r.Kind)); Site groups accept only subnets (parents accept only child Site_ groups).")
+                    $label = switch ($r.Kind) {
+                        'Asset' { 'an asset' }
+                        'User' { 'a user account' }
+                        'Alias' { 'an IP alias' }
+                        'Fqdn' { 'an FQDN' }
+                        'Domain' { 'a wildcard domain' }
+                        default { "a $($r.Kind)" }
+                    }
+                    $violations.Add("$where contains '$($r.Text)' ($label); Site groups accept only subnets (parents accept only child Site_ groups).")
                 }
             }
         }
@@ -1177,6 +1189,87 @@ function Find-ZNCustomGroupsByName {
     return @(Find-ZNItemsByName -Endpoint 'groups/custom' -Name $Name)
 }
 
+function Find-ZNAnyGroupsByName {
+    <#
+    .SYNOPSIS
+        Finds groups of any kind (custom, Active Directory, built-in, system) with an exact (case-insensitive) name match.
+    .PARAMETER Name
+        Group name.
+    .OUTPUTS
+        System.Object[] of unique groups (by id). Each has id, name and IsCustom.
+    .NOTES
+        Unions the groups and groups/custom collections. A group found in groups/custom is marked IsCustom.
+        Results are cached for the length of the run.
+    #>
+    param([string]$Name)
+
+    $key = "anygroups|$Name"
+    if ($script:LookupCache.ContainsKey($key)) { return $script:LookupCache[$key] }
+
+    $seen = @{}
+    $hits = [System.Collections.Generic.List[object]]::new()
+    $custom = @(Find-ZNItemsByName -Endpoint 'groups/custom' -Name $Name)
+    foreach ($g in $custom) {
+        if ($seen.ContainsKey([string]$g.id)) { continue }
+        $seen[[string]$g.id] = $true
+        $hits.Add([pscustomobject]@{ id = [string]$g.id; name = [string]$g.name; IsCustom = $true })
+    }
+    $all = @(Find-ZNItemsByName -Endpoint 'groups' -Name $Name)
+    foreach ($g in $all) {
+        if ($seen.ContainsKey([string]$g.id)) { continue }
+        $seen[[string]$g.id] = $true
+        $hits.Add([pscustomobject]@{ id = [string]$g.id; name = [string]$g.name; IsCustom = $false })
+    }
+    $result = $hits.ToArray()
+    $script:LookupCache[$key] = $result
+    return $result
+}
+
+function Find-ZNUsersAndAliasesByName {
+    <#
+    .SYNOPSIS
+        Finds user accounts and IP aliases with an exact (case-insensitive) name match, using one member-candidates call.
+    .PARAMETER Name
+        Name to match.
+    .OUTPUTS
+        System.Object[] of unique matches (by id). Each has id, name and Kind (User for u: ids, Alias for e:i: ids).
+    .NOTES
+        Calls GET groups/custom/member-candidates once per name. The response may be an array or an object with items.
+        Other candidate kinds are ignored.
+    #>
+    param([string]$Name)
+
+    $key = "candidates|$Name"
+    if ($script:LookupCache.ContainsKey($key)) { return $script:LookupCache[$key] }
+
+    $response = Invoke-ApiRequest -Method GET -ApiEndpoint 'groups/custom/member-candidates' -QueryParams @{ _search = $Name; _limit = 100 }
+    # A bare array with one element unrolls to a single object, so a lone object without items is one candidate.
+    $candidates = @()
+    if ($response -is [pscustomobject] -and $response.PSObject.Properties.Name -contains 'items') {
+        if ($null -ne $response.items) { $candidates = @($response.items) }
+    }
+    elseif ($null -ne $response) {
+        $candidates = @($response)
+    }
+
+    $seen = @{}
+    $hits = [System.Collections.Generic.List[object]]::new()
+    foreach ($c in $candidates) {
+        $id = [string]$c.id
+        if (-not [string]::Equals([string]$c.name, $Name, [StringComparison]::OrdinalIgnoreCase)) { continue }
+        if ($seen.ContainsKey($id)) { continue }
+        $kind = if ($id.StartsWith('u:', [StringComparison]::Ordinal)) { 'User' }
+        elseif ($id.StartsWith('e:i:', [StringComparison]::Ordinal)) { 'Alias' }
+        else { $null }
+        if (-not $kind) { continue }
+        $seen[$id] = $true
+        $hits.Add([pscustomobject]@{ id = $id; name = [string]$c.name; Kind = $kind })
+    }
+    $result = $hits.ToArray()
+    $script:LookupCache[$key] = $result
+    return $result
+}
+
 function Resolve-ZNEntity {
     <#
     .SYNOPSIS
@@ -1186,56 +1279,91 @@ function Resolve-ZNEntity {
     .PARAMETER CsvGroupNames
         Hashtable of group names defined as targetGroupName in the CSV (name to canonical name). Empty in removal modes.
     .OUTPUTS
-        PSCustomObject with Ok, Kind (Subnet, Domain, Fqdn, Asset, Group), Id, Display, CsvGroup, IsBare, Error.
+        PSCustomObject with Ok, Kind (Subnet, Domain, Fqdn, Asset, Group, User, Alias), Id, Display, CsvGroup,
+        IsBare, IsCustom, Error and Warnings (collision notes, empty when only one tier matched).
+    .NOTES
+        Name lookup tiers: active asset, then group of any kind (plus CSV-defined groups), then user account,
+        then IP alias. Same-tier duplicates are errors. When several tiers match, the highest tier wins.
+        The FQDN fallback applies only when nothing matched.
     #>
     param(
         [Parameter(Mandatory = $true)][string]$Text,
         [hashtable]$CsvGroupNames = @{}
     )
 
-    $fail = { param($reason) [pscustomobject]@{ Ok = $false; Kind = $null; Id = $null; Display = $Text; CsvGroup = $null; IsBare = $false; Error = $reason } }
+    $fail = { param($reason) [pscustomobject]@{ Ok = $false; Kind = $null; Id = $null; Display = $Text; CsvGroup = $null; IsBare = $false; IsCustom = $false; Error = $reason; Warnings = @() } }
 
     $kind = Get-ZNEntityKind -Value $Text
     switch ($kind.Kind) {
         'Invalid' { return & $fail $kind.Reason }
         'Subnet' {
-            return [pscustomobject]@{ Ok = $true; Kind = 'Subnet'; Id = $kind.Id; Display = $kind.Display; CsvGroup = $null; IsBare = $kind.IsBare; Error = $null }
+            return [pscustomobject]@{ Ok = $true; Kind = 'Subnet'; Id = $kind.Id; Display = $kind.Display; CsvGroup = $null; IsBare = $kind.IsBare; IsCustom = $false; Error = $null; Warnings = @() }
         }
         'Domain' {
-            return [pscustomobject]@{ Ok = $true; Kind = 'Domain'; Id = $kind.Id; Display = $kind.Display; CsvGroup = $null; IsBare = $false; Error = $null }
+            return [pscustomobject]@{ Ok = $true; Kind = 'Domain'; Id = $kind.Id; Display = $kind.Display; CsvGroup = $null; IsBare = $false; IsCustom = $false; Error = $null; Warnings = @() }
         }
     }
 
+    # Tier lookups. Every tier is checked so that collisions can be reported. Same-tier duplicates are errors.
     $assets = @(Find-ZNAssetsByName -Name $Text)
     if ($assets.Count -gt 1) {
         return & $fail "$($assets.Count) active assets are named '$Text'; cannot choose one."
     }
 
-    $apiGroups = @(Find-ZNCustomGroupsByName -Name $Text)
-    if ($apiGroups.Count -gt 1) {
-        return & $fail "$($apiGroups.Count) custom groups are named '$Text'; cannot choose one."
+    $anyGroups = @(Find-ZNAnyGroupsByName -Name $Text)
+    if ($anyGroups.Count -gt 1) {
+        return & $fail "$($anyGroups.Count) groups are named '$Text'; cannot choose one."
     }
 
     $csvGroup = $null
     if ($CsvGroupNames.ContainsKey($Text)) { $csvGroup = [string]$CsvGroupNames[$Text] }
 
-    if ($assets.Count -eq 1 -and ($apiGroups.Count -eq 1 -or $csvGroup)) {
-        return & $fail "'$Text' matches both an active asset and a custom group; cannot tell which is meant."
+    $candidates = @(Find-ZNUsersAndAliasesByName -Name $Text)
+    $users = @($candidates | Where-Object { $_.Kind -eq 'User' })
+    $aliases = @($candidates | Where-Object { $_.Kind -eq 'Alias' })
+    if ($users.Count -gt 1) {
+        return & $fail "$($users.Count) user accounts are named '$Text'; cannot choose one."
+    }
+    if ($aliases.Count -gt 1) {
+        return & $fail "$($aliases.Count) IP aliases are named '$Text'; cannot choose one."
     }
 
-    if ($assets.Count -eq 1) {
-        return [pscustomobject]@{ Ok = $true; Kind = 'Asset'; Id = [string]$assets[0].id; Display = [string]$assets[0].name; CsvGroup = $null; IsBare = $false; Error = $null }
+    # Tier matches, in fixed priority order: asset > group > user > alias.
+    $matched = [System.Collections.Generic.List[string]]::new()
+    if ($assets.Count -eq 1) { $matched.Add('asset') }
+    if ($anyGroups.Count -eq 1 -or $csvGroup) { $matched.Add('group') }
+    if ($users.Count -eq 1) { $matched.Add('user') }
+    if ($aliases.Count -eq 1) { $matched.Add('alias') }
+
+    if ($matched.Count -eq 0) {
+        if ($kind.IsFqdn) {
+            return [pscustomobject]@{ Ok = $true; Kind = 'Fqdn'; Id = (ConvertTo-ZNFqdnId -Name $Text); Display = $Text.ToLowerInvariant(); CsvGroup = $null; IsBare = $false; IsCustom = $false; Error = $null; Warnings = @() }
+        }
+        return & $fail "'$Text' was not found as an active asset, group, user account or IP alias, and is not a valid FQDN, IP, or subnet."
     }
-    if ($apiGroups.Count -eq 1) {
-        return [pscustomobject]@{ Ok = $true; Kind = 'Group'; Id = [string]$apiGroups[0].id; Display = [string]$apiGroups[0].name; CsvGroup = $null; IsBare = $false; Error = $null }
+
+    $warnings = @()
+    if ($matched.Count -gt 1) {
+        $warnings = @("'$Text' matched $($matched -join ', '); used $($matched[0]) (priority: asset > group > user > alias)")
     }
-    if ($csvGroup) {
-        return [pscustomobject]@{ Ok = $true; Kind = 'Group'; Id = $null; Display = $csvGroup; CsvGroup = $csvGroup; IsBare = $false; Error = $null }
+
+    switch ($matched[0]) {
+        'asset' {
+            return [pscustomobject]@{ Ok = $true; Kind = 'Asset'; Id = [string]$assets[0].id; Display = [string]$assets[0].name; CsvGroup = $null; IsBare = $false; IsCustom = $false; Error = $null; Warnings = $warnings }
+        }
+        'group' {
+            if ($anyGroups.Count -eq 1) {
+                return [pscustomobject]@{ Ok = $true; Kind = 'Group'; Id = [string]$anyGroups[0].id; Display = [string]$anyGroups[0].name; CsvGroup = $null; IsBare = $false; IsCustom = [bool]$anyGroups[0].IsCustom; Error = $null; Warnings = $warnings }
+            }
+            return [pscustomobject]@{ Ok = $true; Kind = 'Group'; Id = $null; Display = $csvGroup; CsvGroup = $csvGroup; IsBare = $false; IsCustom = $true; Error = $null; Warnings = $warnings }
+        }
+        'user' {
+            return [pscustomobject]@{ Ok = $true; Kind = 'User'; Id = [string]$users[0].id; Display = [string]$users[0].name; CsvGroup = $null; IsBare = $false; IsCustom = $false; Error = $null; Warnings = $warnings }
+        }
+        'alias' {
+            return [pscustomobject]@{ Ok = $true; Kind = 'Alias'; Id = [string]$aliases[0].id; Display = [string]$aliases[0].name; CsvGroup = $null; IsBare = $false; IsCustom = $false; Error = $null; Warnings = $warnings }
+        }
     }
-    if ($kind.IsFqdn) {
-        return [pscustomobject]@{ Ok = $true; Kind = 'Fqdn'; Id = (ConvertTo-ZNFqdnId -Name $Text); Display = $Text.ToLowerInvariant(); CsvGroup = $null; IsBare = $false; Error = $null }
-    }
-    return & $fail "'$Text' was not found as an active asset or custom group, and is not a valid FQDN, IP, or subnet."
 }
 
 function Get-ZNGroupMemberIds {
@@ -1359,7 +1487,8 @@ function Build-ZNPlan {
     .PARAMETER SkipResolveErrors
         Skip unresolvable member rows instead of throwing.
     .OUTPUTS
-        PSCustomObject with Mode, Nodes, Order (node objects in dependency order), Skipped, Warnings, MaxDepth.
+        PSCustomObject with Mode, Nodes, Order (node objects in dependency order), Skipped, Warnings, Collisions
+        (name-collision notes resolved by priority, de-duplicated), MaxDepth.
     .NOTES
         Throws with all fatal problems listed when anything would make the run unsafe. Makes only GET requests.
     #>
@@ -1376,6 +1505,7 @@ function Build-ZNPlan {
     $order = @($model.Order)
     $fatal = [System.Collections.Generic.List[string]]::new()
     $unresolved = [System.Collections.Generic.List[object]]::new()
+    $collisions = [System.Collections.Generic.List[string]]::new()
 
     $csvNames = @{}
     if ($isCreate) { foreach ($n in $order) { $csvNames[$n] = $n } }
@@ -1391,6 +1521,13 @@ function Build-ZNPlan {
         if ($existing.Count -eq 1) {
             $node.ExistingId = [string]$existing[0].id
             continue
+        }
+        if ($isCreate) {
+            $nonCustom = @(Find-ZNAnyGroupsByName -Name $name | Where-Object { -not $_.IsCustom })
+            if ($nonCustom.Count -gt 0) {
+                $fatal.Add("Group '$name': a non-custom group has this name, but targetGroupName must be a custom group. Choose a different targetGroupName.")
+                continue
+            }
         }
         if (-not $isCreate) {
             $node.Missing = $true
@@ -1415,6 +1552,10 @@ function Build-ZNPlan {
                     $unresolved.Add([pscustomobject]@{ Row = $m.Row; Group = $name; Entity = $m.Text; Reason = $res.Error })
                     continue
                 }
+                foreach ($c in @($res.Warnings)) {
+                    if ($collisions -notcontains $c) { $collisions.Add($c) }
+                    Write-Verbose "Row $($m.Row): $c."
+                }
                 $key = if ($res.CsvGroup) { "csv:$($res.CsvGroup)" } else { "$($res.Kind):$($res.Id)" }
                 if ($seen.ContainsKey($key)) {
                     Write-Verbose "Row $($m.Row): '$($m.Text)' is already a member of '$name'; ignoring the duplicate."
@@ -1430,6 +1571,7 @@ function Build-ZNPlan {
                         Display  = $res.Display
                         CsvGroup = $res.CsvGroup
                         IsBare   = $res.IsBare
+                        IsCustom = $res.IsCustom
                     })
             }
         }
@@ -1446,7 +1588,13 @@ function Build-ZNPlan {
             }
             $parents = @(Find-ZNCustomGroupsByName -Name $node.ParentName)
             if ($parents.Count -eq 0) {
-                $fatal.Add("Group '$name': parent group '$($node.ParentName)' does not exist as a custom group and is not defined in the CSV.")
+                $nonCustom = @(Find-ZNAnyGroupsByName -Name $node.ParentName | Where-Object { -not $_.IsCustom })
+                if ($nonCustom.Count -gt 0) {
+                    $fatal.Add("Group '$name': parent group '$($node.ParentName)' matches only a non-custom group; parentGroup must be a custom group.")
+                }
+                else {
+                    $fatal.Add("Group '$name': parent group '$($node.ParentName)' does not exist as a custom group and is not defined in the CSV.")
+                }
             }
             elseif ($parents.Count -gt 1) {
                 $fatal.Add("Group '$name': parent group '$($node.ParentName)' matches $($parents.Count) custom groups; cannot choose one.")
@@ -1520,6 +1668,7 @@ function Build-ZNPlan {
         CsvNodes   = @($active)
         Skipped    = $unresolved.ToArray()
         Warnings   = $warnings.ToArray()
+        Collisions = $collisions.ToArray()
         MaxDepth   = $maxDepth
     }
 }
@@ -1542,6 +1691,8 @@ function Write-ZNRunReport {
         Skipped entity objects.
     .PARAMETER Failures
         Failure messages.
+    .PARAMETER Collisions
+        Name-collision notes that were resolved by priority.
     .OUTPUTS
         None.
     #>
@@ -1550,7 +1701,8 @@ function Write-ZNRunReport {
         [object[]]$GroupRows = @(),
         [object[]]$DetailRows = @(),
         [object[]]$Skipped = @(),
-        [string[]]$Failures = @()
+        [string[]]$Failures = @(),
+        [string[]]$Collisions = @()
     )
 
     Write-Host ''
@@ -1559,6 +1711,10 @@ function Write-ZNRunReport {
     if ($DetailRows.Count -gt 0) {
         Write-Host 'Member detail:'
         $DetailRows | Format-Table -AutoSize | Out-String -Width 4096 | Write-Host
+    }
+    if ($Collisions.Count -gt 0) {
+        Write-Host "Name collisions resolved by priority ($($Collisions.Count)):" -ForegroundColor Yellow
+        foreach ($c in $Collisions) { Write-Host "  $c" -ForegroundColor Yellow }
     }
     if ($Skipped.Count -gt 0) {
         Write-Host "Skipped entities ($($Skipped.Count)):" -ForegroundColor Yellow
@@ -1627,6 +1783,7 @@ function Invoke-ZNCreateMode {
     Write-Host "      reuse $($existing.Count) existing group(s) [$(@($existing | ForEach-Object { $_.Name }) -join ', ')]"
     Write-Host "      add up to $memberCount member(s) across $($order.Count) group(s); $($parentLinks.Count) parent link(s)."
     foreach ($w in $Plan.Warnings) { Write-Warning $w }
+    foreach ($c in $Plan.Collisions) { Write-Warning $c }
 
     if (-not $Cmdlet.ShouldProcess($script:ApiBaseUrl, "Create or update $($order.Count) custom group(s)")) {
         Write-Host 'No changes made (WhatIf or declined).'
@@ -1736,7 +1893,7 @@ function Invoke-ZNCreateMode {
                 ParentLink  = if ($_.Notes) { $_.Notes } else { '' }
             }
         })
-    Write-ZNRunReport -Title 'Create custom groups from CSV' -GroupRows $groupRows -DetailRows $detail.ToArray() -Skipped $Plan.Skipped -Failures $failures.ToArray()
+    Write-ZNRunReport -Title 'Create custom groups from CSV' -GroupRows $groupRows -DetailRows $detail.ToArray() -Skipped $Plan.Skipped -Failures $failures.ToArray() -Collisions $Plan.Collisions
     if ($Plan.SiteGroups) { Write-Host 'Reminder: enable the Sites feature in Zero Networks once the groups are in place.' }
 
     $totals = @($order | Group-Object Status | ForEach-Object { "$($_.Name)=$($_.Count)" }) -join ', '
@@ -1783,10 +1940,11 @@ function Invoke-ZNRemoveMembersMode {
         Write-Host "  - '$($w.Node.Name)': remove $($w.ToRemove.Count), not a member $($w.NotMember.Count)"
     }
     foreach ($w in $Plan.Warnings) { Write-Warning $w }
+    foreach ($c in $Plan.Collisions) { Write-Warning $c }
 
     if ($totalRemove -eq 0) {
         Write-Host 'Nothing to remove.'
-        Write-ZNRunReport -Title 'Remove members from CSV' -Skipped $Plan.Skipped
+        Write-ZNRunReport -Title 'Remove members from CSV' -Skipped $Plan.Skipped -Collisions $Plan.Collisions
         return 0
     }
     if (-not $Cmdlet.ShouldProcess($script:ApiBaseUrl, "Remove $totalRemove member(s) from custom group(s)")) {
@@ -1815,7 +1973,7 @@ function Invoke-ZNRemoveMembersMode {
     $groupRows = @($work | ForEach-Object {
             [pscustomobject]@{ Group = $_.Node.Name; Id = $_.Node.ExistingId; Removed = $_.Removed; NotAMember = $_.NotMember.Count }
         })
-    Write-ZNRunReport -Title 'Remove members from CSV' -GroupRows $groupRows -DetailRows $detail.ToArray() -Skipped $Plan.Skipped -Failures $failures.ToArray()
+    Write-ZNRunReport -Title 'Remove members from CSV' -GroupRows $groupRows -DetailRows $detail.ToArray() -Skipped $Plan.Skipped -Failures $failures.ToArray() -Collisions $Plan.Collisions
     if ($failures.Count -gt 0) { return 1 }
     return 0
 }
@@ -1857,6 +2015,7 @@ function Invoke-ZNRemoveGroupsMode {
         Write-Host "  - '$($w.Node.Name)': $($w.Members.Count) member(s), $($w.Parents.Count) parent link(s), then delete"
     }
     foreach ($w in $Plan.Warnings) { Write-Warning $w }
+    foreach ($c in $Plan.Collisions) { Write-Warning $c }
 
     if (-not $Cmdlet.ShouldProcess($script:ApiBaseUrl, "Empty and delete $($work.Count) custom group(s)")) {
         Write-Host 'No changes made (WhatIf or declined).'
@@ -1899,7 +2058,7 @@ function Invoke-ZNRemoveGroupsMode {
     $groupRows = @($work | ForEach-Object {
             [pscustomobject]@{ Group = $_.Node.Name; Id = $_.Node.ExistingId; Members = $_.Members.Count; ParentLinks = $_.Parents.Count; Status = $_.Status }
         })
-    Write-ZNRunReport -Title 'Remove groups and members from CSV' -GroupRows $groupRows -Skipped $Plan.Skipped -Failures $failures.ToArray()
+    Write-ZNRunReport -Title 'Remove groups and members from CSV' -GroupRows $groupRows -Skipped $Plan.Skipped -Failures $failures.ToArray() -Collisions $Plan.Collisions
     if ($failures.Count -gt 0) { return 1 }
     return 0
 }
