@@ -60,13 +60,11 @@ Install-Segment-Connector/
 - Python on the target, for Ansible itself. See [Target host requirements](#target-host-requirements).
 - Outbound TCP 443 to the Zero Networks segment server. The installer registers with it and downloads the connector package from it.
 - DNS that works from the target:
-  - The host must resolve the segment server's name. The portal gives the connector this name.
-  - The host must do the DNS TXT lookup the connector uses to find its segment servers.
-- The role does not need `unzip`. It extracts the installer zip with the target's own Python `zipfile` module.
+	- The host must resolve the segment server's name. The portal gives the connector this name.
 
 **Zero Networks portal**
 
-1. Download the Linux installer zip at **Settings > Segment > Segment Connector**.
+1. Download the Segment Connector installer zip at **Settings > Segment > Segment Connector**.
 2. Generate an installation token in the same place.
 
 ## How to use
@@ -166,7 +164,7 @@ Do not put the token in any file that is committed to git.
 | Debugging (installer trace logging) | `ansible-playbook install-segment-connector.yml -e @secrets.yml -e segment_connector_trace=true` |
 | Reinstall (installer runs again) | `ansible-playbook install-segment-connector.yml -e @secrets.yml -e segment_connector_reinstall=true` |
 | Reinstall and force (replace a conflicting assetId) | `ansible-playbook install-segment-connector.yml -e @secrets.yml -e segment_connector_reinstall=true -e segment_connector_force=true` |
-| Run as root instead of zn-user | `ansible-playbook install-segment-connector.yml -e @secrets.yml -e segment_connector_run_as=root` |
+| Have the Segment Connector service run as root instead of zn-user | `ansible-playbook install-segment-connector.yml -e @secrets.yml -e segment_connector_run_as=root` |
 | Uninstall | `ansible-playbook uninstall-segment-connector.yml -e @secrets.yml` |
 | Uninstall with force (if unregistration fails) | `ansible-playbook uninstall-segment-connector.yml -e @secrets.yml -e segment_connector_force=true` |
 
@@ -249,9 +247,7 @@ When the installer runs, it looks for the portal asset for the host in this orde
      - The FQDN the portal derives for the host (the "trusted FQDN").
      - If none of these can be derived, the install fails and tells you to set `asset_fqdn` or use static IP.
 
-The chassis type must be valid. OT assets are rejected.
-
-Hosts already in the portal need no enrollment variables. The portal matches them by asset ID or by their FQDN.
+Hosts already in the portal need no enrollment variables. The portal will attempt to match them by asset ID or by their FQDN. If this process fails, you will need to provide variables outlined in step #3 above.
 
 ### Skip or reinstall
 
@@ -381,7 +377,6 @@ Non-fatal warnings printed before the install (missing `nft` and `iptables`, or 
 | More than one asset matches | Set `segment_connector_asset_id` to the asset you want. |
 | Provided FQDN invalid | Set `segment_connector_asset_fqdn` to a fully qualified name with a dot, such as `connector01.example.com`. It must not be an IP address. |
 | Static IP requires name | Set `segment_connector_asset_name` when using `segment_connector_with_static_ip=true`. |
-| OT asset not supported | The matched asset is an OT asset, which this connector does not support. Check the asset in the portal and use a non-OT asset. |
 | Asset inactive | The matched asset is inactive in the portal. Reactivate it in the portal, or attach to an active asset with `segment_connector_asset_id`. |
 | Chassis or OS info invalid | Check the host's OS against [Supported platforms](#supported-platforms). The message `Windows version is not supported` on a Linux host means the distribution is not supported. |
 | `zn-user` missing (installed with `run_as=root`) | The host was installed as root, so no `zn-user` account exists. Uninstall first, or use `segment_connector_run_as=root`. |
@@ -402,7 +397,6 @@ Non-fatal warnings printed before the install (missing `nft` and `iptables`, or 
 ## Security notes
 
 - The token is written to a `0600` file in the staging directory on the target. It is removed in an `always` block, so it is removed even when the install fails.
-- The installer takes the token as a command-line argument (`-token`). While the installer runs, the token is visible to other users on the target in the process list (`ps`). This is how the installer works and cannot be changed in this project. Run installs on hosts where only administrators have shell access, and do not run them while others are watching the process list.
 - The installer zip is copied to the staging directory and deleted after extraction, and again in the `always` block if extraction fails.
 - The task that writes the token file uses `no_log`. The installer command reads the token from that file inside the shell, so the token is not in the task arguments or the printed output.
 - Use Ansible Vault or an environment variable for the token. Do not commit a token, a `secrets*.yml` file, or an installer zip. The `.gitignore` in this directory covers these, but check `git status` before you commit.
@@ -499,10 +493,9 @@ This is a community example. Test it in a non-production environment first. Conf
 
 ### Functional caveats
 
-- The role does not install the agent's runtime packages. See [Target host requirements](#target-host-requirements).
+- The role itself does not install the agent's runtime packages. See [Target host requirements](#target-host-requirements). However, if enabled (is by default), the setup process with the Segment Server, proceeding initial installation, will install packages. To enable or disable this, navigate to **Settings > Entity Repositories > Linux > Expand applicable linux profile > Allow package installation**.
 - The portal must be able to derive a trusted FQDN for the host, or you must set one with `segment_connector_asset_fqdn` or static IP. Names such as `*.local` were not accepted in testing.
 - The connection check is best-effort. It does not prove that the portal shows the asset as Connected.
-- While the installer runs, the token is visible in the process list on the target. See [Security notes](#security-notes).
 - The connection check depends on connector log messages. It was verified with installer 1.2.22.0 only.
 
 ## License
