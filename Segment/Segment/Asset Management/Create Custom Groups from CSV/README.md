@@ -1,6 +1,6 @@
 # Create Custom Groups from CSV
 
-A PowerShell script that creates Zero Networks custom groups from a CSV file. Each CSV row adds one member to a target group, and a member can be an active asset, an existing group, an IP address or subnet, an FQDN, or a wildcard domain. Groups can be nested through a `parentGroup` column. A `-SiteGroups` mode enforces the rules of the Sites (Early Access) customer guide.
+A PowerShell script that creates Zero Networks custom groups from a CSV file. Each CSV row adds one member to a target group, and a member can be an active asset, an existing custom group, an IP address or subnet, an FQDN, or a wildcard domain. Groups can be nested through a `parentGroup` column. A `-SiteGroups` mode enforces the rules of the Sites (Early Access) customer guide.
 
 ## Requirements
 
@@ -48,7 +48,7 @@ The script classifies each `entityName` in this order and encodes it for the API
 | Kind | Example | How it is resolved or encoded |
 |---|---|---|
 | Active asset name | `WEB-PROD-01` | Looked up by name among **active** assets only. Exactly one match is required. |
-| Existing group name | `Helpdesk-Tier1` | Looked up by name among groups. Used as a member of the target group. |
+| Existing custom group name | `Helpdesk-Tier1` | Looked up by name among `custom` groups only (other group types are not supported). Used as a member of the target group. |
 | IPv4 subnet (CIDR) | `10.20.0.0/16` | Encoded as an IPv4 subnet. Host bits are masked, so `10.20.5.17/16` becomes `10.20.0.0/16`. |
 | IPv6 subnet (CIDR) | `2001:db8:10::/48` | Encoded as an IPv6 subnet. Host bits are masked. |
 | Bare IPv4 address | `10.20.5.17` | Converted to a `/32` subnet. |

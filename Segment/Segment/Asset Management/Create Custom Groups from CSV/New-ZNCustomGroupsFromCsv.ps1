@@ -845,27 +845,6 @@ function Find-ZNCustomGroupsByName {
     return @(Find-ZNItemsByName -Endpoint 'groups/custom' -Name $Name)
 }
 
-function Find-ZNAnyGroupsByName {
-    <#
-    .SYNOPSIS
-        Finds any group (custom, AD, or system) with an exact (case-insensitive) name match.
-    .PARAMETER Name
-        Group name.
-    .OUTPUTS
-        System.Object[] of unique group objects.
-    #>
-    param([string]$Name)
-    $all = @(Find-ZNItemsByName -Endpoint 'groups' -Name $Name) + @(Find-ZNCustomGroupsByName -Name $Name)
-    $seen = @{}
-    $out = [System.Collections.Generic.List[object]]::new()
-    foreach ($g in $all) {
-        if ($seen.ContainsKey([string]$g.id)) { continue }
-        $seen[[string]$g.id] = $true
-        $out.Add($g)
-    }
-    return $out.ToArray()
-}
-
 function Resolve-ZNEntity {
     <#
     .SYNOPSIS
@@ -900,16 +879,16 @@ function Resolve-ZNEntity {
         return & $fail "$($assets.Count) active assets are named '$Text'; cannot choose one."
     }
 
-    $apiGroups = @(Find-ZNAnyGroupsByName -Name $Text)
+    $apiGroups = @(Find-ZNCustomGroupsByName -Name $Text)
     if ($apiGroups.Count -gt 1) {
-        return & $fail "$($apiGroups.Count) groups are named '$Text'; cannot choose one."
+        return & $fail "$($apiGroups.Count) custom groups are named '$Text'; cannot choose one."
     }
 
     $csvGroup = $null
     if ($CsvGroupNames.ContainsKey($Text)) { $csvGroup = [string]$CsvGroupNames[$Text] }
 
     if ($assets.Count -eq 1 -and ($apiGroups.Count -eq 1 -or $csvGroup)) {
-        return & $fail "'$Text' matches both an active asset and a group; cannot tell which is meant."
+        return & $fail "'$Text' matches both an active asset and a custom group; cannot tell which is meant."
     }
 
     if ($assets.Count -eq 1) {
@@ -924,7 +903,7 @@ function Resolve-ZNEntity {
     if ($kind.IsFqdn) {
         return [pscustomobject]@{ Ok = $true; Kind = 'Fqdn'; Id = (ConvertTo-ZNFqdnId -Name $Text); Display = $Text.ToLowerInvariant(); CsvGroup = $null; IsBare = $false; Error = $null }
     }
-    return & $fail "'$Text' was not found as an active asset or group, and is not a valid FQDN, IP, or subnet."
+    return & $fail "'$Text' was not found as an active asset or custom group, and is not a valid FQDN, IP, or subnet."
 }
 
 function Get-ZNGroupMemberIds {
