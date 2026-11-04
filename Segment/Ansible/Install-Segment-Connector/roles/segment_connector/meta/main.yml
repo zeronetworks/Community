@@ -1,6 +1,6 @@
 ---
 galaxy_info:
-  role_name: install_segment_connector
+  role_name: segment_connector
   author: Zero Networks Community
   description: Installs, reinstalls or uninstalls the Zero Networks Segment Connector (Linux) using the installer zip from the Zero Networks portal.
   license: MIT

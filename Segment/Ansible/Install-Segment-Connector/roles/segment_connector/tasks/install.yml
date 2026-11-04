@@ -4,113 +4,113 @@
 - name: Fail if installation token is not set
   ansible.builtin.assert:
     that:
-      - install_segment_connector_token | default('') | string | trim | length > 0
-    fail_msg: "install_segment_connector_token must be set to an installation token from the Zero Networks portal."
+      - segment_connector_token | default('') | string | trim | length > 0
+    fail_msg: "segment_connector_token must be set to an installation token from the Zero Networks portal."
 
 - name: Fail if package filename is not set
   ansible.builtin.assert:
     that:
-      - install_segment_connector_package_filename | default('') | length > 0
-    fail_msg: "install_segment_connector_package_filename must be set to the filename of the Segment Connector installer zip (placed in installer/)."
+      - segment_connector_package_filename | default('') | length > 0
+    fail_msg: "segment_connector_package_filename must be set to the filename of the Segment Connector installer zip (placed in installer/)."
 
 - name: Fail if run-as user is invalid
   ansible.builtin.assert:
     that:
-      - install_segment_connector_run_as in ['root', 'zn-user']
-    fail_msg: "install_segment_connector_run_as must be 'zn-user' or 'root'."
+      - segment_connector_run_as in ['root', 'zn-user']
+    fail_msg: "segment_connector_run_as must be 'zn-user' or 'root'."
 
 - name: Validate enrollment options
   ansible.builtin.assert:
     that:
-      - "not (install_segment_connector_asset_name | length > 0 and not install_segment_connector_enroll_asset)"
-      - "not (install_segment_connector_with_static_ip and not install_segment_connector_enroll_asset)"
-      - "not (install_segment_connector_with_static_ip and install_segment_connector_asset_name | length == 0)"
+      - "not (segment_connector_asset_name | length > 0 and not segment_connector_allow_create)"
+      - "not (segment_connector_with_static_ip and not segment_connector_allow_create)"
+      - "not (segment_connector_with_static_ip and segment_connector_asset_name | length == 0)"
     fail_msg: >-
-      Invalid enrollment options. install_segment_connector_asset_name requires
-      install_segment_connector_enroll_asset=true. install_segment_connector_with_static_ip
-      requires both install_segment_connector_enroll_asset=true and a non-empty
-      install_segment_connector_asset_name.
+      Invalid enrollment options. segment_connector_asset_name requires
+      segment_connector_allow_create=true. segment_connector_with_static_ip
+      requires both segment_connector_allow_create=true and a non-empty
+      segment_connector_asset_name.
 
 - name: Validate the enrollment FQDN
   ansible.builtin.assert:
     that:
-      - "install_segment_connector_asset_fqdn | default('') | length > 0"
-      - "'.' in (install_segment_connector_asset_fqdn | default(''))"
-      - "install_segment_connector_asset_fqdn | default('') is match('^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?([.][A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+$')"
+      - "segment_connector_asset_fqdn | default('') | length > 0"
+      - "'.' in (segment_connector_asset_fqdn | default(''))"
+      - "segment_connector_asset_fqdn | default('') is match('^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?([.][A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+$')"
     fail_msg: >-
-      install_segment_connector_asset_fqdn is not a valid fully qualified domain name
-      ('{{ install_segment_connector_asset_fqdn | default('') }}'). Set it explicitly, for
-      example install_segment_connector_asset_fqdn=connector01.example.com, or use
-      install_segment_connector_with_static_ip=true with install_segment_connector_asset_name.
+      segment_connector_asset_fqdn is not a valid fully qualified domain name
+      ('{{ segment_connector_asset_fqdn | default('') }}'). Set it explicitly, for
+      example segment_connector_asset_fqdn=connector01.example.com, or use
+      segment_connector_with_static_ip=true with segment_connector_asset_name.
   when:
-    - install_segment_connector_enroll_asset | bool
-    - not (install_segment_connector_with_static_ip | bool)
+    - segment_connector_allow_create | bool
+    - not (segment_connector_with_static_ip | bool)
 
 # Presence is detected from the installer identity file. This works on both systemd
 # and sysvinit hosts, because the installer writes this file on either init system.
 - name: Check whether the Segment Connector is already installed
   ansible.builtin.stat:
-    path: "{{ install_segment_connector_identity_file }}"
-  register: install_segment_connector_identity_stat
+    path: "{{ segment_connector_identity_file }}"
+  register: __segment_connector_identity_stat
 
 - name: Record whether the Segment Connector is present
   ansible.builtin.set_fact:
-    install_segment_connector_present: "{{ install_segment_connector_identity_stat.stat.exists | bool }}"
+    __segment_connector_present: "{{ __segment_connector_identity_stat.stat.exists | bool }}"
 
 - name: Skip installation when the Segment Connector is already installed
   ansible.builtin.debug:
     msg: >-
       zn-segment-connector is already installed on {{ inventory_hostname }}. Skipping.
-      Set install_segment_connector_reinstall=true to run the installer again.
+      Set segment_connector_reinstall=true to run the installer again.
   when:
-    - install_segment_connector_present | bool
-    - not (install_segment_connector_reinstall | bool)
+    - __segment_connector_present | bool
+    - not (segment_connector_reinstall | bool)
 
 - name: Install or reinstall the Segment Connector
   when:
-    - install_segment_connector_reinstall | bool or not (install_segment_connector_present | bool)
+    - segment_connector_reinstall | bool or not (__segment_connector_present | bool)
   block:
     - name: Check the installer zip exists on the controller
       ansible.builtin.stat:
-        path: "{{ install_segment_connector_package_path }}"
+        path: "{{ segment_connector_package_path }}"
       delegate_to: localhost
       become: false
-      register: install_segment_connector_package_stat
+      register: __segment_connector_package_stat
 
     - name: Fail with guidance if the installer zip is missing
       ansible.builtin.fail:
         msg: >-
-          Installer package not found on the controller at {{ install_segment_connector_package_path }}.
+          Installer package not found on the controller at {{ segment_connector_package_path }}.
           Download the Segment Connector Linux installer zip from the Zero Networks portal
           (Settings > Segment > Segment Connector), place it in the installer/ directory next to
-          the playbook, and set install_segment_connector_package_filename to its filename.
-          You can also set install_segment_connector_package_path to its full path.
-      when: not (install_segment_connector_package_stat.stat.exists | bool)
+          the playbook, and set segment_connector_package_filename to its filename.
+          You can also set segment_connector_package_path to its full path.
+      when: not (__segment_connector_package_stat.stat.exists | bool)
 
     # Non-fatal: reports missing runtime prerequisites as warnings only. The installer
     # itself decides whether the host can run the agent.
     - name: Probe for nftables
       ansible.builtin.shell: command -v nft  # noqa: command-instead-of-shell
-      register: install_segment_connector_probe_nft
+      register: __segment_connector_probe_nft
       failed_when: false
       changed_when: false
 
     - name: Probe for iptables
       ansible.builtin.shell: command -v iptables  # noqa: command-instead-of-shell
-      register: install_segment_connector_probe_iptables
+      register: __segment_connector_probe_iptables
       failed_when: false
       changed_when: false
 
     # sestatus is missing on non-SELinux distributions. rc is non-zero there and the warning is skipped.
     - name: Probe for SELinux enforcement
       ansible.builtin.command: sestatus
-      register: install_segment_connector_probe_selinux
+      register: __segment_connector_probe_selinux
       failed_when: false
       changed_when: false
 
     - name: Probe for sudo
       ansible.builtin.shell: command -v sudo  # noqa: command-instead-of-shell
-      register: install_segment_connector_probe_sudo
+      register: __segment_connector_probe_sudo
       failed_when: false
       changed_when: false
 
@@ -121,8 +121,8 @@
           Connector needs nftables or legacy iptables at runtime. Install one before relying on
           this host (this playbook does not install it).
       when:
-        - install_segment_connector_probe_nft.rc != 0
-        - install_segment_connector_probe_iptables.rc != 0
+        - __segment_connector_probe_nft.rc != 0
+        - __segment_connector_probe_iptables.rc != 0
 
     - name: Warn when sudo is missing on an SELinux host
       ansible.builtin.debug:
@@ -131,20 +131,20 @@
           installer calls sudo to load its SELinux policy module and run restorecon. Install sudo
           (and policycoreutils) on this host.
       when:
-        - install_segment_connector_probe_selinux.rc == 0
-        - install_segment_connector_probe_selinux.stdout is search('SELinux status:\\s+enabled')
-        - install_segment_connector_probe_sudo.rc != 0
+        - __segment_connector_probe_selinux.rc == 0
+        - __segment_connector_probe_selinux.stdout is search('SELinux status:\\s+enabled')
+        - __segment_connector_probe_sudo.rc != 0
 
     - name: Create staging directory
       ansible.builtin.file:
-        path: "{{ install_segment_connector_staging_dir }}"
+        path: "{{ segment_connector_staging_dir }}"
         state: directory
         mode: "0755"
 
     - name: Copy installer zip to the target staging directory
       ansible.builtin.copy:
-        src: "{{ install_segment_connector_package_path }}"
-        dest: "{{ install_segment_connector_staging_dir }}/installer.zip"
+        src: "{{ segment_connector_package_path }}"
+        dest: "{{ segment_connector_staging_dir }}/installer.zip"
         mode: "0600"
 
     # Uses the target's own Python (2.7 or 3.x) so no unzip package is needed.
@@ -155,81 +155,81 @@
           - "{{ ansible_facts['python']['executable'] }}"
           - -c
           - "import zipfile,sys; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])"
-          - "{{ install_segment_connector_staging_dir }}/installer.zip"
-          - "{{ install_segment_connector_staging_dir }}"
+          - "{{ segment_connector_staging_dir }}/installer.zip"
+          - "{{ segment_connector_staging_dir }}"
       changed_when: true
 
     - name: Delete the copied installer zip
       ansible.builtin.file:
-        path: "{{ install_segment_connector_staging_dir }}/installer.zip"
+        path: "{{ segment_connector_staging_dir }}/installer.zip"
         state: absent
 
     - name: Find the segment-connector-linux-installer binary
       ansible.builtin.find:
-        paths: "{{ install_segment_connector_staging_dir }}"
+        paths: "{{ segment_connector_staging_dir }}"
         patterns: segment-connector-linux-installer
         recurse: true
         file_type: file
-      register: install_segment_connector_binary_find
+      register: __segment_connector_binary_find
 
     - name: Fail if the installer binary is missing from the package
       ansible.builtin.assert:
         that:
-          - install_segment_connector_binary_find.files | length > 0
+          - __segment_connector_binary_find.files | length > 0
         fail_msg: "segment-connector-linux-installer was not found in the extracted package. Check that the zip is the Linux installer from the portal."
 
     - name: Record installer binary path
       ansible.builtin.set_fact:
-        install_segment_connector_binary: "{{ install_segment_connector_binary_find.files[0].path }}"
+        __segment_connector_binary: "{{ __segment_connector_binary_find.files[0].path }}"
 
     - name: Ensure installer binary is executable
       ansible.builtin.file:
-        path: "{{ install_segment_connector_binary }}"
+        path: "{{ __segment_connector_binary }}"
         mode: "0755"
 
     - name: Write installation token to a restricted file
       ansible.builtin.copy:
-        content: "{{ install_segment_connector_token | replace('\\r\\n', '\\n') | replace('\\r', '\\n') }}"
-        dest: "{{ install_segment_connector_staging_dir }}/token"
+        content: "{{ segment_connector_token | replace('\\r\\n', '\\n') | replace('\\r', '\\n') }}"
+        dest: "{{ segment_connector_staging_dir }}/token"
         mode: "0600"
       no_log: true
 
     - name: Build enrollment arguments
       ansible.builtin.set_fact:
-        install_segment_connector_enroll_args: >-
+        __segment_connector_enroll_args: >-
           {{
             (
               ['-allow-create']
-              + (['-with-static-ip'] if install_segment_connector_with_static_ip | bool
-                 else ['-asset-fqdn', install_segment_connector_asset_fqdn])
-              + (['-name', install_segment_connector_asset_name] if install_segment_connector_asset_name | length > 0 else [])
-            ) if install_segment_connector_enroll_asset | bool else []
+              + (['-with-static-ip'] if segment_connector_with_static_ip | bool
+                 else ['-asset-fqdn', segment_connector_asset_fqdn])
+              + (['-name', segment_connector_asset_name] if segment_connector_asset_name | length > 0 else [])
+            ) if segment_connector_allow_create | bool else []
           }}
 
     - name: Build installer command arguments
       ansible.builtin.set_fact:
-        install_segment_connector_args: >-
+        __segment_connector_args: >-
           {{
-            ['-run-as', install_segment_connector_run_as]
-            + (['-force'] if install_segment_connector_force | bool else [])
-            + (['-assetId', install_segment_connector_asset_id] if install_segment_connector_asset_id | length > 0 else [])
-            + install_segment_connector_enroll_args
+            ['-run-as', segment_connector_run_as]
+            + (['-force'] if segment_connector_force | bool else [])
+            + (['-assetId', segment_connector_asset_id] if segment_connector_asset_id | length > 0 else [])
+            + __segment_connector_enroll_args
           }}
 
     - name: Run the silent installation
       # The token is read from the restricted file inside the shell, so it is not
       # part of the task arguments or the printed command.
       ansible.builtin.shell: |
-        token="$(cat {{ (install_segment_connector_staging_dir ~ '/token') | quote }})"
-        {{ install_segment_connector_binary | quote }} -install -token "$token" {{ install_segment_connector_args | map('quote') | join(' ') }}
+        token="$(cat {{ (segment_connector_staging_dir ~ '/token') | quote }})"
+        {{ __segment_connector_binary | quote }} -install -token "$token" {{ __segment_connector_args | map('quote') | join(' ') }}
       args:
-        chdir: "{{ install_segment_connector_binary | dirname }}"
+        chdir: "{{ __segment_connector_binary | dirname }}"
       changed_when: true
-      register: install_segment_connector_result
+      register: __segment_connector_run_result
 
     - name: Show installation output
       ansible.builtin.debug:
-        var: install_segment_connector_result.stdout_lines
+        var: __segment_connector_run_result.stdout_lines
 
   rescue:
     - name: Read the tail of the installer log
@@ -239,13 +239,13 @@
           - -n
           - "50"
           - /var/zeronetworks/logs/installer.log
-      register: install_segment_connector_log_tail
+      register: __segment_connector_log_tail
       failed_when: false
       changed_when: false
 
     - name: Show the tail of the installer log
       ansible.builtin.debug:
-        msg: "{{ install_segment_connector_log_tail.stdout_lines | default(['(installer log not available)']) }}"
+        msg: "{{ __segment_connector_log_tail.stdout_lines | default(['(installer log not available)']) }}"
 
     - name: Fail the play after showing the installer log
       ansible.builtin.fail:
@@ -254,10 +254,10 @@
   always:
     - name: Remove token file
       ansible.builtin.file:
-        path: "{{ install_segment_connector_staging_dir }}/token"
+        path: "{{ segment_connector_staging_dir }}/token"
         state: absent
 
     - name: Remove copied installer zip
       ansible.builtin.file:
-        path: "{{ install_segment_connector_staging_dir }}/installer.zip"
+        path: "{{ segment_connector_staging_dir }}/installer.zip"
         state: absent

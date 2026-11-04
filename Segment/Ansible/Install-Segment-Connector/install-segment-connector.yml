@@ -22,4 +22,4 @@
           (Legacy platforms) if it is Python 2.x.
 
   roles:
-    - role: install_segment_connector
+    - role: segment_connector

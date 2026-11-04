@@ -3,20 +3,20 @@
 # Non-secret settings only. Do not put the installation token in this file.
 
 # Filename of the installer zip you downloaded from the portal (placed in installer/).
-install_segment_connector_package_filename: "segment-connector-linux-installer-X.Y.Z.W.zip"
+segment_connector_package_filename: "segment-connector-linux-installer-X.Y.Z.W.zip"
 
 # Optional: full controller path to the zip. Overrides installer/<filename>.
-# install_segment_connector_package_path: /srv/packages/segment-connector-linux-installer.zip
+# segment_connector_package_path: /srv/packages/segment-connector-linux-installer.zip
 
 # zn-user (default) or root.
-install_segment_connector_run_as: zn-user
+segment_connector_run_as: zn-user
 
 # Enrollment: only for hosts that are not yet registered in the portal.
-install_segment_connector_enroll_asset: false
-# install_segment_connector_asset_fqdn: connector01.example.com
-# install_segment_connector_asset_name: connector01
-# install_segment_connector_with_static_ip: false
+segment_connector_allow_create: false
+# segment_connector_asset_fqdn: connector01.example.com
+# segment_connector_asset_name: connector01
+# segment_connector_with_static_ip: false
 
 # Token: supply it with -e @secrets.yml, Ansible Vault, or an environment variable.
 # Environment variable option (uncomment and set ZN_SEGMENT_CONNECTOR_TOKEN in your shell):
-# install_segment_connector_token: "{{ lookup('ansible.builtin.env', 'ZN_SEGMENT_CONNECTOR_TOKEN') }}"
+# segment_connector_token: "{{ lookup('ansible.builtin.env', 'ZN_SEGMENT_CONNECTOR_TOKEN') }}"
