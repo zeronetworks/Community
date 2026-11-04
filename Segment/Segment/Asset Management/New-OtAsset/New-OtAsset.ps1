@@ -11,8 +11,9 @@
     inside the file. Problems are reported for every row at once. By default, one invalid row
     stops the whole run, so nothing is created.
 
-    CSV columns. The first line is the header. Header names are case-insensitive. Line 1 is the
-    header, so the first data row is line 2. Each line is reported as "Row N".
+    CSV columns. The first line is the header. Header names are case-insensitive. Rows are
+    numbered from the line after the header, so the first data line is "Row 1". Skipped blank
+    lines still count.
       ipv4           Required. Dotted IPv4 address. No CIDR and no leading zeros.
                      0.0.0.0, 127.0.0.1 and 255.255.255.255 are not allowed.
       type           Required. OT/IoT type display name or numeric ID. Names are read live from
@@ -63,8 +64,8 @@
     https://portal.zeronetworks.com is used if no host is found.
 
 .PARAMETER DryRun
-    Runs all validation and the read-only API lookups. Nothing is created. The request bodies
-    are written to the information stream instead.
+    Runs all validation and the read-only API lookups. Nothing is created. Add -Verbose to see
+    each request body. The body is also in the Request property of each result.
 
 .PARAMETER ContinueOnError
     Creates the valid rows and skips the invalid ones. Also keeps going after an API failure
@@ -92,7 +93,8 @@
 .EXAMPLE
     ./New-OtAsset.ps1 -CsvFilePath ./my-assets.csv -DryRun
 
-    Validates the CSV file against the tenant and shows the request bodies. Nothing is created.
+    Validates the CSV file against the tenant. Nothing is created. Add -Verbose to also see the
+    request bodies.
 
 .EXAMPLE
     ./New-OtAsset.ps1 -CsvFilePath ./my-assets.csv -ContinueOnError
@@ -100,9 +102,9 @@
     Creates the valid rows, skips the invalid ones and reports them.
 
 .NOTES
-    Requires PowerShell 7.0 or later. Keep this script, Get-OtAssetTypes.ps1 and OtAssetCommon.ps1
-    in the same folder. Needs a read-write API key. Prefer the ZN_API_KEY environment variable over
-    -ApiKey so the key does not appear in shell history.
+    Requires PowerShell 7.0 or later. Keep this script, Get-OtAssetTypes.ps1, OtAssetCommon.ps1 and
+    New-OtAsset.format.ps1xml in the same folder. Needs a read-write API key. Prefer the ZN_API_KEY
+    environment variable over -ApiKey so the key does not appear in shell history.
 
     Exit codes:
       0  Every row was created, or was a dry run.
@@ -111,7 +113,10 @@
          list or the existing assets, or a missing OtAssetCommon.ps1.
 
     Results are written to the pipeline as one object per row, with the properties Row, Name, Ip,
-    TypeId, Status, AssetId and Error. Progress and the summary go to the information stream.
+    TypeId, Status, AssetId, Error and Request. They are shown as a table with the columns Row,
+    Name, Ip, Type, Status and Detail (Error, or else AssetId), defined in
+    New-OtAsset.format.ps1xml. The validation count and the summary go to the information
+    stream. Per-row progress and request bodies go to the verbose stream.
 
 .LINK
     README.md
@@ -162,8 +167,8 @@ $script:SwitchInterfaceCache = [System.Collections.Generic.Dictionary[string, ob
 
 .DESCRIPTION
     Checks the header for the required columns, warns once about unused columns, and returns one
-    object per data row. Blank lines are skipped, but their line numbers still count. The Row
-    value is the line number in the file, with the header on line 1.
+    object per data row. Blank lines are skipped, but they still count. The Row value is the line
+    number after the header, so the first data line is Row 1.
 
 .PARAMETER Path
     Path to the CSV file.
@@ -236,7 +241,7 @@ function Read-OtAssetCsv {
         }
 
         $rows.Add([pscustomobject]@{
-                Row           = [int]$lineNumber
+                Row           = [int]($lineNumber - 1)
                 Ipv4          = [string]$fields['ipv4']
                 Type          = [string]$fields['type']
                 DisplayName   = [string]$fields['displayName']
@@ -746,6 +751,18 @@ function New-OtAssetBody {
 
 # Main flow. Any unexpected error is reported and the script exits with code 2.
 try {
+    # Register the results table view once per session. Without the file, PowerShell's default
+    # view is used instead.
+    $formatPath = Join-Path -Path $PSScriptRoot -ChildPath 'New-OtAsset.format.ps1xml'
+    if ((Test-Path -LiteralPath $formatPath -PathType Leaf) -and $null -eq (Get-FormatData -TypeName 'ZnOtAssetResult')) {
+        try {
+            Update-FormatData -AppendPath $formatPath -ErrorAction Stop
+        }
+        catch {
+            Write-Verbose "Could not load '$formatPath'; using the default view. $($_.Exception.Message)"
+        }
+    }
+
     if ([string]::IsNullOrWhiteSpace($ApiKey)) {
         Write-Error -Message 'An API key is required for this operation. Pass -ApiKey or set the ZN_API_KEY environment variable to a read-write key.' -ErrorAction Continue
         exit 2
@@ -860,6 +877,7 @@ try {
                 Status  = 'NotAttempted'
                 AssetId = $null
                 Error   = $null
+                Request = $null
             })
     }
 
@@ -887,11 +905,12 @@ try {
             if ($stopPosting) { continue }
 
             $body = New-OtAssetBody -Row $evaluation.Source -TypeId ([int]$evaluation.TypeId)
+            $json = $body | ConvertTo-Json -Depth 10 -Compress
 
             if ($DryRun) {
-                $json = $body | ConvertTo-Json -Depth 10 -Compress
-                Write-Information "[DryRun] Row $($evaluation.Row): would POST /assets/ot $json"
+                Write-Verbose "[DryRun] Row $($evaluation.Row): would POST /assets/ot $json"
                 $evaluation.Status = 'DryRun'
+                $evaluation.Request = $json
                 continue
             }
 
@@ -899,7 +918,8 @@ try {
                 $response = Invoke-ZnRestMethod -Method POST -ApiBaseUrl $baseUrl -ApiKey $ApiKey -Path '/assets/ot' -Body $body
                 $evaluation.Status = 'Created'
                 $evaluation.AssetId = [string]$response.assetId
-                Write-Information "Row $($evaluation.Row): created '$($evaluation.Name)' ($($evaluation.AssetId))"
+                $evaluation.Request = $json
+                Write-Verbose "Row $($evaluation.Row): created '$($evaluation.Name)' ($($evaluation.AssetId))"
             }
             catch {
                 $postError = $_
@@ -927,9 +947,27 @@ try {
     foreach ($evaluation in $evaluations) {
         $tally[$evaluation.Status] = 1 + [int]$tally[$evaluation.Status]
     }
-    Write-Information "Created $([int]$tally['Created']), DryRun $([int]$tally['DryRun']), Skipped $([int]$tally['Skipped']), Failed $([int]$tally['Failed']), Invalid $([int]$tally['Invalid']), NotAttempted $([int]$tally['NotAttempted'])"
+    $statusOrder = @('Created', 'DryRun', 'Skipped', 'Failed', 'Invalid', 'NotAttempted')
+    $summaryParts = @($statusOrder | Where-Object { [int]$tally[$_] -gt 0 } | ForEach-Object { "$_ $([int]$tally[$_])" })
+    Write-Information "Summary: $($summaryParts -join ', ')"
+    if ([int]$tally['DryRun'] -gt 0 -and $VerbosePreference -eq [System.Management.Automation.ActionPreference]::SilentlyContinue) {
+        Write-Information 'DryRun: nothing was created. Add -Verbose to see each request body.'
+    }
 
-    $evaluations | Select-Object -Property Row, Name, Ip, TypeId, Status, AssetId, Error
+    foreach ($evaluation in $evaluations) {
+        $result = [pscustomobject]@{
+            Row     = $evaluation.Row
+            Name    = $evaluation.Name
+            Ip      = $evaluation.Ip
+            TypeId  = $evaluation.TypeId
+            Status  = $evaluation.Status
+            AssetId = $evaluation.AssetId
+            Error   = $evaluation.Error
+            Request = $evaluation.Request
+        }
+        $result.PSTypeNames.Insert(0, 'ZnOtAssetResult')
+        $result
+    }
 
     $notCreatedCount = @($evaluations | Where-Object { $_.Status -notin @('Created', 'DryRun') }).Count
     if ($notCreatedCount -gt 0) { exit 1 }

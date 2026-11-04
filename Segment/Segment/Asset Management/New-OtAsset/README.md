@@ -15,9 +15,10 @@ PowerShell scripts for creating OT/IoT assets in Zero Networks, one at a time or
 | `New-OtAsset.ps1` | Creates OT/IoT assets, either one at a time (`-Ip`/`-Name`) or from a CSV file (`-CsvFilePath`). |
 | `Get-OtAssetTypes.ps1` | Lists the OT/IoT asset types available in your tenant and writes them to a CSV file. |
 | `OtAssetCommon.ps1` | Shared helper functions, dot-sourced by the scripts above. |
+| `New-OtAsset.format.ps1xml` | Table layout for the results of `New-OtAsset.ps1`. Loaded automatically. |
 | `new-otasset.template.csv` | Example CSV with the expected columns. Copy it and fill it in. |
 
-**Keep the three `.ps1` files in the same folder.** The scripts load `OtAssetCommon.ps1` from their own folder and will not run without it.
+**Keep the three `.ps1` files and `New-OtAsset.format.ps1xml` in the same folder.** The scripts load `OtAssetCommon.ps1` from their own folder and will not run without it. `New-OtAsset.ps1` also loads `New-OtAsset.format.ps1xml` from that folder to show its results as a table. Without it, the results are still written, but as a long list.
 
 ## Quick start
 
@@ -58,6 +59,12 @@ Validate a CSV file without creating anything:
 ./New-OtAsset.ps1 -CsvFilePath ./my-assets.csv -DryRun
 ```
 
+Add `-Verbose` to also see the JSON body that would be sent for each row:
+
+```powershell
+./New-OtAsset.ps1 -CsvFilePath ./my-assets.csv -DryRun -Verbose
+```
+
 Create the valid rows and skip the invalid ones:
 
 ```powershell
@@ -92,6 +99,8 @@ Save the results of a bulk run to a file:
 ./New-OtAsset.ps1 -CsvFilePath ./my-assets.csv | Export-Csv ./results.csv -NoTypeInformation
 ```
 
+The file has every result property, including `Request`, the JSON body sent for each created row.
+
 ## Parameters: New-OtAsset.ps1
 
 - `-CsvFilePath` - CSV mode. Required in CSV mode; the file must exist.
@@ -102,7 +111,7 @@ Save the results of a bulk run to a file:
 - `-SwitchId` and `-InterfaceName` - Single mode, optional. Must be used together.
 - `-ApiKey` - Defaults to `$Env:ZN_API_KEY`.
 - `-PortalUrl` - Optional. Overrides the API host that is otherwise read from the API key, which falls back to `portal.zeronetworks.com`.
-- `-DryRun` - Runs all validation, including the read-only API lookups. Nothing is created; the request bodies are printed instead.
+- `-DryRun` - Runs all validation, including the read-only API lookups. Nothing is created. Add `-Verbose` to see each request body; the body is also in the `Request` property of each result.
 - `-ContinueOnError` - Creates the valid rows and skips the invalid ones, and keeps going after API failures. The exit code is still non-zero if any row was not created.
 - `-SkipExistingCheck` - Skips downloading the existing OT asset list. Duplicate IPs are then reported by the server, per row, as `Skipped`.
 
@@ -135,7 +144,7 @@ Notes:
 - Header names are case-insensitive.
 - Extra columns are ignored, with a warning.
 - Fully blank lines are skipped.
-- "Row N" in messages is the line number in the file, so the header is line 1.
+- "Row N" in messages and results counts the lines after the header, so the first data line is Row 1. Skipped blank lines still count.
 
 CSV only. If you build the list in Excel, use File -> Save As -> 'CSV UTF-8 (Comma delimited)'.
 
@@ -166,7 +175,25 @@ By default, one bad row means nothing is created.
 
 ## Results and exit codes
 
-`New-OtAsset.ps1` writes one object per row, with the properties `Row`, `Name`, `Ip`, `TypeId`, `Status`, `AssetId` and `Error`.
+`New-OtAsset.ps1` writes one object per row and shows the objects as a table. Example with `-ContinueOnError` and one invalid row:
+
+```text
+WARNING: Row 4: type 'Nonsense' is not a recognized OT/IoT type for this tenant. Run Get-OtAssetTypes.ps1 to list valid names.
+Validated 4 row(s): 3 valid, 1 invalid
+Summary: Created 3, Invalid 1
+
+ Row Name                             Ip              Type Status       Detail
+ --- ----                             --              ---- ------       ------
+   1 Lobby Cam                        10.0.0.20          4 Created      a:o:Xk3Pq9W1
+   2 Floor2 Printer                   10.0.0.21          8 Created      a:o:Xk3Pq9W2
+   3 Line PLC                         10.0.0.22        135 Created      a:o:Xk3Pq9W3
+   4 Invalid Row                      10.0.0.99            Invalid      type 'Nonsense' is not a recognized
+                                                                        OT/IoT type for this tenant. Run
+                                                                        Get-OtAssetTypes.ps1 to list valid
+                                                                        names.
+```
+
+`Detail` is the new asset ID for created rows and the reason for rows that were not created. Each object has the properties `Row`, `Name`, `Ip`, `TypeId`, `Status`, `AssetId`, `Error` and `Request`. `Request` is the JSON body and is set for `Created` and `DryRun` rows. To see every property, add `| Format-List *`. To keep them, add `| Export-Csv`.
 
 Status values:
 
@@ -177,7 +204,7 @@ Status values:
 - `Failed` - the API rejected the request.
 - `NotAttempted` - the row was valid, but the run stopped before it was sent.
 
-Progress and the summary are written to the information stream. Silence them with `-InformationAction SilentlyContinue`.
+The validation count, the summary and the dry-run hint are written to the information stream, so they print above the table. Silence them with `-InformationAction SilentlyContinue`. Per-row progress and request bodies are written to the verbose stream; add `-Verbose` to see them. Validation problems are written as warnings (`Row N: ...`).
 
 Exit codes:
 
@@ -195,6 +222,7 @@ Exit codes:
 - **"interface ... not found on switch":** interface names are case-sensitive and belong to one switch. Check the spelling against that switch.
 - **"already exists" or `Skipped`:** an asset already holds that static IP or name.
 - **"Required helper file 'OtAssetCommon.ps1' was not found":** keep all three `.ps1` files in the same folder.
+- **Results are shown as a long list instead of a table:** `New-OtAsset.format.ps1xml` is missing from the script folder.
 
 ## Related
 
