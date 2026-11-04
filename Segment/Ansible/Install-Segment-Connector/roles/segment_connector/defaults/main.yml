@@ -24,6 +24,8 @@ segment_connector_identity_file: /var/zeronetworks/.zn-internal/identity.json
 segment_connector_run_as: zn-user
 
 # Pass -force to the installer (for example, to replace an existing assetId).
+# Also passed on uninstall. Enrollment flags are ignored on a plain reinstall
+# unless this is true.
 segment_connector_force: false
 
 # Existing asset ID to attach this host to (passed as -assetId). Optional.
@@ -34,13 +36,16 @@ segment_connector_asset_id: ""
 # runs again and handles re-registration itself.
 segment_connector_reinstall: false
 
-# Create a new asset in the portal for this host if none exists (passes -allow-create).
-# Only needed for hosts that are not yet registered in the portal.
+# Enroll a NEW asset for this host (passes -allow-create). Only for hosts that are
+# NOT yet in the portal. Hosts already registered (matched by asset id, or by exactly
+# one FQDN match) need no enrollment flags, so leave this false for them.
 segment_connector_allow_create: false
 
-# FQDN used for the new asset (passes -asset-fqdn). Must be a fully qualified
-# domain name containing a dot. Ignored when segment_connector_with_static_ip is true.
-segment_connector_asset_fqdn: "{{ ansible_facts.fqdn }}"
+# FQDN for the new asset (passed as -asset-fqdn, only when set). Requires allow_create.
+# Must be a fully qualified name containing a dot, not an IP address. When empty, the
+# cloud derives the host's trusted FQDN itself, so the default is empty.
+# Ignored when segment_connector_with_static_ip is true.
+segment_connector_asset_fqdn: ""
 
 # Display name for the new asset (passes -name). Requires allow_create.
 # Required when with_static_ip is true.
@@ -49,3 +54,25 @@ segment_connector_asset_name: ""
 # Enroll with a static IP instead of an FQDN (passes -with-static-ip, which
 # replaces -asset-fqdn). Requires allow_create and asset_name.
 segment_connector_with_static_ip: false
+
+# Extra environment variables for every installer call (install, uninstall).
+# Mapping of name to string value. Entries with empty or null values are dropped.
+# Values are sent as strings. The named variables below override the same keys
+# here, so set them with the named variables, not in this mapping.
+segment_connector_installer_env: {}
+
+# Installer package download timeout (ZN_SEGMENT_CONNECTOR_INSTALL_GET_PKG_TIMEOUT).
+# Accepts a Go duration such as 10m or 90s. A bare number such as 600 is treated
+# as seconds (600s), because the installer parses bare numbers as nanoseconds.
+# Empty leaves the installer default in place.
+segment_connector_download_timeout: ""
+
+# Enable installer trace logging (ZN_AGENT_INSTALLER_TRACE_ENABLED=true when true).
+segment_connector_trace: false
+
+# Echo installer log lines to the console (ZN_AGENT_INSTALLER_LOG_PRINT_TO_CONSOLE=true
+# when true). Console output appears in Ansible and AWX job logs and is not redacted.
+segment_connector_log_to_console: false
+
+# Show the installed Segment Connector version before install and uninstall runs.
+segment_connector_report_version: true

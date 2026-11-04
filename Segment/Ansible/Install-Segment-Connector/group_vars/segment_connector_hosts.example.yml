@@ -11,11 +11,20 @@ segment_connector_package_filename: "segment-connector-linux-installer-X.Y.Z.W.z
 # zn-user (default) or root.
 segment_connector_run_as: zn-user
 
-# Enrollment: only for hosts that are not yet registered in the portal.
+# Enrollment. Hosts already registered in the portal need none of these settings.
+# allow_create is only for hosts not yet registered in the portal; the portal picks
+# the FQDN unless you set segment_connector_asset_fqdn.
 segment_connector_allow_create: false
-# segment_connector_asset_fqdn: connector01.example.com
-# segment_connector_asset_name: connector01
-# segment_connector_with_static_ip: false
+# segment_connector_asset_fqdn: connector01.example.com   # fully qualified (contains a dot), not an IP; not with static IP
+# segment_connector_asset_name: connector01               # display name; requires allow_create
+# segment_connector_with_static_ip: false                 # requires allow_create and asset_name; not with asset_fqdn
+
+# Slow download link. A bare number is seconds; Go durations such as 10m also work.
+# segment_connector_download_timeout: 600s
+
+# Extra installer environment variables (string values). Named variables above take precedence.
+# segment_connector_installer_env:
+#   ZN_AGENT_INSTALLER_LOG_MAX_BACKUPS: "3"
 
 # Token: supply it with -e @secrets.yml, Ansible Vault, or an environment variable.
 # Environment variable option (uncomment and set ZN_SEGMENT_CONNECTOR_TOKEN in your shell):

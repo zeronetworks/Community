@@ -1,0 +1,141 @@
+---
+# Diagnostics for a failed Segment Connector install or uninstall.
+#
+# Included from the rescue: section of the install and uninstall task blocks:
+#   ansible.builtin.include_tasks: diagnose.yml
+#   vars:
+#     __segment_connector_action: install   # or: uninstall
+#
+# Contract (what exists when this file runs):
+#   __segment_connector_action         'install' or 'uninstall'.
+#   __segment_connector_run_result     Register of the installer run task. It may be
+#                                      UNDEFINED if an earlier task failed, so it is
+#                                      always read through default({}).
+#   __segment_connector_installer_log  /var/zeronetworks/logs/installer.log
+#   ansible_failed_task                Rescue magic variable (the failed task).
+#   ansible_failed_result              Rescue magic variable (the failed task result).
+#
+# The enrollment token is never referenced or printed here.
+# The installer writes to stderr, so stdout and stderr are always combined.
+#
+# This file always ends by failing the play with a summary and any matching hints.
+
+- name: Read the end of the installer log
+  ansible.builtin.command:
+    argv:
+      - tail
+      - "-n"
+      - "50"
+      - "{{ __segment_connector_installer_log }}"
+  register: __segment_connector_log_tail
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Build the failure text
+  ansible.builtin.set_fact:
+    __segment_connector_failure_text: >-
+      {{ [
+           (__segment_connector_run_result | default({})).stdout | default('', true) | string,
+           (__segment_connector_run_result | default({})).stderr | default('', true) | string,
+           (ansible_failed_result | default({})).msg | default('', true) | string,
+           (ansible_failed_result | default({})).stderr | default('', true) | string,
+           (ansible_failed_result | default({})).stdout | default('', true) | string,
+           (__segment_connector_log_tail | default({})).stdout | default('', true) | string
+         ] | join(__segment_connector_nl) | lower }}
+  vars:
+    __segment_connector_nl: "\n"
+
+- name: Compute the hints
+  ansible.builtin.set_fact:
+    __segment_connector_hints: >-
+      {{ __segment_connector_hint_table
+         | selectattr('pattern', 'in', __segment_connector_failure_text)
+         | map(attribute='hint')
+         | unique
+         | list }}
+  vars:
+    __segment_connector_hint_table:
+      - pattern: "invalid token"
+        hint: "The installation token is invalid or expired. Generate a new one in the portal
+                 (Settings > Segment > Segment Connector) and pass it as segment_connector_token."
+      - pattern: "failed to perform dns query"
+        hint: "The host could not resolve the DNS TXT record for the token audience. Check DNS resolution, DNS filtering and proxies on the host."
+      - pattern: "failed to communicate with segment servers"
+        hint: "The host cannot reach the Zero Networks segment server. Check outbound access (TCP 443 by default) and proxies."
+      - pattern: "does not match existing assetid stored locally"
+        hint: "The host already has a different asset ID. Remove segment_connector_asset_id, or set segment_connector_force=true to overwrite it."
+      - pattern: "mismatching assetid"
+        hint: "The host already has a different asset ID. Remove segment_connector_asset_id, or set segment_connector_force=true to overwrite it."
+      - pattern: "couldn't find asset"
+        hint: "The host is not registered in the portal. Set segment_connector_allow_create=true to create it, or set segment_connector_asset_id."
+      - pattern: "asset not found or couldn't be created"
+        hint: "The host is not registered in the portal. Set segment_connector_allow_create=true to create it, or set segment_connector_asset_id."
+      - pattern: "no trusted fqdn available"
+        hint: "The portal could not determine an FQDN for this host. Set segment_connector_asset_fqdn,
+                 or use segment_connector_with_static_ip=true together with segment_connector_asset_name."
+      - pattern: "found more than one asset"
+        hint: "More than one portal asset matches this host. Set segment_connector_asset_id."
+      - pattern: "provided fqdn is invalid"
+        hint: "segment_connector_asset_fqdn is not a valid FQDN (it needs a dot and cannot be an IP address)."
+      - pattern: "requires --name"
+        hint: "Static-IP enrollment needs a display name. Set segment_connector_asset_name."
+      - pattern: "an ot asset"
+        hint: "The Segment Connector cannot be installed on an OT asset."
+      - pattern: "asset is inactive"
+        hint: "The asset is inactive in the portal. Check its state there."
+      - pattern: "chassis/os/kernel information is not valid"
+        hint: "The portal rejected this host's hardware/OS information; confirm the platform is supported (see Supported platforms in the README)."
+      - pattern: "zn-user is missing"
+        hint: "This host was installed with run-as root. Uninstall first, or set segment_connector_run_as=root."
+      - pattern: "failed to get package from the segment server"
+        hint: "Downloading the connector package failed. Increase segment_connector_download_timeout and check bandwidth and proxies."
+      - pattern: "windows version is not supported"
+        hint: "The installer reports this Linux distribution/version as unsupported; see Supported platforms in the README."
+      - pattern: "must run with sudo"
+        hint: "The installer was not run as root. Check that become works for this host."
+      - pattern: "failed to verify installation prerequisites"
+        hint: "Check /var/zeronetworks/logs/install-script.log and the runtime package list in the
+                 README (sudo and policycoreutils on SELinux hosts, firewall tooling, cron, logrotate)."
+      - pattern: "failed to install package"
+        hint: "Check /var/zeronetworks/logs/install-script.log and the runtime package list in the
+                 README (sudo and policycoreutils on SELinux hosts, firewall tooling, cron, logrotate)."
+      - pattern: "failed to get asset id"
+        hint: "Uninstall: no asset identity was found on this host; the connector may not be installed."
+      - pattern: "asset unregistration failed"
+        hint: "Uninstall: the portal refused the unregistration. Try segment_connector_force=true."
+      - pattern: "cleanup did not complete"
+        hint: "The host was unregistered, but removing the service or the local zn-user did not finish.
+                 Check installer.log and install-script.log in /var/zeronetworks/logs and remove what remains manually."
+
+- name: Show the installer output and log
+  ansible.builtin.debug:
+    msg: "{{ (__segment_connector_output_lines + __segment_connector_log_lines) | join(__segment_connector_nl) }}"
+  vars:
+    __segment_connector_nl: "\n"
+    __segment_connector_output_lines: >-
+      {{ ((__segment_connector_run_result | default({})).stdout_lines | default([], true))
+         + ((__segment_connector_run_result | default({})).stderr_lines | default([], true)) }}
+    __segment_connector_log_lines: >-
+      {{ (__segment_connector_log_tail | default({})).stdout_lines | default([], true) }}
+  when: (__segment_connector_output_lines + __segment_connector_log_lines) | length > 0
+
+- name: Build the failure summary
+  ansible.builtin.set_fact:
+    __segment_connector_summary: >-
+      {{ ("Segment Connector " ~ __segment_connector_action
+          ~ " failed at task '" ~ ((ansible_failed_task | default({})).name | default('unknown', true))
+          ~ "': " ~ ((ansible_failed_result | default({})).msg | default('see output above', true) | string))
+         ~ __segment_connector_nl
+         ~ (
+             ["Hints:"] + (__segment_connector_hints | map('regex_replace', '^', '- ') | list)
+             if __segment_connector_hints | length > 0
+             else ["No known cause matched. See the installer output and log above, and "
+                   ~ "/var/zeronetworks/logs/installer.log and install-script.log on the host."]
+           ) | join(__segment_connector_nl) }}
+  vars:
+    __segment_connector_nl: "\n"
+
+- name: Fail with a summary
+  ansible.builtin.fail:
+    msg: "{{ __segment_connector_summary }}"

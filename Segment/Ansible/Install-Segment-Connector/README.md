@@ -15,7 +15,16 @@ Install-Segment-Connector/
 ├── group_vars/
 │   └── segment_connector_hosts.example.yml   Example settings (copy to group_vars/segment_connector_hosts.yml)
 ├── installer/                           Place the installer zip here (not committed)
-└── roles/segment_connector/     Role: defaults, tasks (install, uninstall), meta
+└── roles/segment_connector/             Role
+    ├── defaults/main.yml                Default variable values
+    ├── vars/                            Role variables
+    ├── tasks/
+    │   ├── main.yml                     Entry point
+    │   ├── install.yml                  Copy, extract, and run the installer
+    │   ├── uninstall.yml                Run the uninstaller
+    │   ├── report_version.yml           Record the installer version
+    │   └── diagnose.yml                 Print logs and hints after a failure
+    └── meta/main.yml                    Galaxy metadata and supported platforms
 ```
 
 ## Prerequisites
@@ -90,44 +99,115 @@ Install-Segment-Connector/
 | Task | Command |
 |---|---|
 | Install | `ansible-playbook -i inventory.ini install-segment-connector.yml -e @secrets.yml` |
-| Reinstall (installer runs again) | `... install-segment-connector.yml -e @secrets.yml -e segment_connector_reinstall=true` |
-| Enroll a host that is not yet in the portal (FQDN) | `... -e @secrets.yml -e segment_connector_allow_create=true -e segment_connector_asset_fqdn=connector01.example.com` |
+| Auto-enroll a host that is not yet in the portal (the portal picks the FQDN) | `... install-segment-connector.yml -e @secrets.yml -e segment_connector_allow_create=true` |
+| Enroll with an explicit FQDN | `... -e @secrets.yml -e segment_connector_allow_create=true -e segment_connector_asset_fqdn=connector01.example.com` |
 | Enroll with a static IP | `... -e @secrets.yml -e segment_connector_allow_create=true -e segment_connector_with_static_ip=true -e segment_connector_asset_name=connector01` |
+| Slow download link (raise the package download timeout to 600 seconds) | `... -e @secrets.yml -e segment_connector_download_timeout=600` |
+| Debugging (installer trace logging) | `... -e @secrets.yml -e segment_connector_trace=true` |
+| Reinstall (installer runs again) | `... install-segment-connector.yml -e @secrets.yml -e segment_connector_reinstall=true` |
+| Reinstall and force (replace a conflicting assetId) | `... install-segment-connector.yml -e @secrets.yml -e segment_connector_reinstall=true -e segment_connector_force=true` |
 | Run as root instead of zn-user | `... -e @secrets.yml -e segment_connector_run_as=root` |
 | Uninstall | `ansible-playbook -i inventory.ini uninstall-segment-connector.yml -e @secrets.yml` |
-| Uninstall, replacing a conflicting assetId | `... uninstall-segment-connector.yml -e @secrets.yml -e segment_connector_force=true` |
+| Uninstall with force (if unregistration fails) | `... uninstall-segment-connector.yml -e @secrets.yml -e segment_connector_force=true` |
 
 Add `--limit connector01.example.com` to run against a single host.
 
-**Install behaviour when the connector already exists.** The role checks for the installer identity file (`segment_connector_identity_file`, default `/var/zeronetworks/.zn-internal/identity.json`). If it exists, the connector is already installed, and the role skips the installer and prints a message. Set `segment_connector_reinstall=true` to run the installer again. The installer handles re-registration itself.
+Hosts already in the portal need no enrollment variables. Use `allow_create` only for hosts that are not yet registered.
+
+**Install behaviour when the connector already exists.** The role checks for the installer identity file (`segment_connector_identity_file`, default `/var/zeronetworks/.zn-internal/identity.json`). If it exists, the connector is already installed, and the role skips the installer and prints a message. Set `segment_connector_reinstall=true` to run the installer again. The installer handles re-registration itself. On a reinstall the enrollment flags (`allow_create`, `asset_fqdn`, `asset_name`, `with_static_ip`) are ignored unless `segment_connector_force=true`.
 
 ## Variables
 
 Set these in `group_vars`, in the inventory, or with `-e`. Defaults are in `roles/segment_connector/defaults/main.yml`.
 
-| Variable | Default | Description |
-|---|---|---|
-| `segment_connector_token` | `""` | **Required.** Installation token from the portal. Never commit it. |
-| `segment_connector_package_filename` | `""` | **Required.** Filename of the installer zip in `installer/`. |
-| `segment_connector_package_path` | `{{ playbook_dir }}/installer/<filename>` | Controller path to the zip. Override to use a zip stored elsewhere. |
-| `segment_connector_staging_dir` | `/opt/zn-segment-connector-setup` | Directory on the target where the zip is copied and extracted. The copied zip is deleted after extraction. |
-| `segment_connector_identity_file` | `/var/zeronetworks/.zn-internal/identity.json` | File the installer writes on success. If it exists, the install is skipped unless `reinstall=true`. |
-| `segment_connector_run_as` | `zn-user` | Account the connector runs as: `zn-user` or `root`. Passed as `-run-as`. |
-| `segment_connector_force` | `false` | Passes `-force` to the installer. |
-| `segment_connector_asset_id` | `""` | Existing asset ID to attach to. Passed as `-assetId`. |
-| `segment_connector_reinstall` | `false` | Run the installer even when the service already exists. |
-| `segment_connector_allow_create` | `false` | Create a new portal asset if none matches. Passed as `-allow-create`. |
-| `segment_connector_asset_fqdn` | `{{ ansible_facts.fqdn }}` | FQDN for the new asset. Passed as `-asset-fqdn`. Must contain a dot. Not used with static IP. |
-| `segment_connector_asset_name` | `""` | Display name for the new asset. Passed as `-name`. Requires `allow_create`. Required with static IP. |
-| `segment_connector_with_static_ip` | `false` | Enroll with a static IP. Passed as `-with-static-ip`, which replaces `-asset-fqdn`. Requires `allow_create` and `asset_name`. |
+| Variable | Default | Maps to | Notes |
+|---|---|---|---|
+| `segment_connector_token` | `""` | Installer `-token` | **Required.** Installation token from the portal. Never commit it. See [Security notes](#security-notes). |
+| `segment_connector_package_filename` | `""` | n/a | **Required.** Filename of the installer zip in `installer/`. |
+| `segment_connector_package_path` | `{{ playbook_dir }}/installer/<package_filename>` | n/a | Controller path to the zip. Override to use a zip stored elsewhere. |
+| `segment_connector_staging_dir` | `/opt/zn-segment-connector-setup` | n/a | Directory on the target where the zip is copied and extracted. The copied zip is deleted after extraction. |
+| `segment_connector_identity_file` | `/var/zeronetworks/.zn-internal/identity.json` | n/a | File the installer writes on success. If it exists, the install is skipped unless `reinstall=true`. |
+| `segment_connector_reinstall` | `false` | n/a | Run the installer even when the connector is already installed (the identity file exists). |
+| `segment_connector_run_as` | `zn-user` | `-run-as` | Account the connector runs as: `zn-user` or `root`. |
+| `segment_connector_force` | `false` | `-force` | Passed to the installer on install and uninstall. Replaces a conflicting assetId. On a reinstall, also applies the enrollment flags. |
+| `segment_connector_asset_id` | `""` | `-assetId` | Existing asset ID to attach to. Takes precedence over matching by FQDN. |
+| `segment_connector_allow_create` | `false` | `-allow-create` | Let the portal create a new asset when none matches. Only for hosts not yet registered. |
+| `segment_connector_asset_fqdn` | `""` | `-asset-fqdn` (only when set) | FQDN for the new asset. Must be a fully qualified name containing a dot, not an IP address. Requires `allow_create`. Cannot be combined with static IP. |
+| `segment_connector_asset_name` | `""` | `-name` | Display name for the new asset. Requires `allow_create`. Required with static IP. |
+| `segment_connector_with_static_ip` | `false` | `-with-static-ip` | Enroll using the source IP the portal sees. Requires `allow_create` and `asset_name`. Cannot be combined with `asset_fqdn`. |
+| `segment_connector_installer_env` | `{}` | Environment variables | Extra environment variables passed to every installer call. String values. Empty or null values are dropped. See [Installer environment settings](#installer-environment-settings). |
+| `segment_connector_download_timeout` | `""` | `ZN_SEGMENT_CONNECTOR_INSTALL_GET_PKG_TIMEOUT` | Package download timeout. A bare number such as `600` is seconds. Go durations such as `10m` also work. Installer default is 180s. |
+| `segment_connector_trace` | `false` | `ZN_AGENT_INSTALLER_TRACE_ENABLED=true` | Turns on installer trace logging. Use for debugging. |
+| `segment_connector_log_to_console` | `false` | `ZN_AGENT_INSTALLER_LOG_PRINT_TO_CONSOLE=true` | Prints installer log lines in the Ansible or AWX output. These lines are not redacted. Leave it off unless debugging. |
+| `segment_connector_report_version` | `true` | n/a | Runs `<installer> -version` before install or uninstall and sets the fact `segment_connector_installer_version`. Never fails the play. See [Installer version](#installer-version). |
 
-**Validation.** The role stops before it changes anything if the options conflict:
+**Rules.** The role checks these before it changes anything on the host, and the installer checks them again:
 
 - `asset_name` requires `allow_create=true`.
+- `asset_fqdn` requires `allow_create=true`. It must contain a dot and must not be an IP address. It cannot be combined with `with_static_ip`.
 - `with_static_ip=true` requires `allow_create=true` and a non-empty `asset_name`.
-- With an FQDN (not static IP), the FQDN must be set and must contain a dot. The default `ansible_facts.fqdn` is often a short name on hosts that are not configured with a domain. In that case, set `segment_connector_asset_fqdn` explicitly or use static IP mode.
 
-The installer validates the FQDN again and rejects names that are not valid.
+**Behaviour change.** `segment_connector_asset_fqdn` no longer defaults to the host's Ansible FQDN. If you do not set it, the portal chooses the name for a new asset. Set it explicitly if you want a specific name.
+
+## How the host is matched to a portal asset
+
+When the installer runs, it looks for the portal asset for the host in this order:
+
+1. **Asset ID.** If `segment_connector_asset_id` is set, or the identity file already exists on the host, the installer uses that asset ID.
+2. **Existing asset by FQDN.** The installer looks for Linux assets whose FQDN matches the host. If exactly one matches, it is used as-is. Nothing is created. If more than one matches, the install fails. Set `segment_connector_asset_id` to choose one.
+3. **No match.**
+   - Without `allow_create`, the install fails with `Couldn't find asset`.
+   - With `allow_create`, the portal creates the asset. It uses the first of these that applies:
+     - `segment_connector_asset_fqdn`, if set.
+     - The source IP the portal sees, if `with_static_ip` is set. This needs `asset_name`.
+     - The FQDN the portal derives for the host (the "trusted FQDN").
+     - If none of these can be derived, the install fails and tells you to set `asset_fqdn` or use static IP.
+
+The chassis type must be valid. OT assets are rejected.
+
+Hosts already in the portal need no enrollment variables: the portal matches them by asset ID or by their FQDN.
+
+## Installer environment settings
+
+Named variables such as `segment_connector_trace` and `segment_connector_download_timeout` are the preferred way to set common options. Use `segment_connector_installer_env` for any other installer environment variable.
+
+```yaml
+segment_connector_installer_env:
+  ZN_AGENT_INSTALLER_LOG_MAX_BACKUPS: "3"
+```
+
+- Values must be strings. Empty or null values are dropped.
+- The map is passed to every installer call, on install and uninstall.
+- **Precedence.** Named variables override the same keys in `installer_env`. For example, `segment_connector_trace=true` wins over `ZN_AGENT_INSTALLER_TRACE_ENABLED: "false"` in `installer_env`.
+- **Durations.** A bare number is treated as seconds. The role appends `s`, so `600` becomes `600s`. Go durations such as `90s`, `5m`, or `10m` also work.
+
+Other installer variables you can set through `installer_env` (defaults in parentheses):
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `ZN_AGENT_INSTALLER_LOG_MAX_SIZE_MB` | `20` | Maximum size of the installer log before rotation, in MB. |
+| `ZN_AGENT_INSTALLER_LOG_MAX_BACKUPS` | `1` | Number of rotated installer log files to keep. |
+| `ZN_AGENT_INSTALLER_LOG_COMPRESS_BACKUPS` | `false` | Compress rotated installer log files. |
+| `ZN_SEGMENT_CONNECTOR_INSTALL_REGISTER_TIMEOUT` | `60s` | Timeout for registering with the segment server. |
+| `ZN_SEGMENT_CONNECTOR_INSTALL_CONNECTION_TEST_TIMEOUT` | `5s` | Timeout for the connection test to the segment server. |
+| `ZN_SEGMENT_CONNECTOR_INSTALL_SERVER_PORT` | `443` | Port used to reach the segment server. |
+| `ZN_SEGMENT_CONNECTOR_INSTALL_MAX_MSG_SIZE` | Installer default | Maximum message size used by the installer. |
+
+**Console logging.** `segment_connector_log_to_console=true` sends installer log lines to the Ansible or AWX output. Those lines are not redacted, so leave it off unless you are debugging.
+
+## Installer version
+
+After it runs the installer, the role records the installer version in the fact `segment_connector_installer_version`. The role runs `<installer> -version` before install and before uninstall. It skips the version report in `--check` mode, and when the install is skipped because the connector is already installed.
+
+The fact is set only when the version report runs. In a later play of the same run, use a default for hosts where it was not set:
+
+```yaml
+- name: Show the Segment Connector installer version
+  ansible.builtin.debug:
+    msg: "Segment Connector installer {{ segment_connector_installer_version | default('not reported') }}"
+```
+
+Set `segment_connector_report_version=false` to skip the version report.
 
 ## Run as root or as zn-user
 
@@ -137,6 +217,12 @@ The installer validates the FQDN again and rejects names that are not valid.
 A host that was installed as root and is reinstalled as `zn-user` fails if the `zn-user` account does not exist. To avoid this, use the same `segment_connector_run_as` value that the host was installed with, or uninstall first.
 
 ## Troubleshooting
+
+When an install or uninstall fails, the role prints three things automatically:
+
+- The last 50 lines of `/var/zeronetworks/logs/installer.log`.
+- The installer output. Installer messages go to stderr, and the role shows both stdout and stderr.
+- A **Hints** list that matches known errors.
 
 Check the logs on each target first:
 
@@ -152,13 +238,25 @@ Non-fatal warnings printed before the install (missing `nft` and `iptables`, or 
 | `segment_connector_token must be set` | The token was not supplied. Use one of the options in Quick start step 3. |
 | `Installer package not found on the controller` | The zip is not in `installer/`, or the filename does not match `segment_connector_package_filename`. |
 | `segment-connector-linux-installer was not found` | The zip is not the Linux installer. Download it again from the portal. |
-| Installer fails with an invalid token | The token is wrong, expired, or was generated for another environment. Generate a new one in the portal. |
-| Installer fails resolving the token audience | DNS TXT lookup failed. Check that the target can resolve public DNS names. Check for a DNS filter or proxy. |
-| Installer cannot reach the segment server | Check outbound access from the target to the Zero Networks segment server. Check proxies and firewalls. |
-| FQDN validation fails | Set `segment_connector_asset_fqdn` to a fully qualified name such as `connector01.example.com`, or use `segment_connector_with_static_ip=true` with `segment_connector_asset_name`. |
-| Installer reports a conflicting assetId | The host is already linked to a different asset. Set `segment_connector_force=true` to replace it, or pass the correct `segment_connector_asset_id`. |
-| Reinstall did nothing | The connector is already installed (the identity file exists). Set `segment_connector_reinstall=true`. |
-| Reinstall as zn-user fails on a root install | The `zn-user` account does not exist. Reinstall with `segment_connector_run_as=root`, or uninstall first. |
+| Installer reports an invalid token | The token is wrong, expired, or was generated for another environment. Generate a new one in the portal. |
+| DNS TXT lookup failure (installer fails resolving the token audience) | The target cannot resolve public DNS names. Check for a DNS filter or proxy. |
+| Cannot reach segment server | Check outbound access from the target to the Zero Networks segment server. Check proxies and firewalls. |
+| assetId conflict | The host is linked to a different asset. Set `segment_connector_force=true` to replace it, or remove `segment_connector_asset_id` and let matching find the asset. |
+| Asset not found (`Couldn't find asset`) | No portal asset matches the host. Set `segment_connector_allow_create=true` to create one, or set `segment_connector_asset_id` to an existing asset. |
+| No trusted FQDN | The portal cannot derive a name for the new asset. Set `segment_connector_asset_fqdn`, or use `segment_connector_with_static_ip=true` with `segment_connector_asset_name`. |
+| More than one asset matches | Set `segment_connector_asset_id` to the asset you want. |
+| Provided FQDN invalid | Set `segment_connector_asset_fqdn` to a fully qualified name with a dot, such as `connector01.example.com`. It must not be an IP address. |
+| Static IP requires name | Set `segment_connector_asset_name` when using `segment_connector_with_static_ip=true`. |
+| OT asset not supported | The matched asset is an OT asset, which this connector does not support. Check the asset in the portal and use a non-OT asset. |
+| Asset inactive | The matched asset is inactive in the portal. Reactivate it in the portal, or attach to an active asset with `segment_connector_asset_id`. |
+| Chassis or OS info invalid | Check the host's OS against [Supported platforms](#supported-platforms). The message `Windows version is not supported` on a Linux host means the distribution is not supported. |
+| `zn-user` missing (installed with `run_as=root`) | The host was installed as root, so no `zn-user` account exists. Uninstall first, or use `segment_connector_run_as=root`. |
+| Package download failed | The download timed out. Raise `segment_connector_download_timeout`, for example to `600`. |
+| Must run with sudo | The installer needs root. The playbook uses `become: true`. Check that the SSH user can use `sudo`. |
+| Prerequisites failed | Check `/var/zeronetworks/logs/install-script.log` for the missing prerequisite. See [Target host requirements](#target-host-requirements). |
+| Uninstall: no asset ID | The host has no asset ID to unregister. Pass `segment_connector_asset_id` to the uninstall run. |
+| Uninstall: unregistration failed | Run the uninstall again with `segment_connector_force=true`. |
+| Uninstall: cleanup incomplete | The host was unregistered, but removing the service or the local `zn-user` did not finish. Check `installer.log` and `install-script.log` for what remains and remove it manually. |
 
 ## Security notes
 
@@ -167,6 +265,7 @@ Non-fatal warnings printed before the install (missing `nft` and `iptables`, or 
 - The installer zip is copied to the staging directory and deleted after extraction, and again in the `always` block if extraction fails.
 - The task that writes the token file uses `no_log`. The installer command reads the token from that file inside the shell, so the token is not in the task arguments or the printed output.
 - Use Ansible Vault or an environment variable for the token. Do not commit a token, a `secrets*.yml` file, or an installer zip. The `.gitignore` in this directory covers these, but check `git status` before you commit.
+- `segment_connector_log_to_console=true` prints installer log lines without redaction. Leave it off unless you are debugging.
 
 ## Supported platforms
 
