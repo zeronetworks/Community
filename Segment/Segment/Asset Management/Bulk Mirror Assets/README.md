@@ -118,9 +118,9 @@ The input CSV has the columns `srcAssetId,srcAssetName,dstAssetId,dstAssetName`.
 
 All files go to a dated subdirectory `outputs/<YYYY-MM-DD>/` (the date of the run) of the output directory, with a timestamp suffix:
 
-- `outputs/<YYYY-MM-DD>/manual-mirror-plan-<ts>.csv`: dry run. One row per planned action, with status and the request body.
-- `outputs/<YYYY-MM-DD>/manual-mirror-results-<ts>.csv`: `--apply` run. Same columns, with the result of each write and `newObjectId`.
-- `outputs/<YYYY-MM-DD>/manual-mirror-state-<ts>.csv`: `--apply` run. Progress log used by `--resume`.
+- `outputs/<YYYY-MM-DD>/manual-mirror-plan-<ts>.csv`: dry run. One row per planned action. The headers and values are written for people to read: for example `Status` shows "Will be created" or "Skipped: already on target", `Category` shows "Rule owned by the source asset", and `Request Body (JSON)` holds the body the script would send. In this file, "Source Asset ID" / "Source Asset Name" is the asset being mirrored, and "Target Asset ID" / "Target Asset Name" is the mirror target.
+- `outputs/<YYYY-MM-DD>/manual-mirror-results-<ts>.csv`: `--apply` run. Machine-readable: the column names and status codes (`planned`, `created`, `skipped_exists`, ...) are unchanged, with the result of each write and `newObjectId`. `--rollback` reads this file, so pass it there, not the plan.
+- `outputs/<YYYY-MM-DD>/manual-mirror-state-<ts>.csv`: `--apply` run. Machine-readable progress log used by `--resume`.
 - `outputs/<YYYY-MM-DD>/manual-mirror-rollback-plan-<ts>.csv` and `outputs/<YYYY-MM-DD>/manual-mirror-rollback-<ts>.csv`: rollback dry run and rollback run.
 
 `--resume` and `--rollback` take explicit file paths, so pass the file from the dated folder (for example `--rollback outputs/<YYYY-MM-DD>/manual-mirror-results-<ts>.csv`).
@@ -129,17 +129,28 @@ Rollback deletes the objects created by a results report. Run it as a dry run fi
 
 ### Verbose dry run
 
-With `--verbose-dry-run`, a dry run also writes one folder per pair, `outputs/<YYYY-MM-DD>/<srcHost>_to_<dstHost>/`. The host label is the short name (text before the first `.`), with characters other than letters, digits, `.`, `_` and `-` replaced by `_`. If two different pairs would share a folder, the dst asset id suffix `-<last 8 chars>` is added to the colliding names. Each folder holds six CSVs, named with the run timestamp and header-only when empty:
+With `--verbose-dry-run`, a dry run also writes one folder per pair, `outputs/<YYYY-MM-DD>/<srcHost>_to_<dstHost>/` (for example `outputs/<YYYY-MM-DD>/srv-linux-01_to_srv-win-01/`). The host label is the short name (text before the first `.`), with characters other than letters, digits, `.`, `_` and `-` replaced by `_`. If two different pairs would share a folder, the dst asset id suffix `-<last 8 chars>` is added to the colliding names. Each folder holds six CSVs, named with the run timestamp and header-only when empty:
 
-- `inbound-allow-<ts>.csv`, `inbound-block-<ts>.csv`, `outbound-allow-<ts>.csv`, `outbound-block-<ts>.csv`: network rules, split by direction and action. Includes skipped rules with their status and reason, plus the copy type (`owner`, `remote`, `group_inherited` or `n/a`), the original and new remote ids and names, ports, processes, services and expiry.
-- `groups-added-<ts>.csv`: group memberships the run would add (`groupId`, `groupName`, `groupType`, `method`, `path`).
+- `inbound-allow-<ts>.csv`, `inbound-block-<ts>.csv`, `outbound-allow-<ts>.csv`, `outbound-block-<ts>.csv`: network rules, split by direction and action. Includes skipped rules with their status and reason, the copy type, the original and new remote assets (IDs and names), the asset that owns the rule, the rule state, ports, processes, services, expiry and the new rule description. Values are readable (for example "Owner copy (target becomes the rule owner)" or "Never" for no expiry; expiry dates are shown in UTC).
+- `groups-added-<ts>.csv`: group memberships the run would add (`Group ID`, `Group Name`, `Group Type`, `HTTP Method`, `API Path`).
 - `groups-not-added-<ts>.csv`: groups that are not added, with the status and reason (read-only, already a member, or redundant).
+
+**Who owns the rule depends on the file.** Column headers are chosen per direction:
+
+| File | "Asset ID (rule owner)" column | "Original / New ... Asset IDs" columns |
+| --- | --- | --- |
+| `inbound-*` | `Destination Asset ID (rule owner)`: the asset the rule protects | `Source Asset IDs`: the remote list, i.e. the sources |
+| `outbound-*` | `Source Asset ID (rule owner)`: the asset the rule is written on | `Destination Asset IDs`: the remote list, i.e. the destinations |
+
+So in an inbound rule the local asset is the destination, not the source. The source appears only in the remote list.
 
 The verbose folders are for review only. The plan CSV is still written as before. Secondary categories (MFA, identity, RPC, switch, external access, Connect) are not included in the verbose folders. With `--apply`, the flag is ignored and a warning is logged.
 
 ### Statuses
 
 `planned`, `created`, `updated`, `rolled_back`, `skipped_exists`, `skipped_state`, `skipped_pending`, `skipped_expired`, `skipped_group_inherited`, `skipped_readonly`, `skipped_redundant`, `skipped_derived`, `skipped_resumed`, `exclusion_not_mirrored`, `incompatible_target`, `failed`. Pre-checks report `ok`, `warning` or `failed`.
+
+These are the codes written to the results, state and rollback CSVs. The plan and verbose CSVs show a plain-language label instead, for example "Will be created" for `planned`, "Will be added" for a group membership, and "Skipped: already on target" for `skipped_exists`.
 
 ### Idempotency
 

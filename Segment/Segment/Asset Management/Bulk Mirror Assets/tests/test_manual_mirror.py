@@ -8,6 +8,7 @@ import csv
 import importlib.util
 import json
 import logging
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -505,17 +506,19 @@ def test_dry_run_makes_only_get_requests_and_plans_expected_rows(tmp_path: Path)
     assert plan.is_file()
     with plan.open(newline="", encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
-    statuses = {(r["category"], r["sourceObjectId"]): r["status"] for r in rows}
-    assert statuses[("precheck", SRC)] == "warning"  # AD source to non-AD target
-    assert statuses[("group", "g:a:bbbb2222")] == "skipped_readonly"
-    assert statuses[("group", "g:c:aaaa1111")] == "planned"
-    assert statuses[("owner_rule", "rule-owner-in")] == "planned"
-    assert statuses[("owner_rule", "rule-owner-out")] == "planned"
-    assert statuses[("inbound_remote_rule", "rule-remote-in")] == "planned"
-    assert statuses[("owner_rule", "rule-deleted")] == "skipped_state"
-    assert statuses[("inbound_remote_rule", "rule-inherited")] == "skipped_group_inherited"
-    planned_bodies = [r for r in rows if r["status"] == "planned" and r["category"] == "inbound_remote_rule"]
-    assert json.loads(planned_bodies[0]["bodyJson"])["remoteEntityIdsList"] == [DST]
+    cat, st = mma.CATEGORY_LABELS, mma.STATUS_LABELS
+    statuses = {(r["Category"], r["Source Object ID"]): r["Status"] for r in rows}
+    assert statuses[(cat["precheck"], SRC)] == "Warning"  # AD source to non-AD target
+    assert statuses[(cat["group"], "g:a:bbbb2222")] == st["skipped_readonly"]
+    assert statuses[(cat["group"], "g:c:aaaa1111")] == "Will be added"
+    assert statuses[(cat["owner_rule"], "rule-owner-in")] == st["planned"]
+    assert statuses[(cat["owner_rule"], "rule-owner-out")] == st["planned"]
+    assert statuses[(cat["inbound_remote_rule"], "rule-remote-in")] == st["planned"]
+    assert statuses[(cat["owner_rule"], "rule-deleted")] == st["skipped_state"]
+    assert statuses[(cat["inbound_remote_rule"], "rule-inherited")] == st["skipped_group_inherited"]
+    planned_bodies = [r for r in rows if r["Status"] == st["planned"]
+                      and r["Category"] == cat["inbound_remote_rule"]]
+    assert json.loads(planned_bodies[0]["Request Body (JSON)"])["remoteEntityIdsList"] == [DST]
 
 
 def test_execute_action_handles_success_conflict_and_delete() -> None:
@@ -1254,11 +1257,11 @@ def test_group_rows_carry_meta_and_readable_readonly_reason() -> None:
 
 VERBOSE_RULE_STEMS = ("inbound-allow", "inbound-block", "outbound-allow", "outbound-block")
 VERBOSE_STEMS = (*VERBOSE_RULE_STEMS, "groups-added", "groups-not-added")
-RULE_HEADER = (
-    "status", "reason", "copyType", "sourceRuleId", "ruleState", "localEntityId",
-    "localEntityName", "originalRemoteIds", "originalRemoteNames", "newRemoteIds", "ports",
-    "processes", "services", "expiresAt", "newDescription",
-)
+
+
+def rule_header(stem: str) -> list[str]:
+    """Expected human-readable header of a verbose rule file, chosen by its direction."""
+    return [label for _key, label in mma.rule_columns(stem.split("-", 1)[0])]
 
 
 def read_rows(path: Path) -> tuple[list[str], list[dict[str, str]]]:
@@ -1316,53 +1319,61 @@ def test_write_verbose_reports_routes_rules_and_groups(tmp_path: Path) -> None:
 
     def ids(stem: str) -> dict[str, dict[str, str]]:
         _header, rows = read_rows(folder / f"{stem}-{TS}.csv")
-        return {r.get("sourceRuleId", r.get("groupId")): r for r in rows}
+        return {r.get("Source Rule ID") or r.get("Group ID"): r for r in rows}
 
+    st = mma.STATUS_LABELS
     inbound_allow = ids("inbound-allow")
     assert set(inbound_allow) == {"in-allow-owner", "in-allow-inherited", "in-allow-excluded"}
-    assert inbound_allow["in-allow-owner"]["status"] == "planned"
-    assert inbound_allow["in-allow-owner"]["copyType"] == "owner"
-    assert inbound_allow["in-allow-owner"]["originalRemoteIds"] == "a:w:X; a:w:Y"
-    assert inbound_allow["in-allow-owner"]["ports"] == "tcp/445"
-    assert inbound_allow["in-allow-inherited"]["status"] == "skipped_group_inherited"
-    assert inbound_allow["in-allow-inherited"]["reason"] == mma.SKIP_REASON[mma.KIND_GROUP_INHERITED]
-    assert inbound_allow["in-allow-excluded"]["status"] == "exclusion_not_mirrored"
+    assert inbound_allow["in-allow-owner"]["Status"] == st["planned"]
+    assert inbound_allow["in-allow-owner"]["Copy Type"] == mma.copy_type_label("owner", "inbound")
+    assert inbound_allow["in-allow-owner"]["Original Source Asset IDs"] == "a:w:X; a:w:Y"
+    assert inbound_allow["in-allow-owner"]["Ports"] == "tcp/445"
+    assert inbound_allow["in-allow-inherited"]["Status"] == st["skipped_group_inherited"]
+    assert inbound_allow["in-allow-inherited"]["Reason"] == mma.SKIP_REASON[mma.KIND_GROUP_INHERITED]
+    assert inbound_allow["in-allow-excluded"]["Status"] == st["exclusion_not_mirrored"]
 
     inbound_block = ids("inbound-block")
     assert set(inbound_block) == {"in-block-remote"}
-    assert inbound_block["in-block-remote"]["copyType"] == "remote"
-    assert inbound_block["in-block-remote"]["newRemoteIds"] == DST
+    assert inbound_block["in-block-remote"]["Copy Type"] == mma.copy_type_label("remote", "inbound")
+    assert inbound_block["in-block-remote"]["New Source Asset IDs"] == DST
+    assert inbound_block["in-block-remote"]["New Source Asset Names"] == "DstHost"
+    # In an inbound rule the local asset is the destination and the rule owner stays put.
+    assert inbound_block["in-block-remote"]["New Destination Asset ID (rule owner)"] == "a:w:Y"
 
     outbound_allow = ids("outbound-allow")
     assert set(outbound_allow) == {"out-allow-expired"}
-    assert outbound_allow["out-allow-expired"]["status"] == "skipped_expired"
-    assert outbound_allow["out-allow-expired"]["reason"] == mma.SKIP_REASON[mma.KIND_SKIP_EXPIRED]
+    assert outbound_allow["out-allow-expired"]["Status"] == st["skipped_expired"]
+    assert outbound_allow["out-allow-expired"]["Reason"] == mma.SKIP_REASON[mma.KIND_SKIP_EXPIRED]
+    assert outbound_allow["out-allow-expired"]["Expires"] != ""
+    assert outbound_allow["out-allow-expired"]["Expires"] != "Never"
 
     outbound_block = ids("outbound-block")
     assert set(outbound_block) == {"out-block-owner"}
-    assert outbound_block["out-block-owner"]["status"] == "planned"
+    assert outbound_block["out-block-owner"]["Status"] == st["planned"]
+    assert outbound_block["out-block-owner"]["Source Asset ID (rule owner)"] == SRC
+    assert outbound_block["out-block-owner"]["Original Destination Asset IDs"] == "a:w:X"
 
     added = ids("groups-added")
     assert set(added) == {"g:c:aaaa1111"}
-    assert added["g:c:aaaa1111"]["method"] == "PUT"
-    assert added["g:c:aaaa1111"]["groupName"] == "Web"
+    assert added["g:c:aaaa1111"]["HTTP Method"] == "PUT"
+    assert added["g:c:aaaa1111"]["Group Name"] == "Web"
 
     not_added = ids("groups-not-added")
-    assert {k: v["status"] for k, v in not_added.items()} == {
-        "g:a:bbbb2222": "skipped_readonly",
-        "g:t:cccc3333": "skipped_exists",
-        "g:c:dddd4444": "skipped_redundant",
+    assert {k: v["Status"] for k, v in not_added.items()} == {
+        "g:a:bbbb2222": st["skipped_readonly"],
+        "g:t:cccc3333": st["skipped_exists"],
+        "g:c:dddd4444": st["skipped_redundant"],
     }
-    assert not_added["g:a:bbbb2222"]["reason"] == "group type is read-only (AD)"
-    assert not_added["g:t:cccc3333"]["reason"] == "target is already a member"
+    assert not_added["g:a:bbbb2222"]["Reason"] == "group type is read-only (AD)"
+    assert not_added["g:t:cccc3333"]["Reason"] == "target is already a member"
 
     # No row for the metadata-less rule, the precheck row, or any other pair.
     all_rule_rows = [r for stem in VERBOSE_RULE_STEMS for r in read_rows(folder / f"{stem}-{TS}.csv")[1]]
     assert len(all_rule_rows) == 6
-    assert not any(r["sourceRuleId"] == "nometa" for r in all_rule_rows)
+    assert not any(r["Source Rule ID"] == "nometa" for r in all_rule_rows)
     for stem in VERBOSE_RULE_STEMS:
         header, _rows = read_rows(folder / f"{stem}-{TS}.csv")
-        assert header == list(RULE_HEADER)
+        assert header == rule_header(stem)
 
     # The pair with no actions still gets six files, all header-only.
     for stem in VERBOSE_STEMS:
@@ -1397,7 +1408,7 @@ def test_verbose_dry_run_writes_pair_folder_and_makes_only_gets(tmp_path: Path) 
     assert sorted(p.name for p in folder.iterdir()) == sorted(f"{s}-{TS}.csv" for s in VERBOSE_STEMS)
 
     def sources(stem: str) -> set[str]:
-        return {r.get("sourceRuleId", r.get("groupId")) for r in read_rows(folder / f"{stem}-{TS}.csv")[1]}
+        return {r.get("Source Rule ID") or r.get("Group ID") for r in read_rows(folder / f"{stem}-{TS}.csv")[1]}
 
     assert sources("inbound-allow") == {"rule-owner-in", "rule-remote-in", "rule-deleted", "rule-inherited"}
     assert sources("outbound-block") == {"rule-owner-out"}
@@ -1437,3 +1448,210 @@ def test_format_ports_renders_protocol_any_and_group_type_ou() -> None:
     assert mma._format_ports([{"protocolType": 6, "ports": "443"}]) == "tcp/443"
     assert mma.group_type_word("g:u:abcd1234") == "OU"
     assert mma.group_type_word("g:i:abcd1234") == "i"
+
+
+# ---------------------------------------------------------------------------
+# Human-readable labels
+# ---------------------------------------------------------------------------
+
+CAMEL_CASE_RE = re.compile(r"[a-z][A-Z]")
+CAMEL_ID_RE = re.compile(r"\b[a-z]+Ids?\b")
+
+
+def test_rule_columns_headers_follow_direction() -> None:
+    inbound = dict(mma.rule_columns("inbound"))
+    outbound = dict(mma.rule_columns("outbound"))
+    assert inbound["localEntityId"] == "Destination Asset ID (rule owner)"
+    assert inbound["originalRemoteIds"] == "Original Source Asset IDs"
+    assert inbound["newRemoteIds"] == "New Source Asset IDs"
+    assert inbound["newLocalEntityId"] == "New Destination Asset ID (rule owner)"
+    assert outbound["localEntityId"] == "Source Asset ID (rule owner)"
+    assert outbound["originalRemoteIds"] == "Original Destination Asset IDs"
+    assert outbound["newRemoteNames"] == "New Destination Asset Names"
+    assert [k for k, _ in mma.rule_columns("inbound")] == [k for k, _ in mma.rule_columns("outbound")]
+
+
+def test_status_and_value_labels_map_and_pass_unknown_values_through() -> None:
+    assert mma.status_label("planned") == "Will be created"
+    assert mma.status_label("planned", "group") == "Will be added"
+    assert mma.status_label("planned", "owner_rule") == "Will be created"
+    assert mma.status_label("skipped_state") == mma.STATUS_LABELS["skipped_state"]
+    assert mma.status_label("some_new_status") == "some_new_status"
+    assert mma.category_label("owner_rule") == "Rule owned by the source asset"
+    assert mma.category_label("mystery") == "mystery"
+    assert mma.operation_label(mma.CONNECT_OPERATION) == "Update Connect (VPN) config"
+    assert mma.operation_label("create_inbound_rule") == "Create inbound rule"
+    assert mma.operation_label("mystery_op") == "mystery_op"
+
+
+def test_copy_type_label_depends_on_direction() -> None:
+    assert mma.copy_type_label("owner", "inbound") == "Owner copy (target becomes the rule owner)"
+    assert mma.copy_type_label("remote", "inbound") == "Remote-side copy (target replaces the source)"
+    assert mma.copy_type_label("remote", "outbound") == "Remote-side copy (target replaces the destination)"
+    assert mma.copy_type_label("group_inherited", "inbound") == "Not copied (matched through a group)"
+    assert mma.copy_type_label("", "inbound") == ""
+    assert mma.copy_type_label("unexpected", "outbound") == "unexpected"
+
+
+def test_rule_state_label_accepts_int_and_numeric_string_and_passes_unknown() -> None:
+    assert mma.rule_state_label(1) == "Enabled"
+    assert mma.rule_state_label("2") == "Disabled"
+    assert mma.rule_state_label(3) == "Deleted by user"
+    assert mma.rule_state_label(5) == "Pending review (auto)"
+    assert mma.rule_state_label(7) == "Excluded by user"
+    assert mma.rule_state_label(99) == "99"
+    assert mma.rule_state_label("junk") == "junk"
+    assert mma.rule_state_label(None) == ""
+    assert mma.rule_state_label("") == ""
+
+
+def test_expiry_label_never_for_empty_and_zero_and_exact_utc_for_epoch_ms() -> None:
+    assert mma.expiry_label(None) == "Never"
+    assert mma.expiry_label("") == "Never"
+    assert mma.expiry_label(0) == "Never"
+    assert mma.expiry_label("0") == "Never"
+    # 1800000000 seconds after the epoch is 2027-01-15 08:00:00 UTC.
+    assert mma.expiry_label(1_800_000_000_000) == "2027-01-15 08:00 UTC"
+    assert mma.expiry_label("1800000000000") == "2027-01-15 08:00 UTC"
+    assert mma.expiry_label("not-a-time") == "not-a-time"
+
+
+def test_skip_reasons_and_connect_reason_have_no_api_field_names() -> None:
+    for reason in mma.SKIP_REASON.values():
+        assert not CAMEL_CASE_RE.search(reason), reason
+    assert "exclusion list" in mma.SKIP_REASON[mma.KIND_EXCLUSION]
+    config = {"allowedAssetIds": [{"id": SRC}], "excludedAssetIds": [], "allowedDestinations": []}
+    reason = mma.connect_reason(config, PAIR)
+    assert reason == "adds target next to source in: allowed assets"
+    assert not CAMEL_CASE_RE.search(reason)
+
+
+def test_write_labeled_csv_uses_labels_and_blanks_missing_keys(tmp_path: Path) -> None:
+    path = tmp_path / "nested" / "out.csv"
+    mma.write_labeled_csv(path, (("a", "First Col"), ("b", "Second Col")),
+                          [{"a": "1"}, {"a": "2", "b": "3"}])
+    header, rows = read_rows(path)
+    assert header == ["First Col", "Second Col"]
+    assert rows == [{"First Col": "1", "Second Col": ""}, {"First Col": "2", "Second Col": "3"}]
+
+
+def test_planned_rule_rows_carry_new_names_and_ids_and_skipped_rows_are_blank() -> None:
+    opts = default_opts()
+    target = mma.TargetIndex()
+    planned: set[tuple] = set()
+    inbound_remote = make_rule("in-remote", "a:w:Y", [SRC])
+    owner = make_rule("out-owner", SRC, ["a:w:X", "a:w:Y"], action=2, ipsec=None)
+    owner["remoteEntityInfos"] = [{"id": "a:w:X", "name": "XHost"}]
+    inherited = make_rule("in-inherited", "a:w:Y", ["a:w:Z"])
+
+    remote_actions = mma.plan_rule_actions(inbound_remote, "inbound", PAIR, opts, target, planned)
+    owner_actions = mma.plan_rule_actions(owner, "outbound", PAIR, opts, target, planned)
+    skipped_actions = mma.plan_rule_actions(inherited, "inbound", PAIR, opts, target, planned)
+
+    remote_row = mma._verbose_rule_row(remote_actions[0])
+    assert remote_row["status"] == mma.STATUS_LABELS["planned"]
+    assert remote_row["newRemoteNames"] == "DstHost"
+    assert remote_row["newLocalEntityId"] == "a:w:Y"
+
+    owner_row = mma._verbose_rule_row(owner_actions[0])
+    assert owner_row["newRemoteIds"] == "a:w:X; a:w:Y"
+    assert owner_row["newRemoteNames"] == "XHost; a:w:Y"
+    assert owner_row["newLocalEntityId"] == DST
+
+    skipped_row = mma._verbose_rule_row(skipped_actions[0])
+    assert skipped_row["status"] == mma.STATUS_LABELS["skipped_group_inherited"]
+    assert skipped_row["newRemoteNames"] == ""
+    assert skipped_row["newLocalEntityId"] == ""
+    assert skipped_row["newRemoteIds"] == ""
+
+
+def test_verbose_inbound_and_outbound_files_use_direction_headers(tmp_path: Path) -> None:
+    opts = default_opts()
+    target = mma.TargetIndex()
+    planned: set[tuple] = set()
+    actions = mma.plan_rule_actions(make_rule("in-owner", SRC, ["a:w:X"]), "inbound", PAIR,
+                                    opts, target, planned)
+    actions += mma.plan_rule_actions(make_rule("out-owner", SRC, ["a:w:X"], action=2, ipsec=None),
+                                     "outbound", PAIR, opts, target, planned)
+    mma.write_verbose_reports(actions, [PAIR], tmp_path, TS)
+    folder = tmp_path / "SrcHost_to_DstHost"
+
+    inbound_header, _ = read_rows(folder / f"inbound-allow-{TS}.csv")
+    outbound_header, _ = read_rows(folder / f"outbound-block-{TS}.csv")
+    assert "Destination Asset ID (rule owner)" in inbound_header
+    assert "Original Source Asset IDs" in inbound_header
+    assert "Source Asset ID (rule owner)" not in inbound_header  # inbound owner is the destination
+    assert "Source Asset ID (rule owner)" in outbound_header
+    assert "Original Destination Asset IDs" in outbound_header
+    assert inbound_header == rule_header("inbound-allow")
+    assert outbound_header == rule_header("outbound-block")
+
+
+def test_verbose_dry_run_csv_headers_and_values_are_human_readable(tmp_path: Path) -> None:
+    fake = build_fake_backend()
+    args = argparse.Namespace(input=str(_pairs_csv(tmp_path)), resume=None, apply=False,
+                              verbose_dry_run=True)
+    out_dir = tmp_path / "outputs" / "2026-01-01"
+    run_with_client(fake, lambda c: mma.run_forward(c, args, default_opts(), out_dir, TS))
+
+    csv_paths = sorted(out_dir.rglob("*.csv"))
+    assert len(csv_paths) == 1 + len(VERBOSE_STEMS)
+    for path in csv_paths:
+        header, rows = read_rows(path)
+        assert header, path
+        for name in header:
+            assert not CAMEL_CASE_RE.search(name), (path.name, name)
+            assert not CAMEL_ID_RE.search(name), (path.name, name)
+        for row in rows:
+            for value in row.values():
+                assert value not in mma.STATUS_LABELS, (path.name, value)
+
+    plan_header, plan_rows = read_rows(out_dir / f"manual-mirror-plan-{TS}.csv")
+    assert plan_header == [label for _key, label in mma.PLAN_COLUMNS]
+    assert "Status" in plan_header and "Category" in plan_header
+    statuses = {r["Status"] for r in plan_rows}
+    assert mma.STATUS_LABELS["planned"] in statuses
+    assert "Will be added" in statuses
+
+
+def test_apply_results_csv_keeps_machine_headers_and_values(tmp_path: Path) -> None:
+    fake = build_fake_backend()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method != "GET":
+            fake.methods.append(request.method)
+            return httpx.Response(200, json={"item": {"id": "new-1"}})
+        return fake(request)
+
+    args = argparse.Namespace(input=str(_pairs_csv(tmp_path)), resume=None, apply=True,
+                              verbose_dry_run=False)
+    out_dir = tmp_path / "outputs" / "2026-01-01"
+    run_with_client(handler, lambda c: mma.run_forward(c, args, default_opts(apply=True), out_dir, TS))
+
+    results = out_dir / f"manual-mirror-results-{TS}.csv"
+    with results.open(newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+        assert reader.fieldnames == list(mma.RESULT_COLUMNS)
+    assert rows
+    assert {r["status"] for r in rows} <= set(mma.STATUS_LABELS)  # machine codes, not labels
+    assert "created" in {r["status"] for r in rows}
+
+
+def test_read_result_rows_rejects_humanized_dry_run_plan(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    plan = tmp_path / "manual-mirror-plan-x.csv"
+    mma.write_labeled_csv(plan, mma.PLAN_COLUMNS, [{"Status": "Will be created"}])
+    with caplog.at_level(logging.ERROR, logger="manual_mirror_assets"):
+        with pytest.raises(SystemExit):
+            mma.read_result_rows(plan)
+    assert "looks like a dry-run plan; pass the results CSV written by an --apply run" in caplog.text
+
+
+def test_read_result_rows_reads_machine_results_csv(tmp_path: Path) -> None:
+    results = tmp_path / "results.csv"
+    mma.write_csv(results, mma.RESULT_COLUMNS, [{"status": "created", "category": "owner_rule"}])
+    rows = mma.read_result_rows(results)
+    assert rows[0]["status"] == "created"
+    assert rows[0]["category"] == "owner_rule"

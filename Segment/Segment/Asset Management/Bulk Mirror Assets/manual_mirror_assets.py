@@ -42,9 +42,9 @@ import re
 import sys
 import time
 from collections import Counter
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -126,7 +126,7 @@ SKIP_REASON = {
     KIND_SKIP_PENDING: "rule is pending review (use --include-pending to create it disabled)",
     KIND_SKIP_EXPIRED: "rule expiry is in the past",
     KIND_GROUP_INHERITED: "source reaches rule only through group membership; not mirrored",
-    KIND_EXCLUSION: "source is in excludedLocalIdsList of a rule it does not own; not mirrored",
+    KIND_EXCLUSION: "source is in the rule's exclusion list; the rule is not mirrored",
 }
 
 RULE_CATEGORIES = ("owner_rule", "inbound_remote_rule", "outbound_remote_rule")
@@ -143,6 +143,11 @@ IDENTITY_SOURCES = (3, 9)  # Active Directory, Azure Active Directory
 MFA_DIRECTIONS = ("inbound", "outbound")
 CONNECT_OPERATION = "update_connect_config"
 CONNECT_LISTS = ("allowedAssetIds", "excludedAssetIds", "allowedDestinations")
+CONNECT_LIST_LABELS = {
+    "allowedAssetIds": "allowed assets",
+    "excludedAssetIds": "excluded assets",
+    "allowedDestinations": "allowed destinations",
+}
 MARKER_RE = re.compile(r"\[zn-mirror src-rule=([^\s\]]+) src=([^\s\]]+) dst=([^\s\]]+)\]")
 
 logger = logging.getLogger("manual_mirror_assets")
@@ -2227,6 +2232,12 @@ def connect_missing_lists(config: dict[str, Any], pair: AssetPair) -> list[str]:
     ]
 
 
+def connect_reason(config: dict[str, Any], pair: AssetPair) -> str:
+    """Plain-language reason for a Connect update, naming the lists that gain the target."""
+    names = ", ".join(CONNECT_LIST_LABELS[key] for key in connect_missing_lists(config, pair))
+    return f"adds target next to source in: {names}"
+
+
 def build_connect_body(config: dict[str, Any], pair: AssetPair) -> dict[str, Any] | None:
     """Build the full-replace PUT body for a Connect config with T added next to S.
 
@@ -2285,7 +2296,7 @@ async def collect_connect_actions(
         actions.append(Action(
             pair, category, config_id, CONNECT_OPERATION, method="PUT",
             path=f"/settings/connect/user-access-config/{config_id}", body=body,
-            reason=f"adds target next to source in: {', '.join(connect_missing_lists(config, pair))}",
+            reason=connect_reason(config, pair),
         ))
     return actions
 
@@ -2500,7 +2511,7 @@ async def execute_connect_action(
         return
 
     action.body = body
-    action.reason = f"adds target next to source in: {', '.join(connect_missing_lists(config, action.pair))}"
+    action.reason = connect_reason(config, action.pair)
     append_state(state_path, action, "pending")
     try:
         response = await api_request(client, "PUT", action.path, json_body=body)
@@ -2558,6 +2569,15 @@ def action_to_row(action: Action) -> dict[str, str]:
     }
 
 
+def plan_row(action: Action) -> dict[str, str]:
+    """Dry-run plan row: the action_to_row fields with readable category, operation and status."""
+    row = action_to_row(action)
+    row["category"] = category_label(action.category)
+    row["operation"] = operation_label(action.operation)
+    row["status"] = status_label(action.status, action.category)
+    return row
+
+
 def write_csv(path: Path, columns: tuple[str, ...], rows: Iterable[dict[str, str]]) -> None:
     """Write rows to a CSV file, creating the parent directory if needed."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -2573,7 +2593,15 @@ def read_result_rows(path: Path) -> list[dict[str, str]]:
         logger.error("Results CSV not found: %s", path)
         raise SystemExit(1)
     with path.open(newline="", encoding="utf-8-sig") as f:
-        return list(csv.DictReader(f))
+        reader = csv.DictReader(f)
+        rows = list(reader)
+        fields = set(reader.fieldnames or [])
+    if ("category" not in fields or "status" not in fields) and ("Category" in fields or "Status" in fields):
+        logger.error(
+            "%s looks like a dry-run plan; pass the results CSV written by an --apply run", path
+        )
+        raise SystemExit(1)
+    return rows
 
 
 def dated_output_dir(base: str, now: datetime) -> Path:
@@ -2627,31 +2655,216 @@ def pair_dir_names(pairs: Iterable[AssetPair]) -> dict[tuple[str, str], str]:
     return names
 
 
+# ---------------------------------------------------------------------------
+# Human-readable labels (applied only when writing the human-facing CSVs)
+# ---------------------------------------------------------------------------
+
+STATUS_LABELS = {
+    "planned": "Will be created",
+    "created": "Created",
+    "updated": "Updated",
+    "rolled_back": "Rolled back",
+    "failed": "Failed",
+    "warning": "Warning",
+    "ok": "OK",
+    "skipped_exists": "Skipped: already on target",
+    "skipped_group_inherited": "Skipped: matched only through group membership",
+    "skipped_readonly": "Skipped: read-only group (cannot be changed through the API)",
+    "skipped_redundant": "Skipped: implied by a more specific group",
+    "skipped_state": "Skipped: rule is deleted, rejected or excluded",
+    "skipped_pending": "Skipped: rule is pending review",
+    "skipped_expired": "Skipped: rule has expired",
+    "skipped_unavailable": "Skipped: feature not available on this tenant",
+    "skipped_derived": "Skipped: rule is derived from another rule",
+    "skipped_resumed": "Skipped: already done in an earlier run",
+    "exclusion_not_mirrored": "Not mirrored: source is in the rule's exclusion list",
+    "incompatible_target": "Skipped: not applicable to this target",
+    "rollback_unsupported": "Rollback not supported",
+}
+CATEGORY_LABELS = {
+    "precheck": "Pre-check",
+    "group": "Group membership",
+    "owner_rule": "Rule owned by the source asset",
+    "inbound_remote_rule": "Inbound rule where the source asset is a source",
+    "outbound_remote_rule": "Outbound rule where the source asset is a destination",
+    "mfa_policy": "MFA policy",
+    "identity_rule": "Identity rule",
+    "identity_mfa_policy": "Identity MFA policy",
+    "rpc_rule": "RPC rule",
+    "switch_rule": "Switch rule",
+    "external_access_policy": "External access policy",
+    "connect_role": "Connect (VPN) role",
+}
+OPERATION_LABELS = {
+    "add_member": "Add to group",
+    "create_inbound_rule": "Create inbound rule",
+    "create_outbound_rule": "Create outbound rule",
+    "create_inbound_mfa_policy": "Create inbound MFA policy",
+    "create_outbound_mfa_policy": "Create outbound MFA policy",
+    "create_identity_rule": "Create identity rule",
+    "create_identity_mfa_policy": "Create identity MFA policy",
+    "create_rpc_rule": "Create RPC rule",
+    "create_inbound_switch_rule": "Create inbound switch rule",
+    "create_outbound_switch_rule": "Create outbound switch rule",
+    "create_external_access_policy": "Create external access policy",
+    CONNECT_OPERATION: "Update Connect (VPN) config",
+    "skip": "No change",
+    "validate": "Validate",
+    "collect": "Collect",
+    "rollback": "Roll back",
+}
+RULE_STATE_LABELS = {
+    RULE_STATE_ENABLED: "Enabled",
+    RULE_STATE_DISABLED: "Disabled",
+    RULE_STATE_DELETED: "Deleted by user",
+    RULE_STATE_PENDING: "Pending review",
+    RULE_STATE_PENDING_AUTO: "Pending review (auto)",
+    RULE_STATE_REJECTED: "Rejected by user",
+    RULE_STATE_EXCLUDED: "Excluded by user",
+}
+
+
+def status_label(status: str, category: str | None = None) -> str:
+    """Plain-language status; group additions read "Will be added". Unknown values pass through."""
+    if category == "group" and status == "planned":
+        return "Will be added"
+    return STATUS_LABELS.get(status, status)
+
+
+def category_label(category: str) -> str:
+    """Plain-language category; unknown values pass through."""
+    return CATEGORY_LABELS.get(category, category)
+
+
+def operation_label(operation: str) -> str:
+    """Plain-language operation; unknown values pass through."""
+    return OPERATION_LABELS.get(operation, operation)
+
+
+def copy_type_label(copy_type: str, direction: str) -> str:
+    """Plain-language copy type. The remote-side wording depends on the rule direction."""
+    if copy_type == "owner":
+        return "Owner copy (target becomes the rule owner)"
+    if copy_type == "remote":
+        if direction == "outbound":
+            return "Remote-side copy (target replaces the destination)"
+        return "Remote-side copy (target replaces the source)"
+    if copy_type == "group_inherited":
+        return "Not copied (matched through a group)"
+    return copy_type
+
+
+def rule_state_label(state: Any) -> str:
+    """Name for a rule state code (int or numeric string). Unknown or blank values pass through."""
+    if state is None:
+        return ""
+    try:
+        code = int(str(state).strip())
+    except ValueError:
+        return str(state)
+    return RULE_STATE_LABELS.get(code, str(state))
+
+
+def expiry_label(expires_at: Any) -> str:
+    """Expiry as "YYYY-MM-DD HH:MM UTC" from epoch milliseconds; empty or 0 means never."""
+    if expires_at in (None, "", 0, "0"):
+        return "Never"
+    try:
+        millis = int(str(expires_at).strip())
+    except (TypeError, ValueError):
+        return str(expires_at)
+    try:
+        moment = datetime.fromtimestamp(millis / 1000, tz=timezone.utc)
+    except (OverflowError, OSError, ValueError):
+        return str(expires_at)
+    return moment.strftime("%Y-%m-%d %H:%M UTC")
+
+
+def rule_columns(direction: str) -> tuple[tuple[str, str], ...]:
+    """(key, header) pairs for a verbose rule file.
+
+    In an inbound rule the local asset is the destination (the rule owner) and the
+    remote list holds the sources. In an outbound rule it is the other way round.
+    """
+    if direction == "inbound":
+        own, other = "Destination", "Source"
+    else:
+        own, other = "Source", "Destination"
+    return (
+        ("status", "Status"),
+        ("reason", "Reason"),
+        ("copyType", "Copy Type"),
+        ("sourceRuleId", "Source Rule ID"),
+        ("ruleState", "Rule State"),
+        ("localEntityId", f"{own} Asset ID (rule owner)"),
+        ("localEntityName", f"{own} Asset Name (rule owner)"),
+        ("originalRemoteIds", f"Original {other} Asset IDs"),
+        ("originalRemoteNames", f"Original {other} Asset Names"),
+        ("newRemoteIds", f"New {other} Asset IDs"),
+        ("newRemoteNames", f"New {other} Asset Names"),
+        ("newLocalEntityId", f"New {own} Asset ID (rule owner)"),
+        ("ports", "Ports"),
+        ("processes", "Processes"),
+        ("services", "Services"),
+        ("expiresAt", "Expires"),
+        ("newDescription", "New Rule Description"),
+    )
+
+
+VERBOSE_GROUP_ADDED_COLUMNS = (
+    ("groupId", "Group ID"),
+    ("groupName", "Group Name"),
+    ("groupType", "Group Type"),
+    ("method", "HTTP Method"),
+    ("path", "API Path"),
+)
+VERBOSE_GROUP_NOT_ADDED_COLUMNS = (
+    ("groupId", "Group ID"),
+    ("groupName", "Group Name"),
+    ("groupType", "Group Type"),
+    ("status", "Status"),
+    ("reason", "Reason"),
+)
+PLAN_COLUMNS = (
+    ("srcAssetId", "Source Asset ID"),
+    ("srcAssetName", "Source Asset Name"),
+    ("dstAssetId", "Target Asset ID"),
+    ("dstAssetName", "Target Asset Name"),
+    ("category", "Category"),
+    ("sourceObjectId", "Source Object ID"),
+    ("operation", "Operation"),
+    ("status", "Status"),
+    ("newObjectId", "New Object ID"),
+    ("reason", "Reason"),
+    ("bodyJson", "Request Body (JSON)"),
+)
+
+
+def write_labeled_csv(
+    path: Path, columns: Sequence[tuple[str, str]], rows: Iterable[dict[str, str]],
+) -> None:
+    """Write rows under human-readable headers.
+
+    Args:
+        path: CSV file to write; the parent directory is created if needed.
+        columns: (key, header label) pairs in output order.
+        rows: dicts keyed by the column keys; a missing key is written as an empty cell.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    keys = [key for key, _label in columns]
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow([label for _key, label in columns])
+        for row in rows:
+            writer.writerow([row.get(key, "") for key in keys])
+
+
 VERBOSE_RULE_FILES = {
     ("inbound", ACTION_ALLOW): "inbound-allow",
     ("inbound", ACTION_BLOCK): "inbound-block",
     ("outbound", ACTION_ALLOW): "outbound-allow",
     ("outbound", ACTION_BLOCK): "outbound-block",
 }
-VERBOSE_RULE_COLUMNS = (
-    "status",
-    "reason",
-    "copyType",
-    "sourceRuleId",
-    "ruleState",
-    "localEntityId",
-    "localEntityName",
-    "originalRemoteIds",
-    "originalRemoteNames",
-    "newRemoteIds",
-    "ports",
-    "processes",
-    "services",
-    "expiresAt",
-    "newDescription",
-)
-VERBOSE_GROUP_ADDED_COLUMNS = ("groupId", "groupName", "groupType", "method", "path")
-VERBOSE_GROUP_NOT_ADDED_COLUMNS = ("groupId", "groupName", "groupType", "status", "reason")
 
 
 def _cell(value: Any) -> str:
@@ -2663,24 +2876,41 @@ def _cell(value: Any) -> str:
     return str(value)
 
 
-def _verbose_rule_row(action: Action) -> dict[str, str]:
-    """One verbose rule-file row for a rule action."""
+def _new_remote_names(action: Action) -> str:
+    """Names of the remote assets the planned rule will hold (blank unless planned).
+
+    The target's own id maps to the target name. Other ids keep the name they had
+    on the source rule, so an owner copy shows its original remotes by name.
+    """
+    if action.body is None or action.status != "planned":
+        return ""
     meta = action.meta
+    names = dict(zip(meta.get("originalRemoteIds") or [], meta.get("originalRemoteNames") or []))
+    names[action.pair.dst_id] = action.pair.dst_name
+    return _cell([names.get(rid, rid) for rid in meta.get("newRemoteIds") or []])
+
+
+def _verbose_rule_row(action: Action) -> dict[str, str]:
+    """One verbose rule-file row for a rule action (keys are internal; values are readable)."""
+    meta = action.meta
+    planned = action.body is not None and action.status == "planned"
     return {
-        "status": action.status,
+        "status": status_label(action.status, action.category),
         "reason": action.reason,
-        "copyType": _cell(meta.get("copyType")),
+        "copyType": copy_type_label(_cell(meta.get("copyType")), _cell(meta.get("direction"))),
         "sourceRuleId": action.source_object_id,
-        "ruleState": _cell(meta.get("ruleState")),
+        "ruleState": rule_state_label(meta.get("ruleState")),
         "localEntityId": _cell(meta.get("localEntityId")),
         "localEntityName": _cell(meta.get("localEntityName")),
         "originalRemoteIds": _cell(meta.get("originalRemoteIds")),
         "originalRemoteNames": _cell(meta.get("originalRemoteNames")),
         "newRemoteIds": _cell(meta.get("newRemoteIds")),
+        "newRemoteNames": _new_remote_names(action),
+        "newLocalEntityId": _cell(action.body.get("localEntityId")) if planned else "",
         "ports": _cell(meta.get("ports")),
         "processes": _cell(meta.get("processes")),
         "services": _cell(meta.get("services")),
-        "expiresAt": _cell(meta.get("expiresAt")),
+        "expiresAt": expiry_label(meta.get("expiresAt")),
         "newDescription": _cell(meta.get("newDescription")),
     }
 
@@ -2738,7 +2968,7 @@ def write_verbose_reports(
                     "groupId": action.source_object_id,
                     "groupName": _cell(meta.get("groupName")),
                     "groupType": _cell(meta.get("groupType")),
-                    "status": action.status,
+                    "status": status_label(action.status, "group"),
                     "reason": action.reason,
                 })
 
@@ -2747,13 +2977,13 @@ def write_verbose_reports(
         folder = output_dir / folder_name
         for stem, rows in buckets[key].items():
             if stem in VERBOSE_RULE_FILES.values():
-                columns: tuple[str, ...] = VERBOSE_RULE_COLUMNS
+                columns: Sequence[tuple[str, str]] = rule_columns(stem.split("-", 1)[0])
             elif stem == "groups-added":
                 columns = VERBOSE_GROUP_ADDED_COLUMNS
             else:
                 columns = VERBOSE_GROUP_NOT_ADDED_COLUMNS
             path = folder / f"{stem}-{ts}.csv"
-            write_csv(path, columns, rows)
+            write_labeled_csv(path, columns, rows)
             written.append(path)
     return written
 
@@ -2823,7 +3053,10 @@ async def run_forward(
             verbose_paths = write_verbose_reports(actions, pairs, output_dir, ts)
 
     await check_protection_states(client, befores)
-    write_csv(report_path, RESULT_COLUMNS, (action_to_row(a) for a in actions))
+    if opts.apply:
+        write_csv(report_path, RESULT_COLUMNS, (action_to_row(a) for a in actions))
+    else:
+        write_labeled_csv(report_path, PLAN_COLUMNS, (plan_row(a) for a in actions))
     print_summary(actions, report_path)
     for folder in sorted({path.parent for path in verbose_paths}):
         logger.info("Verbose dry-run reports: %s", folder)
