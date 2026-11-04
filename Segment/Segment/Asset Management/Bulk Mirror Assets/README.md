@@ -4,6 +4,26 @@ Bulk-validate and apply Zero Networks asset mirroring relationships from a CSV.
 
 > **Note:** This tool only supports IT assets. OT/IoT assets are not supported, though support could be added if needed.
 
+## Table of contents
+
+- [Bulk mirror assets (`mirror_assets.py`)](#mirroring-prerequisites)
+  - [Mirroring prerequisites](#mirroring-prerequisites)
+  - [What mirroring copies](#what-mirroring-copies)
+  - [Setup](#setup)
+  - [Usage](#usage)
+  - [Output](#output)
+- [Manual mirroring (`manual_mirror_assets.py`)](#manual-mirroring-manual_mirror_assetspy)
+  - [What it copies](#what-it-copies)
+  - [How it differs from the native mirror](#how-it-differs-from-the-native-mirror)
+  - [Usage](#usage-1)
+  - [Output files](#output-files)
+  - [Verbose dry run](#verbose-dry-run)
+  - [Statuses](#statuses)
+  - [Idempotency](#idempotency)
+  - [Safety notes](#safety-notes)
+  - [Tested against a live tenant](#tested-against-a-live-tenant)
+  - [Not yet verified](#not-yet-verified)
+
 ## Mirroring prerequisites
 
 Zero Networks enforces the following rules on any mirror relationship:
