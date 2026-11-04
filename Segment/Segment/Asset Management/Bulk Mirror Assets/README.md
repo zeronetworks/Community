@@ -133,14 +133,14 @@ With `--verbose-dry-run`, a dry run also writes one folder per pair, `outputs/<Y
 
 - `inbound-allow-<ts>.csv`, `inbound-block-<ts>.csv`, `outbound-allow-<ts>.csv`, `outbound-block-<ts>.csv`: network rules, split by direction and action. Includes skipped rules with their status and reason, the copy type, the rule state, the original and new remote assets (IDs and names), the original and new asset that owns the rule, ports, processes, services, expiry and the new rule description. Source columns come first in both directions: inbound files list the source columns and then the destination (rule owner); outbound files list the source (rule owner) and then the destination columns. Both the original and the new rule owner are shown (ID and name): on an owner copy the target becomes the owner, so the sources can be unchanged while the destination (inbound) or source (outbound) changes; on a remote-side copy the owner is unchanged. Values are readable (for example "Owner copy (target becomes the rule owner)" or "Never" for no expiry; expiry dates are shown in UTC).
 - `groups-added-<ts>.csv`: group memberships the run would add (`Group ID`, `Group Name`, `Group Type`, `HTTP Method`, `API Path`).
-- `groups-not-added-<ts>.csv`: groups that are not added, with the status and reason (read-only, already a member, or redundant).
+- `groups-not-added-<ts>.csv`: groups that are not added, with the status and reason (read-only, rule-based, already a member, or redundant).
 
 **Who owns the rule depends on the file.** Column headers are chosen per direction:
 
 | File | "Original / New ... Asset ID (rule owner)" columns | "Original / New ... Asset IDs" columns |
 | --- | --- | --- |
-| `inbound-*` | `Original Destination Asset ID (rule owner)` and `New Destination Asset ID (rule owner)`: the asset the original rule protects, and the asset the new rule protects | `Source Asset IDs`: the remote list, i.e. the sources |
-| `outbound-*` | `Original Source Asset ID (rule owner)` and `New Source Asset ID (rule owner)`: the asset the original rule is written on, and the asset the new rule is written on | `Destination Asset IDs`: the remote list, i.e. the destinations |
+| `inbound-*` | `Original Destination Asset ID (rule owner)` and `New Destination Asset ID (rule owner)`: the asset the original rule protects, and the asset the new rule protects | `Original Source Asset IDs` and `New Source Asset IDs`: the remote list, i.e. the sources |
+| `outbound-*` | `Original Source Asset ID (rule owner)` and `New Source Asset ID (rule owner)`: the asset the original rule is written on, and the asset the new rule is written on | `Original Destination Asset IDs` and `New Destination Asset IDs`: the remote list, i.e. the destinations |
 
 So in an inbound rule the local asset is the destination, not the source. The source appears only in the remote list.
 
@@ -148,7 +148,7 @@ The verbose folders are for review only. The plan CSV is still written as before
 
 ### Statuses
 
-`planned`, `created`, `updated`, `rolled_back`, `skipped_exists`, `skipped_state`, `skipped_pending`, `skipped_expired`, `skipped_group_inherited`, `skipped_readonly`, `skipped_conditional`, `skipped_redundant`, `skipped_derived`, `skipped_resumed`, `exclusion_not_mirrored`, `incompatible_target`, `failed`. Pre-checks report `ok`, `warning` or `failed`.
+`planned`, `created`, `updated`, `rolled_back`, `skipped_exists`, `skipped_state`, `skipped_pending`, `skipped_expired`, `skipped_group_inherited`, `skipped_readonly`, `skipped_conditional`, `skipped_redundant`, `skipped_derived`, `skipped_resumed`, `skipped_unavailable`, `exclusion_not_mirrored`, `incompatible_target`, `rollback_unsupported`, `failed`. Pre-checks report `ok`, `warning` or `failed`. `skipped_unavailable` means a category's endpoint returned 404, for example Connect on a tenant where it is not enabled.
 
 These are the codes written to the results, state and rollback CSVs. The plan and verbose CSVs show a plain-language label instead, for example "Will be created" for `planned`, "Will be added" for a group membership, and "Skipped: already on target" for `skipped_exists`.
 
@@ -166,13 +166,24 @@ Before planning, the script reads the target's existing rules and policies. An o
 - Pre-flight checks: before anything is sent, each planned write is checked against known API limits (description length; required fields and a non-empty remote list for network rules). A write that fails is reported as `failed` with a reason starting `pre-flight check:` in the dry run and is never sent.
 - Connect updates run one at a time. Each one re-reads the config and rebuilds the body from the fresh copy, so concurrent edits are not overwritten.
 
-### Verify before first production run
+### Tested against a live tenant
 
-Confirm these behaviours against the live API. The script was written from the OpenAPI spec and has not been run against a live tenant.
+Run end to end on one source and target pair (dry run, `--apply`, re-run, rollback):
 
-- Rule listing with `entityParams` `direction=3` returns rules where the source is only the remote side.
-- Rule create accepts `state` for pending-review objects (the script sends them as disabled).
-- Switch rule create: the spec declares `remoteEntitiesIdList` as a property but requires `remoteEntityIdsList`. The script sends `remoteEntityIdsList`. Confirm which one the API accepts.
-- Connect user access config `PUT` replaces the whole object. Confirm the body rebuilt from the re-read config keeps every other setting.
-- MFA policy listing with `_entityId`: confirm whether it matches the policy destination only or also the source assets.
-- Identity rule listing: the response schema does not declare `nextCursor`. The script stops with an error if a full page arrives without one.
+- Dry run with `--verbose-dry-run`: network rules where the source is only the remote side are found (the rule listing with `entityParams` `direction=3` returns them), names resolve, and the per-pair CSVs reconcile with the plan.
+- `--apply` created inbound owner copies, inbound remote-side copies and an outbound remote-side copy. Re-running the dry run afterwards plans nothing new.
+- `--rollback` deleted the created rules, and removed a tag-group membership.
+- The API rejects descriptions over 100 characters (the script caps them), and refuses manual members on rule-based groups (the script skips them).
+
+### Not yet verified
+
+These categories and options have only been exercised against mocked responses, because the test tenant had no matching data. Review their dry-run rows before using `--apply`, or use the `--skip-*` flags to leave them out:
+
+- MFA (reactive) policies. Also confirm whether the `_entityId` listing filter matches the policy destination only or also the source assets.
+- Identity rules and identity MFA policies. The response schema does not declare `nextCursor`; the script stops with an error if a full page arrives without one.
+- RPC rules.
+- Switch rules (`--include-switch`). The spec declares `remoteEntitiesIdList` as a property but requires `remoteEntityIdsList`; the script sends `remoteEntityIdsList`. Confirm which one the API accepts.
+- External access policies (`--include-external-access`).
+- Connect (VPN) roles. The user access config `PUT` replaces the whole object; confirm the body rebuilt from the re-read config keeps every other setting. Connect changes are not rolled back automatically.
+- Pending-review objects (`--include-pending`): confirm create accepts the disabled state the script sends.
+- Block rules: only allow rules were copied in the live test (the block rules found there matched the source through group membership). Block rules take the same code path, except that `ipSecOpt` is omitted.
