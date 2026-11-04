@@ -60,7 +60,7 @@ Install-Segment-Connector/
 - Python on the target, for Ansible itself. See [Target host requirements](#target-host-requirements).
 - Outbound TCP 443 to the Zero Networks segment server. The installer registers with it and downloads the connector package from it.
 - DNS that works from the target:
-	- The host must resolve the segment server's name. The portal gives the connector this name.
+  - The host must resolve the segment server's name. The portal gives the connector this name.
 
 **Zero Networks portal**
 
