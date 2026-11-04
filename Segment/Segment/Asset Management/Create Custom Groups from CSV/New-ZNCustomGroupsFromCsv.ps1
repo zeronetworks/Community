@@ -57,6 +57,9 @@ delete the group. The entityName column is used only to determine deletion order
 Skip the confirmation prompt for the removal modes. Without -Force, a non-interactive session
 aborts.
 
+.PARAMETER DryRun
+Alias-style switch equivalent to -WhatIf: runs lookups and validation, prints the plan, and makes no changes.
+
 .EXAMPLE
 .\New-ZNCustomGroupsFromCsv.ps1 -CsvPath .\groups.example.csv -PortalUrl mycompany-admin.zeronetworks.com -WhatIf
 
@@ -91,7 +94,9 @@ param(
     [Parameter(ParameterSetName = 'RemoveGroupsAndMembers')]
     [switch]$RemoveGroupsAndMembers,
 
-    [switch]$Force
+    [switch]$Force,
+
+    [switch]$DryRun
 )
 
 $ErrorActionPreference = 'Stop'
@@ -1551,6 +1556,7 @@ function Invoke-ZNRemoveGroupsMode {
 
 if ($MyInvocation.InvocationName -ne '.') {
     $exitCode = 1
+    if ($DryRun) { $WhatIfPreference = $true }
     try {
         $mode = $PSCmdlet.ParameterSetName
         $friendlyMode = switch ($mode) {

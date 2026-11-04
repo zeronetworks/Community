@@ -90,7 +90,8 @@ To nest a group, put its name in `parentGroup` on its rows. The parent is define
 | `-RemoveMembers` | No | **Destructive.** Remove the listed members from their groups. See [Warning](#warning-destructive-switches). |
 | `-RemoveGroupsAndMembers` | No | **Destructive.** Empty and delete the groups named in the CSV. See [Warning](#warning-destructive-switches). |
 | `-Force` | No | Skip the confirmation prompt for the removal modes. |
-| `-WhatIf` | No | Show what would change without making changes. |
+| `-WhatIf` | No | Show what would change without making changes. Lookups and validation still run (read-only). |
+| `-DryRun` | No | Same as `-WhatIf`. |
 | `-Verbose` | No | Show detailed logging, including per-member decisions and API requests. The API key is masked. |
 
 `-RemoveMembers` and `-RemoveGroupsAndMembers` cannot be used together. Without either, the script runs in create mode.
@@ -116,7 +117,7 @@ By default, the run stops before any write and reports every resolve error. With
 
 ## WARNING: destructive switches
 
-> **WARNING:** `-RemoveMembers` and `-RemoveGroupsAndMembers` change or delete live group membership. Run them first with `-WhatIf`, and check the summary carefully.
+> **WARNING:** `-RemoveMembers` and `-RemoveGroupsAndMembers` change or delete live group membership. Run them first with `-WhatIf` (or `-DryRun`), and check the summary carefully.
 
 - **`-RemoveMembers`** removes only the members listed in the CSV rows from their groups. The groups themselves are kept. Members that are not in the group are reported as `NotAMember`. Missing target groups are an error (skippable with `-SkipResolveErrors`).
 - **`-RemoveGroupsAndMembers`** removes **all** members of each `targetGroupName` in the CSV, then **deletes the group**. Zero Networks custom groups have no inactive state, so emptying and deleting is the only way to retire one. Group membership that is not listed in the CSV is removed too, and the group is unlinked from any parent group it belongs to before it is deleted (best-effort: if the unlink lookup fails, a warning is printed and the delete is still attempted). Groups are processed children first, so nested groups delete cleanly. If the API refuses to delete a group (for example, because a rule references it), the group is reported as `Emptied, DeleteFailed` with the API error, and the run continues.
