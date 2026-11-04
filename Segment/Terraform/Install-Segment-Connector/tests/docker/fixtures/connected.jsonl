@@ -1,0 +1,4 @@
+{"ts":"__NOW__","level":"info","msg":"zero networks segment connector is starting"}
+{"ts":"__NOW__","level":"info","msg":"segment connector initialized"}
+{"ts":"__NOW__","level":"info","msg":"connected successfully to segment server","serverAddress":"segment.example.test:443"}
+{"ts":"__NOW__","level":"info","msg":"starting collector"}

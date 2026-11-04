@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+#
+# Fake Segment Connector installer. Used only by the offline tests.
+#
+# It does not contact any server. It records how it was called and writes the
+# same kind of files the real installer writes, so the install scripts can be
+# checked on a machine without a Zero Networks portal.
+#
+# Behaviour is picked with the FAKE_MODE environment variable:
+#   connected   install works; the connector log shows a successful connection
+#   dns_fail    install works; the connector log shows a DNS failure
+#   bad_token   install fails with an "invalid token" error
+#
+# Every call is appended to /tmp/fake-calls. A call starts with a "CALL" line,
+# then one "ARG <value>" line per argument, then one "ENV <NAME=value>" line per
+# ZN_ environment variable the installer received.
+
+set -u
+
+IDENTITY_FILE=/var/zeronetworks/.zn-internal/identity.json
+LOG_DIR=/var/zeronetworks/logs
+CONNECTOR_LOG=$LOG_DIR/zn-segment-connector.log
+INSTALLER_LOG=$LOG_DIR/installer.log
+CALLS_FILE=/tmp/fake-calls
+MODE=${FAKE_MODE:-connected}
+# The connector log lines come from the JSON-lines files next to this program.
+FIXTURES_DIR=$(dirname "$0")/fixtures
+
+# Prints the current time in UTC, in the same format the connector log uses.
+now_utc() {
+  date -u +%Y-%m-%dT%H:%M:%SZ
+}
+
+# Appends a record of this call (arguments and ZN_ environment) to the calls file.
+record_call() {
+  {
+    echo "CALL"
+    for arg in "$@"; do
+      echo "ARG $arg"
+    done
+    env | grep '^ZN_' | sed 's/^/ENV /'
+  } >>"$CALLS_FILE"
+}
+
+# Simulates "-install": writes the identity file and the connector log for MODE.
+install_connector() {
+  mkdir -p "$(dirname "$IDENTITY_FILE")" "$LOG_DIR"
+
+  if [ "$MODE" = "bad_token" ]; then
+    echo "$(now_utc) error: invalid token: the installation token is invalid or expired" >>"$INSTALLER_LOG"
+    echo "Error: invalid token. The installation token is invalid or expired." >&2
+    exit 1
+  fi
+
+  printf '{"assetId":"fake-asset-0001"}\n' >"$IDENTITY_FILE"
+  echo "installer finished (fake installer)"
+
+  case "$MODE" in
+    connected)
+      sed "s/__NOW__/$(now_utc)/g" "$FIXTURES_DIR/connected.jsonl" >>"$CONNECTOR_LOG" ;;
+    dns_fail)
+      sed "s/__NOW__/$(now_utc)/g" "$FIXTURES_DIR/dns_fail.jsonl" >>"$CONNECTOR_LOG" ;;
+  esac
+  exit 0
+}
+
+case "${1:-}" in
+  -version)
+    # The real installer prints its version on stderr.
+    echo "installer version: 9.9.9.9" >&2
+    exit 0 ;;
+  -install)
+    record_call "$@"
+    install_connector ;;
+  -uninstall)
+    record_call "$@"
+    # Simulates "-uninstall": removes the identity file.
+    rm -f "$IDENTITY_FILE"
+    echo "uninstall finished (fake installer)"
+    exit 0 ;;
+  *)
+    echo "fake installer: unknown command '${1:-}'" >&2
+    exit 2 ;;
+esac
