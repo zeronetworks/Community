@@ -82,8 +82,11 @@ A summary is also logged to the console at the end of the run.
 # Dry run (default): GET requests only, writes a plan CSV
 uv run manual_mirror_assets.py --input assets.csv
 
-# Review outputs/manual-mirror-plan-<timestamp>.csv, then perform the writes
+# Review outputs/<YYYY-MM-DD>/manual-mirror-plan-<timestamp>.csv, then perform the writes
 uv run manual_mirror_assets.py --input assets.csv --apply
+
+# Dry run that also writes per-pair folders for review (see "Verbose dry run" below)
+uv run manual_mirror_assets.py --input assets.csv --verbose-dry-run
 ```
 
 The input CSV has the columns `srcAssetId,srcAssetName,dstAssetId,dstAssetName`. Credentials come from the same `.env` file used by the native mirror script (`ZN_API_BASE_URL`, `ZN_API_KEY`).
@@ -91,8 +94,9 @@ The input CSV has the columns `srcAssetId,srcAssetName,dstAssetId,dstAssetName`.
 | Flag | Purpose |
 | --- | --- |
 | `--input`, `-i` | Input CSV of source and target pairs. Required unless `--rollback` is given. |
-| `--output-dir` | Directory for reports and state files (default `outputs`). |
+| `--output-dir` | Base directory for reports and state files (default `outputs`). Files go into a `<YYYY-MM-DD>` subdirectory of it. |
 | `--verbose`, `-v` | Enable debug logging. |
+| `--verbose-dry-run` (alias `--verboseDryRun`) | Dry run only: also write the per-pair verbose folders. Ignored with `--apply`. |
 | `--concurrency` | Maximum in-flight API calls (default 5). Connect updates are never concurrent. |
 | `--apply` | Perform writes. Without it, only GET requests are made. |
 | `--skip-groups` | Do not add the target to the source's groups. |
@@ -112,14 +116,26 @@ The input CSV has the columns `srcAssetId,srcAssetName,dstAssetId,dstAssetName`.
 
 ### Output files
 
-All files go to the output directory (default `outputs/`) with a timestamp suffix:
+All files go to a dated subdirectory `outputs/<YYYY-MM-DD>/` (the date of the run) of the output directory, with a timestamp suffix:
 
-- `manual-mirror-plan-<ts>.csv`: dry run. One row per planned action, with status and the request body.
-- `manual-mirror-results-<ts>.csv`: `--apply` run. Same columns, with the result of each write and `newObjectId`.
-- `manual-mirror-state-<ts>.csv`: `--apply` run. Progress log used by `--resume`.
-- `manual-mirror-rollback-plan-<ts>.csv` and `manual-mirror-rollback-<ts>.csv`: rollback dry run and rollback run.
+- `outputs/<YYYY-MM-DD>/manual-mirror-plan-<ts>.csv`: dry run. One row per planned action, with status and the request body.
+- `outputs/<YYYY-MM-DD>/manual-mirror-results-<ts>.csv`: `--apply` run. Same columns, with the result of each write and `newObjectId`.
+- `outputs/<YYYY-MM-DD>/manual-mirror-state-<ts>.csv`: `--apply` run. Progress log used by `--resume`.
+- `outputs/<YYYY-MM-DD>/manual-mirror-rollback-plan-<ts>.csv` and `outputs/<YYYY-MM-DD>/manual-mirror-rollback-<ts>.csv`: rollback dry run and rollback run.
+
+`--resume` and `--rollback` take explicit file paths, so pass the file from the dated folder (for example `--rollback outputs/<YYYY-MM-DD>/manual-mirror-results-<ts>.csv`).
 
 Rollback deletes the objects created by a results report. Run it as a dry run first, then add `--apply`. Connect config updates are not reverted automatically; the rollback report marks them `rollback_unsupported` so they can be reverted by hand.
+
+### Verbose dry run
+
+With `--verbose-dry-run`, a dry run also writes one folder per pair, `outputs/<YYYY-MM-DD>/<srcHost>_to_<dstHost>/`. The host label is the short name (text before the first `.`), with characters other than letters, digits, `.`, `_` and `-` replaced by `_`. If two different pairs would share a folder, the dst asset id suffix `-<last 8 chars>` is added to the colliding names. Each folder holds six CSVs, named with the run timestamp and header-only when empty:
+
+- `inbound-allow-<ts>.csv`, `inbound-block-<ts>.csv`, `outbound-allow-<ts>.csv`, `outbound-block-<ts>.csv`: network rules, split by direction and action. Includes skipped rules with their status and reason, plus the copy type (`owner`, `remote`, `group_inherited` or `n/a`), the original and new remote ids and names, ports, processes, services and expiry.
+- `groups-added-<ts>.csv`: group memberships the run would add (`groupId`, `groupName`, `groupType`, `method`, `path`).
+- `groups-not-added-<ts>.csv`: groups that are not added, with the status and reason (read-only, already a member, or redundant).
+
+The verbose folders are for review only. The plan CSV is still written as before. Secondary categories (MFA, identity, RPC, switch, external access, Connect) are not included in the verbose folders. With `--apply`, the flag is ignored and a warning is logged.
 
 ### Statuses
 

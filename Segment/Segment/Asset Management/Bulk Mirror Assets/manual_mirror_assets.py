@@ -16,11 +16,17 @@ Without --apply the script is a dry run: it performs only GET requests and
 writes a plan CSV. With --apply it performs the writes, recording progress in
 a state CSV so an interrupted run can be continued with --resume.
 
+All reports go to a dated subdirectory outputs/<YYYY-MM-DD>/ of the output
+directory. With --verbose-dry-run a dry run also writes per-pair CSV folders
+<src>_to_<dst>/ holding rules split by direction and action, and groups added
+or not added.
+
 Usage:
     uv run manual_mirror_assets.py --input pairs.csv                 # dry run
+    uv run manual_mirror_assets.py --input pairs.csv --verbose-dry-run
     uv run manual_mirror_assets.py --input pairs.csv --apply         # write
-    uv run manual_mirror_assets.py --input pairs.csv --apply --resume outputs/manual-mirror-state-<ts>.csv
-    uv run manual_mirror_assets.py --rollback outputs/manual-mirror-results-<ts>.csv --apply
+    uv run manual_mirror_assets.py --input pairs.csv --apply --resume outputs/<YYYY-MM-DD>/manual-mirror-state-<ts>.csv
+    uv run manual_mirror_assets.py --rollback outputs/<YYYY-MM-DD>/manual-mirror-results-<ts>.csv --apply
 """
 
 from __future__ import annotations
@@ -195,6 +201,8 @@ class Action:
     status: str = "planned"
     new_id: str = ""
     reason: str = ""
+    # Extra detail for the verbose dry-run reports only; never written to RESULT_COLUMNS.
+    meta: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -309,7 +317,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "-i",
         help="CSV with columns srcAssetId,srcAssetName,dstAssetId,dstAssetName.",
     )
-    parser.add_argument("--output-dir", default="outputs", help="Directory for CSV reports.")
+    parser.add_argument(
+        "--output-dir",
+        default="outputs",
+        help="Base directory for reports. Files go into a <YYYY-MM-DD> subdirectory of it (default: outputs).",
+    )
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable debug logging.")
     parser.add_argument(
         "--concurrency", type=int, default=5, help="Max in-flight API calls (default: 5)."
@@ -364,6 +376,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--include-external-access",
         action="store_true",
         help="Also copy external access policies (off by default).",
+    )
+    parser.add_argument(
+        "--verbose-dry-run",
+        "--verboseDryRun",
+        dest="verbose_dry_run",
+        action="store_true",
+        help=(
+            "Dry run only: also write per-pair folders <src>_to_<dst>/ with rules split by "
+            "direction and action, and groups added / not added. Ignored with --apply."
+        ),
     )
     parser.add_argument(
         "--resume",
@@ -667,6 +689,24 @@ def group_writable_kind(group_id: str) -> str | None:
     return GROUP_ENDPOINTS.get(parts[1])
 
 
+GROUP_TYPE_WORDS = {"c": "custom", "t": "tag", "a": "AD", "s": "system", "o": "OT", "u": "OU"}
+
+
+def group_type_word(group_id: str) -> str:
+    """Return a readable group type for a group id: custom, tag, AD, system, OT, or the raw letter.
+
+    Args:
+        group_id: group id such as "g:a:1a2b3c4d".
+
+    Returns:
+        The type word, the letter itself for an unknown type, or "unknown" if the id has no letter.
+    """
+    parts = group_id.split(":")
+    if len(parts) < 3 or parts[0] != "g" or not parts[1]:
+        return "unknown"
+    return GROUP_TYPE_WORDS.get(parts[1], parts[1])
+
+
 def minimal_groups(group_ids: list[str], ancestors_of: dict[str, set[str]]) -> list[str]:
     """Keep only the most specific groups from a list.
 
@@ -913,7 +953,87 @@ def rule_category(owner_side: bool, direction: str) -> str:
     return "owner_rule" if owner_side else f"{direction}_remote_rule"
 
 
-def _skip_action(pair: AssetPair, category: str, rule_id: str, status: str, reason: str) -> Action:
+PROTOCOL_NAMES = {1: "icmp", 6: "tcp", 17: "udp", 256: "any"}  # IANA numbers; 256 = Any (spec `protocol` enum)
+
+
+def _format_ports(ports_list: Any) -> str:
+    """Render a portsList as "tcp/22,udp/53". Unknown protocol numbers render as "<n>:<ports>"."""
+    parts: list[str] = []
+    for entry in ports_list or []:
+        if not isinstance(entry, dict):
+            continue
+        proto = entry.get("protocolType")
+        ports = entry.get("ports")
+        name = PROTOCOL_NAMES.get(proto)
+        if name is None:
+            parts.append(f"{proto}:{ports}")
+        elif ports in (None, ""):
+            parts.append(name)
+        else:
+            parts.append(f"{name}/{ports}")
+    return ",".join(parts)
+
+
+def _name_lookup(infos: Any) -> dict[str, str]:
+    """Map id -> name from a list of {id, name} objects; malformed entries are ignored."""
+    names: dict[str, str] = {}
+    for entry in infos or []:
+        if isinstance(entry, dict) and entry.get("id"):
+            names[str(entry["id"])] = str(entry.get("name") or entry["id"])
+    return names
+
+
+def rule_meta(rule: dict[str, Any], direction: str, pair: AssetPair) -> dict[str, Any]:
+    """Collect the detail a verbose dry-run report needs about one source rule.
+
+    copyType follows classify_rule: "owner" when S is the local side, "n/a" when S is
+    only in excludedLocalIdsList, "remote" when S is in the remote list, otherwise
+    "group_inherited". Missing or None fields are tolerated.
+
+    Args:
+        rule: source rule from the listing.
+        direction: "inbound" or "outbound" (the list the rule came from).
+        pair: the asset pair.
+
+    Returns:
+        Dict of metadata keys used by write_verbose_reports.
+    """
+    local_id = str(rule.get("localEntityId") or "")
+    remote_ids = [str(x) for x in rule.get("remoteEntityIdsList") or []]
+    local_names = _name_lookup(rule.get("localEntityInfos"))
+    remote_names = _name_lookup(rule.get("remoteEntityInfos"))
+    excluded = [str(x) for x in rule.get("excludedLocalIdsList") or []]
+
+    if local_id == pair.src_id:
+        copy_type = "owner"
+    elif pair.src_id in excluded:
+        copy_type = "n/a"
+    elif pair.src_id in remote_ids:
+        copy_type = "remote"
+    else:
+        copy_type = "group_inherited"
+
+    return {
+        "direction": direction,
+        "ruleAction": rule.get("action"),
+        "copyType": copy_type,
+        "ruleId": str(rule.get("id", "")),
+        "ruleState": rule.get("state"),
+        "localEntityId": local_id,
+        "localEntityName": local_names.get(local_id, local_id),
+        "originalRemoteIds": remote_ids,
+        "originalRemoteNames": [remote_names.get(r, r) for r in remote_ids],
+        "ports": _format_ports(rule.get("portsList")),
+        "processes": [str(x) for x in rule.get("localProcessesList") or []],
+        "services": [str(x) for x in rule.get("servicesList") or []],
+        "expiresAt": rule.get("expiresAt"),
+    }
+
+
+def _skip_action(
+    pair: AssetPair, category: str, rule_id: str, status: str, reason: str,
+    meta: dict[str, Any] | None = None,
+) -> Action:
     """Build a report-only action for a rule that will not be written."""
     return Action(
         pair=pair,
@@ -922,6 +1042,7 @@ def _skip_action(pair: AssetPair, category: str, rule_id: str, status: str, reas
         operation="skip",
         status=status,
         reason=reason,
+        meta=dict(meta or {}),
     )
 
 
@@ -936,6 +1057,9 @@ def _plan_create(
 ) -> Action:
     """Turn one body into a POST action, or a skipped_exists action if it already exists."""
     rule_id = str(rule.get("id", ""))
+    meta = rule_meta(rule, direction, pair)
+    meta["newRemoteIds"] = [str(x) for x in body.get("remoteEntityIdsList") or []]
+    meta["newDescription"] = body.get("description") or ""
     base = dict(
         pair=pair,
         category=category,
@@ -944,6 +1068,7 @@ def _plan_create(
         method="POST",
         path=f"/protection/rules/{direction}",
         body=body,
+        meta=meta,
     )
     if (rule_id, pair.dst_id) in target.markers:
         return Action(**base, status="skipped_exists", reason="marker for this source rule already on target")
@@ -986,7 +1111,8 @@ def plan_rule_actions(
 
     if kind in SKIP_STATUS:
         category = rule_category(owner_side, direction)
-        return [_skip_action(pair, category, rule_id, SKIP_STATUS[kind], SKIP_REASON[kind])]
+        return [_skip_action(pair, category, rule_id, SKIP_STATUS[kind], SKIP_REASON[kind],
+                             meta=rule_meta(rule, direction, pair))]
 
     actions: list[Action] = []
     if kind in (KIND_OWNER, KIND_BOTH) and not opts.skip_owner_rules:
@@ -1167,15 +1293,18 @@ async def collect_group_actions(client: httpx.AsyncClient, pair: AssetPair) -> l
     actions: list[Action] = []
     writable: list[str] = []
     kinds: dict[str, str] = {}
+    metas: dict[str, dict[str, Any]] = {}
     for group in src_groups:
         gid = group.get("id", "")
+        metas[gid] = {"groupName": group.get("name") or "", "groupType": group_type_word(gid)}
         kind = group_writable_kind(gid)
         if kind is None:
             actions.append(Action(pair, "group", gid, "skip", status="skipped_readonly",
-                                  reason="group type is read-only (AD, system or OT)"))
+                                  reason=f"group type is read-only ({group_type_word(gid)})",
+                                  meta=metas[gid]))
         elif gid in target_group_ids:
             actions.append(Action(pair, "group", gid, "skip", status="skipped_exists",
-                                  reason="target is already a member"))
+                                  reason="target is already a member", meta=metas[gid]))
         else:
             writable.append(gid)
             kinds[gid] = kind
@@ -1189,12 +1318,14 @@ async def collect_group_actions(client: httpx.AsyncClient, pair: AssetPair) -> l
     for gid in writable:
         if gid not in keep:
             actions.append(Action(pair, "group", gid, "skip", status="skipped_redundant",
-                                  reason="a more specific listed group already implies membership"))
+                                  reason="a more specific listed group already implies membership",
+                                  meta=metas[gid]))
             continue
         kind = kinds[gid]
         actions.append(Action(
             pair, "group", gid, "add_member", method="PUT",
             path=f"/groups/{kind}/{gid}/members", body={"membersId": [pair.dst_id]},
+            meta=metas[gid],
         ))
     return actions
 
@@ -2445,6 +2576,188 @@ def read_result_rows(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(f))
 
 
+def dated_output_dir(base: str, now: datetime) -> Path:
+    """Return the per-day report directory <base>/<YYYY-MM-DD> for a run started at `now`."""
+    return Path(base) / now.strftime("%Y-%m-%d")
+
+
+def host_label(name: str) -> str:
+    """Short, filesystem-safe host label: text before the first ".", other characters replaced by "_".
+
+    Args:
+        name: asset name, possibly a FQDN.
+
+    Returns:
+        The label, or "unknown" if nothing is left.
+    """
+    short = (name or "").split(".", 1)[0]
+    label = re.sub(r"[^A-Za-z0-9._-]", "_", short)
+    return label or "unknown"
+
+
+def pair_dir_names(pairs: Iterable[AssetPair]) -> dict[tuple[str, str], str]:
+    """Folder name "<srcHost>_to_<dstHost>" for every distinct (srcId, dstId) pair.
+
+    When two different pairs produce the same name, the dst asset id suffix
+    "-<last 8 chars of dst id>" is added to every name in that group. If the names
+    still collide (same dst id tail too), the src id suffix is added as well, so no
+    two pairs share a folder.
+
+    Args:
+        pairs: asset pairs.
+
+    Returns:
+        Dict (srcId, dstId) -> folder name.
+    """
+    unique: dict[tuple[str, str], AssetPair] = {}
+    for pair in pairs:
+        unique.setdefault((pair.src_id, pair.dst_id), pair)
+    base = {
+        key: f"{host_label(p.src_name)}_to_{host_label(p.dst_name)}" for key, p in unique.items()
+    }
+    base_counts = Counter(base.values())
+    names = {
+        key: f"{name}-{key[1][-8:]}" if base_counts[name] > 1 else name
+        for key, name in base.items()
+    }
+    name_counts = Counter(names.values())
+    for key in unique:
+        if name_counts[names[key]] > 1:
+            names[key] = f"{base[key]}-{key[1][-8:]}-{key[0][-8:]}"
+    return names
+
+
+VERBOSE_RULE_FILES = {
+    ("inbound", ACTION_ALLOW): "inbound-allow",
+    ("inbound", ACTION_BLOCK): "inbound-block",
+    ("outbound", ACTION_ALLOW): "outbound-allow",
+    ("outbound", ACTION_BLOCK): "outbound-block",
+}
+VERBOSE_RULE_COLUMNS = (
+    "status",
+    "reason",
+    "copyType",
+    "sourceRuleId",
+    "ruleState",
+    "localEntityId",
+    "localEntityName",
+    "originalRemoteIds",
+    "originalRemoteNames",
+    "newRemoteIds",
+    "ports",
+    "processes",
+    "services",
+    "expiresAt",
+    "newDescription",
+)
+VERBOSE_GROUP_ADDED_COLUMNS = ("groupId", "groupName", "groupType", "method", "path")
+VERBOSE_GROUP_NOT_ADDED_COLUMNS = ("groupId", "groupName", "groupType", "status", "reason")
+
+
+def _cell(value: Any) -> str:
+    """Render a value for CSV: None becomes "", lists are joined with "; "."""
+    if value is None:
+        return ""
+    if isinstance(value, (list, tuple)):
+        return "; ".join(str(v) for v in value)
+    return str(value)
+
+
+def _verbose_rule_row(action: Action) -> dict[str, str]:
+    """One verbose rule-file row for a rule action."""
+    meta = action.meta
+    return {
+        "status": action.status,
+        "reason": action.reason,
+        "copyType": _cell(meta.get("copyType")),
+        "sourceRuleId": action.source_object_id,
+        "ruleState": _cell(meta.get("ruleState")),
+        "localEntityId": _cell(meta.get("localEntityId")),
+        "localEntityName": _cell(meta.get("localEntityName")),
+        "originalRemoteIds": _cell(meta.get("originalRemoteIds")),
+        "originalRemoteNames": _cell(meta.get("originalRemoteNames")),
+        "newRemoteIds": _cell(meta.get("newRemoteIds")),
+        "ports": _cell(meta.get("ports")),
+        "processes": _cell(meta.get("processes")),
+        "services": _cell(meta.get("services")),
+        "expiresAt": _cell(meta.get("expiresAt")),
+        "newDescription": _cell(meta.get("newDescription")),
+    }
+
+
+def write_verbose_reports(
+    actions: list[Action], pairs: Iterable[AssetPair], output_dir: Path, ts: str,
+) -> list[Path]:
+    """Write the per-pair verbose dry-run CSVs into <output_dir>/<srcHost>_to_<dstHost>/.
+
+    Each pair gets six files, header-only when empty: inbound-allow, inbound-block,
+    outbound-allow, outbound-block (rule actions routed by meta direction and
+    ruleAction), groups-added (planned group adds) and groups-not-added (everything
+    else). Rule actions without direction/ruleAction metadata are skipped.
+
+    Args:
+        actions: all planned actions of the run (dry run).
+        pairs: the asset pairs of the run; every pair gets a folder.
+        output_dir: dated output directory of the run.
+        ts: run timestamp used in file names.
+
+    Returns:
+        Paths of every file written.
+    """
+    pairs = list(pairs)
+    dir_names = pair_dir_names(pairs)
+    buckets: dict[tuple[str, str], dict[str, list[dict[str, str]]]] = {
+        key: {stem: [] for stem in (*VERBOSE_RULE_FILES.values(), "groups-added", "groups-not-added")}
+        for key in dir_names
+    }
+
+    for action in actions:
+        key = (action.pair.src_id, action.pair.dst_id)
+        if key not in buckets:
+            continue
+        if action.category in RULE_CATEGORIES:
+            stem = VERBOSE_RULE_FILES.get((action.meta.get("direction"), action.meta.get("ruleAction")))
+            if stem is None:
+                logger.debug("verbose report: no file for rule %s (direction=%r, ruleAction=%r)",
+                             action.source_object_id, action.meta.get("direction"),
+                             action.meta.get("ruleAction"))
+                continue
+            buckets[key][stem].append(_verbose_rule_row(action))
+        elif action.category == "group":
+            meta = action.meta
+            if action.status == "planned":
+                buckets[key]["groups-added"].append({
+                    "groupId": action.source_object_id,
+                    "groupName": _cell(meta.get("groupName")),
+                    "groupType": _cell(meta.get("groupType")),
+                    "method": action.method,
+                    "path": action.path,
+                })
+            else:
+                buckets[key]["groups-not-added"].append({
+                    "groupId": action.source_object_id,
+                    "groupName": _cell(meta.get("groupName")),
+                    "groupType": _cell(meta.get("groupType")),
+                    "status": action.status,
+                    "reason": action.reason,
+                })
+
+    written: list[Path] = []
+    for key, folder_name in dir_names.items():
+        folder = output_dir / folder_name
+        for stem, rows in buckets[key].items():
+            if stem in VERBOSE_RULE_FILES.values():
+                columns: tuple[str, ...] = VERBOSE_RULE_COLUMNS
+            elif stem == "groups-added":
+                columns = VERBOSE_GROUP_ADDED_COLUMNS
+            else:
+                columns = VERBOSE_GROUP_NOT_ADDED_COLUMNS
+            path = folder / f"{stem}-{ts}.csv"
+            write_csv(path, columns, rows)
+            written.append(path)
+    return written
+
+
 def print_summary(actions: list[Action], report_path: Path) -> None:
     """Log a per-status count and the report location."""
     counts = Counter(action.status for action in actions)
@@ -2482,7 +2795,10 @@ async def run_forward(
 
     actions, befores = await build_plan(client, pairs, opts)
 
+    verbose_paths: list[Path] = []
     if opts.apply:
+        if args.verbose_dry_run:
+            logger.warning("--verbose-dry-run only applies to dry runs; ignored with --apply")
         state_path: Path | None = output_dir / f"manual-mirror-state-{ts}.csv"
         done: dict[tuple[str, ...], str] = {}
         if args.resume:
@@ -2503,10 +2819,14 @@ async def run_forward(
                             action.method, action.path)
         logger.info("Dry run: no writes performed. Re-run with --apply to execute.")
         report_path = output_dir / f"manual-mirror-plan-{ts}.csv"
+        if args.verbose_dry_run:
+            verbose_paths = write_verbose_reports(actions, pairs, output_dir, ts)
 
     await check_protection_states(client, befores)
     write_csv(report_path, RESULT_COLUMNS, (action_to_row(a) for a in actions))
     print_summary(actions, report_path)
+    for folder in sorted({path.parent for path in verbose_paths}):
+        logger.info("Verbose dry-run reports: %s", folder)
     return 1 if any(a.status == "failed" for a in actions) else 0
 
 
@@ -2548,8 +2868,9 @@ async def main_async(args: argparse.Namespace) -> int:
     """
     config = load_config()
     opts = build_options(args)
-    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-    output_dir = Path(args.output_dir)
+    now = datetime.now()
+    ts = now.strftime("%Y%m%d-%H%M%S")
+    output_dir = dated_output_dir(args.output_dir, now)
     headers = {"Authorization": config.api_key}
 
     async with httpx.AsyncClient(base_url=config.base_url, headers=headers, timeout=30.0) as client:

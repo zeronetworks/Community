@@ -7,7 +7,9 @@ import asyncio
 import csv
 import importlib.util
 import json
+import logging
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
@@ -488,7 +490,7 @@ def test_dry_run_makes_only_get_requests_and_plans_expected_rows(tmp_path: Path)
         f"{SRC},SrcHost,{DST},DstHost\n",
         encoding="utf-8",
     )
-    args = argparse.Namespace(input=str(pairs_csv), resume=None, apply=False)
+    args = argparse.Namespace(input=str(pairs_csv), resume=None, apply=False, verbose_dry_run=False)
     out_dir = tmp_path / "outputs"
 
     rc = run_with_client(
@@ -1163,3 +1165,275 @@ def test_run_category_404_is_skipped_unavailable_not_failed() -> None:
 
     actions = asyncio.run(mma._run_category("connect_role", PAIR, forbidden))
     assert [a.status for a in actions] == ["failed"]
+
+
+# ---------------------------------------------------------------------------
+# Dated output directory, host labels, CLI flags
+# ---------------------------------------------------------------------------
+
+TS = "20260101-120000"
+
+
+def test_dated_output_dir_uses_run_date() -> None:
+    assert mma.dated_output_dir("outputs", datetime(2026, 11, 4, 9, 30, 15)) == Path("outputs/2026-11-04")
+
+
+def test_parse_args_verbose_dry_run_spellings_and_verbose_flag(capsys: pytest.CaptureFixture) -> None:
+    base = ["--input", "pairs.csv"]
+    assert mma.parse_args(base + ["--verbose-dry-run"]).verbose_dry_run is True
+    assert mma.parse_args(base + ["--verboseDryRun"]).verbose_dry_run is True
+    assert mma.parse_args(base).verbose_dry_run is False
+    args = mma.parse_args(base + ["-v"])
+    assert args.verbose is True and args.verbose_dry_run is False
+    assert mma.parse_args(base + ["--verbose"]).verbose is True
+    with pytest.raises(SystemExit):
+        mma.parse_args(["--help"])
+    help_text = capsys.readouterr().out
+    assert "--verbose-dry-run" in help_text and "--verboseDryRun" in help_text
+
+
+def test_host_label_shortens_fqdn_and_sanitizes() -> None:
+    assert mma.host_label("server01.corp.example.com") == "server01"
+    assert mma.host_label("My Host!") == "My_Host_"
+    assert mma.host_label("a/b:c-d_e") == "a_b_c-d_e"
+    assert mma.host_label("") == "unknown"
+    assert mma.host_label(".corp") == "unknown"
+
+
+def test_pair_dir_names_suffixes_only_colliding_pairs() -> None:
+    p1 = mma.AssetPair("a:w:SRC00001", "web.a", "a:w:DST00001", "db.x")
+    p2 = mma.AssetPair("a:w:SRC00002", "web.b", "a:w:DST00002", "db.x")
+    p3 = mma.AssetPair("a:w:SRC00003", "other.z", "a:w:DST00003", "db.x")
+    names = mma.pair_dir_names([p1, p2, p3])
+    assert names[(p1.src_id, p1.dst_id)] == "web_to_db-DST00001"
+    assert names[(p2.src_id, p2.dst_id)] == "web_to_db-DST00002"
+    assert names[(p3.src_id, p3.dst_id)] == "other_to_db"
+
+
+def test_pair_dir_names_adds_source_suffix_when_dst_suffix_still_collides() -> None:
+    p1 = mma.AssetPair("a:w:SRC00001", "web.a", "a:w:DST00001", "db")
+    p2 = mma.AssetPair("a:w:SRC00002", "web.b", "a:w:DST00001", "db")
+    names = mma.pair_dir_names([p1, p2])
+    assert names[(p1.src_id, p1.dst_id)] == "web_to_db-DST00001-SRC00001"
+    assert names[(p2.src_id, p2.dst_id)] == "web_to_db-DST00001-SRC00002"
+
+
+def test_format_ports_and_rule_meta_tolerate_missing_fields() -> None:
+    ports = [{"protocolType": 6, "ports": "22"}, {"protocolType": 17, "ports": "53"},
+             {"protocolType": 99, "ports": "1"}]
+    assert mma._format_ports(ports) == "tcp/22,udp/53,99:1"
+    meta = mma.rule_meta({"id": "x", "localEntityId": SRC, "remoteEntityIdsList": None,
+                          "portsList": None, "localEntityInfos": None}, "inbound", PAIR)
+    assert meta["copyType"] == "owner"
+    assert meta["localEntityName"] == SRC
+    assert meta["ports"] == ""
+    assert meta["originalRemoteIds"] == []
+
+
+def test_group_rows_carry_meta_and_readable_readonly_reason() -> None:
+    fake = FakeZN({}, {}, {SRC: [
+        {"id": "g:c:aaaa1111", "name": "Web"},
+        {"id": "g:a:bbbb2222", "name": "AD"},
+        {"id": "g:s:cccc3333", "name": "Sys"},
+    ], DST: []})
+    actions = run_with_client(fake, lambda c: mma.collect_group_actions(c, PAIR))
+    by_id = {a.source_object_id: a for a in actions}
+    assert by_id["g:a:bbbb2222"].status == "skipped_readonly"
+    assert by_id["g:a:bbbb2222"].reason == "group type is read-only (AD)"
+    assert by_id["g:s:cccc3333"].reason == "group type is read-only (system)"
+    assert by_id["g:c:aaaa1111"].meta == {"groupName": "Web", "groupType": "custom"}
+    assert by_id["g:c:aaaa1111"].status == "planned"
+    assert mma.group_type_word("g:o:1") == "OT"
+    assert mma.group_type_word("g:t:1") == "tag"
+    assert mma.group_type_word("junk") == "unknown"
+
+
+# ---------------------------------------------------------------------------
+# Verbose dry-run reports
+# ---------------------------------------------------------------------------
+
+VERBOSE_RULE_STEMS = ("inbound-allow", "inbound-block", "outbound-allow", "outbound-block")
+VERBOSE_STEMS = (*VERBOSE_RULE_STEMS, "groups-added", "groups-not-added")
+RULE_HEADER = (
+    "status", "reason", "copyType", "sourceRuleId", "ruleState", "localEntityId",
+    "localEntityName", "originalRemoteIds", "originalRemoteNames", "newRemoteIds", "ports",
+    "processes", "services", "expiresAt", "newDescription",
+)
+
+
+def read_rows(path: Path) -> tuple[list[str], list[dict[str, str]]]:
+    """Return (header, rows) of a CSV written by the tool."""
+    with path.open(newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+        return list(reader.fieldnames or []), rows
+
+
+def test_write_verbose_reports_routes_rules_and_groups(tmp_path: Path) -> None:
+    opts = default_opts()
+    target = mma.TargetIndex()
+    planned: set[tuple] = set()
+    rules = [
+        ("inbound", make_rule("in-allow-owner", SRC, ["a:w:X", "a:w:Y"])),
+        ("inbound", make_rule("in-allow-inherited", "a:w:Y", ["a:w:Z"])),
+        ("inbound", make_rule("in-allow-excluded", "a:w:Y", ["a:w:Z"], excluded=[SRC])),
+        ("inbound", make_rule("in-block-remote", "a:w:Y", [SRC], action=2)),
+        ("outbound", make_rule("out-allow-expired", SRC, ["a:w:X"], expires=NOW_MS - 1)),
+        ("outbound", make_rule("out-block-owner", SRC, ["a:w:X"], action=2, ipsec=None)),
+    ]
+    actions: list[mma.Action] = []
+    for direction, rule in rules:
+        actions += mma.plan_rule_actions(rule, direction, PAIR, opts, target, planned)
+    actions.append(mma.Action(PAIR, "owner_rule", "nometa", "create_inbound_rule", "POST", "/x"))
+    actions.append(mma.Action(
+        PAIR, "group", "g:c:aaaa1111", "add_member", method="PUT",
+        path="/groups/custom/g:c:aaaa1111/members", meta={"groupName": "Web", "groupType": "custom"},
+    ))
+    actions.append(mma.Action(
+        PAIR, "group", "g:a:bbbb2222", "skip", status="skipped_readonly",
+        reason="group type is read-only (AD)", meta={"groupName": "AD", "groupType": "AD"},
+    ))
+    actions.append(mma.Action(
+        PAIR, "group", "g:t:cccc3333", "skip", status="skipped_exists",
+        reason="target is already a member", meta={"groupName": "T", "groupType": "tag"},
+    ))
+    actions.append(mma.Action(
+        PAIR, "group", "g:c:dddd4444", "skip", status="skipped_redundant",
+        reason="a more specific listed group already implies membership",
+        meta={"groupName": "R", "groupType": "custom"},
+    ))
+    actions.append(mma.Action(PAIR, "precheck", SRC, "validate", status="ok"))
+    lonely = mma.AssetPair("a:w:OTHER001", "lonely", "a:w:OTHER002", "dst2")
+
+    written = mma.write_verbose_reports(actions, [PAIR, lonely], tmp_path, TS)
+
+    assert len(written) == 12
+    folder = tmp_path / "SrcHost_to_DstHost"
+    lonely_folder = tmp_path / "lonely_to_dst2"
+    for stem in VERBOSE_STEMS:
+        assert (folder / f"{stem}-{TS}.csv").is_file()
+        assert (lonely_folder / f"{stem}-{TS}.csv").is_file()
+
+    def ids(stem: str) -> dict[str, dict[str, str]]:
+        _header, rows = read_rows(folder / f"{stem}-{TS}.csv")
+        return {r.get("sourceRuleId", r.get("groupId")): r for r in rows}
+
+    inbound_allow = ids("inbound-allow")
+    assert set(inbound_allow) == {"in-allow-owner", "in-allow-inherited", "in-allow-excluded"}
+    assert inbound_allow["in-allow-owner"]["status"] == "planned"
+    assert inbound_allow["in-allow-owner"]["copyType"] == "owner"
+    assert inbound_allow["in-allow-owner"]["originalRemoteIds"] == "a:w:X; a:w:Y"
+    assert inbound_allow["in-allow-owner"]["ports"] == "tcp/445"
+    assert inbound_allow["in-allow-inherited"]["status"] == "skipped_group_inherited"
+    assert inbound_allow["in-allow-inherited"]["reason"] == mma.SKIP_REASON[mma.KIND_GROUP_INHERITED]
+    assert inbound_allow["in-allow-excluded"]["status"] == "exclusion_not_mirrored"
+
+    inbound_block = ids("inbound-block")
+    assert set(inbound_block) == {"in-block-remote"}
+    assert inbound_block["in-block-remote"]["copyType"] == "remote"
+    assert inbound_block["in-block-remote"]["newRemoteIds"] == DST
+
+    outbound_allow = ids("outbound-allow")
+    assert set(outbound_allow) == {"out-allow-expired"}
+    assert outbound_allow["out-allow-expired"]["status"] == "skipped_expired"
+    assert outbound_allow["out-allow-expired"]["reason"] == mma.SKIP_REASON[mma.KIND_SKIP_EXPIRED]
+
+    outbound_block = ids("outbound-block")
+    assert set(outbound_block) == {"out-block-owner"}
+    assert outbound_block["out-block-owner"]["status"] == "planned"
+
+    added = ids("groups-added")
+    assert set(added) == {"g:c:aaaa1111"}
+    assert added["g:c:aaaa1111"]["method"] == "PUT"
+    assert added["g:c:aaaa1111"]["groupName"] == "Web"
+
+    not_added = ids("groups-not-added")
+    assert {k: v["status"] for k, v in not_added.items()} == {
+        "g:a:bbbb2222": "skipped_readonly",
+        "g:t:cccc3333": "skipped_exists",
+        "g:c:dddd4444": "skipped_redundant",
+    }
+    assert not_added["g:a:bbbb2222"]["reason"] == "group type is read-only (AD)"
+    assert not_added["g:t:cccc3333"]["reason"] == "target is already a member"
+
+    # No row for the metadata-less rule, the precheck row, or any other pair.
+    all_rule_rows = [r for stem in VERBOSE_RULE_STEMS for r in read_rows(folder / f"{stem}-{TS}.csv")[1]]
+    assert len(all_rule_rows) == 6
+    assert not any(r["sourceRuleId"] == "nometa" for r in all_rule_rows)
+    for stem in VERBOSE_RULE_STEMS:
+        header, _rows = read_rows(folder / f"{stem}-{TS}.csv")
+        assert header == list(RULE_HEADER)
+
+    # The pair with no actions still gets six files, all header-only.
+    for stem in VERBOSE_STEMS:
+        header, rows = read_rows(lonely_folder / f"{stem}-{TS}.csv")
+        assert rows == []
+        assert header
+
+
+def _pairs_csv(tmp_path: Path) -> Path:
+    """Input CSV with the single pair used by the backend fixture."""
+    pairs_csv = tmp_path / "pairs.csv"
+    pairs_csv.write_text(
+        "srcAssetId,srcAssetName,dstAssetId,dstAssetName\n"
+        f"{SRC},SrcHost,{DST},DstHost\n",
+        encoding="utf-8",
+    )
+    return pairs_csv
+
+
+def test_verbose_dry_run_writes_pair_folder_and_makes_only_gets(tmp_path: Path) -> None:
+    fake = build_fake_backend()
+    args = argparse.Namespace(input=str(_pairs_csv(tmp_path)), resume=None, apply=False,
+                              verbose_dry_run=True)
+    out_dir = tmp_path / "outputs" / "2026-01-01"
+
+    rc = run_with_client(fake, lambda c: mma.run_forward(c, args, default_opts(), out_dir, TS))
+
+    assert rc == 0
+    assert set(fake.methods) == {"GET"}
+    assert (out_dir / f"manual-mirror-plan-{TS}.csv").is_file()
+    folder = out_dir / "SrcHost_to_DstHost"
+    assert sorted(p.name for p in folder.iterdir()) == sorted(f"{s}-{TS}.csv" for s in VERBOSE_STEMS)
+
+    def sources(stem: str) -> set[str]:
+        return {r.get("sourceRuleId", r.get("groupId")) for r in read_rows(folder / f"{stem}-{TS}.csv")[1]}
+
+    assert sources("inbound-allow") == {"rule-owner-in", "rule-remote-in", "rule-deleted", "rule-inherited"}
+    assert sources("outbound-block") == {"rule-owner-out"}
+    assert sources("inbound-block") == set()
+    assert sources("outbound-allow") == set()
+    assert sources("groups-added") == {"g:c:aaaa1111"}
+    assert sources("groups-not-added") == {"g:a:bbbb2222"}
+
+
+def test_verbose_dry_run_with_apply_warns_and_writes_no_verbose_folder(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    fake = build_fake_backend()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method != "GET":
+            fake.methods.append(request.method)
+            return httpx.Response(200, json={"item": {"id": "new-1"}})
+        return fake(request)
+
+    args = argparse.Namespace(input=str(_pairs_csv(tmp_path)), resume=None, apply=True,
+                              verbose_dry_run=True)
+    out_dir = tmp_path / "outputs" / "2026-01-01"
+
+    with caplog.at_level(logging.WARNING, logger="manual_mirror_assets"):
+        run_with_client(handler, lambda c: mma.run_forward(c, args, default_opts(apply=True), out_dir, TS))
+
+    assert "--verbose-dry-run only applies to dry runs" in caplog.text
+    assert "POST" in fake.methods or "PUT" in fake.methods
+    assert not (out_dir / "SrcHost_to_DstHost").exists()
+    assert (out_dir / f"manual-mirror-results-{TS}.csv").is_file()
+
+
+def test_format_ports_renders_protocol_any_and_group_type_ou() -> None:
+    """Protocol 256 is "Any" in the spec; OU groups (g:u:) get a readable type."""
+    assert mma._format_ports([{"protocolType": 256, "ports": ""}]) == "any"
+    assert mma._format_ports([{"protocolType": 6, "ports": "443"}]) == "tcp/443"
+    assert mma.group_type_word("g:u:abcd1234") == "OU"
+    assert mma.group_type_word("g:i:abcd1234") == "i"
