@@ -26,6 +26,13 @@ segment_connector_allow_create: false
 # segment_connector_installer_env:
 #   ZN_AGENT_INSTALLER_LOG_MAX_BACKUPS: "3"
 
+# Connection check after the install (on by default). Warns if the connector does not connect.
+# segment_connector_verify_connection: true
+# Seconds to wait for the connection after an install. Whole number, at least 10.
+# segment_connector_verify_timeout: 180
+# Fail the play instead of warning when the connector does not connect.
+# segment_connector_verify_strict: false
+
 # Token: supply it with -e @secrets.yml, Ansible Vault, or an environment variable.
 # Environment variable option (uncomment and set ZN_SEGMENT_CONNECTOR_TOKEN in your shell):
 # segment_connector_token: "{{ lookup('ansible.builtin.env', 'ZN_SEGMENT_CONNECTOR_TOKEN') }}"

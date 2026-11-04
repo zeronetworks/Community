@@ -1,0 +1,229 @@
+---
+# Post-install check that the Segment Connector reached its segment server.
+#
+# Included from install.yml after the install block, so it runs after a successful install
+# and also when the install was skipped (health check). Skipped in check mode.
+#
+# Contract (what exists when this file runs):
+#   segment_connector_verify_timeout   Seconds to wait after an install (digits, at least 10).
+#   segment_connector_verify_strict    true: fail the play when not connected. false: warn.
+#   __segment_connector_verify_since   UTC start time of this run, registered in install.yml.
+#                                      UNDEFINED or empty when the install was skipped. Then
+#                                      the log is read once and nothing is waited for.
+#   __segment_connector_connector_log  /var/zeronetworks/logs/zn-segment-connector.log
+#
+# The status is read by a short Python script run with the target's own interpreter. It
+# parses the connector's JSON-lines log and prints one JSON object. The log is only read, and
+# the enrollment token is never referenced or printed here.
+#
+# Sets: segment_connector_connection_state
+#   connected      the handshake with a segment server succeeded
+#   operational    connected and the collector started
+#   failing        the last connection attempt failed (hints are shown)
+#   not_started    a run was started but no new connector start was logged
+#   unknown        the log could not be read or parsed
+#
+# Only connected or operational counts as success. Other states warn, or fail when strict.
+
+- name: Record whether the connection check waits for a connection
+  ansible.builtin.set_fact:
+    __segment_connector_since: "{{ (__segment_connector_verify_since | default({})).stdout | default('', true) | trim }}"
+    __segment_connector_waits: "{{ ((__segment_connector_verify_since | default({})).stdout | default('', true) | trim | length) > 0 }}"
+
+# The script waits for the connection itself (it re-reads the log every 5 seconds until the
+# connector is connected or the timeout passes). It runs as an async task that Ansible polls
+# with short connections, so a long wait does not hold one idle SSH session open and no
+# "task failed" noise is printed when the connector never connects.
+- name: Read the connector connection status
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_facts['python']['executable'] }}"
+      - -c
+      - "{{ __segment_connector_status_script }}"
+      - "{{ __segment_connector_connector_log }}"
+      - "{{ __segment_connector_since }}"
+      - "{{ (segment_connector_verify_timeout | int) if (__segment_connector_waits | bool) else 0 }}"
+  register: __segment_connector_status_raw
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  async: "{{ (segment_connector_verify_timeout | int) + 60 }}"
+  poll: 10
+  vars:
+    __segment_connector_status_script: |
+      import io, json, sys, time
+      path, since, timeout = sys.argv[1], sys.argv[2][:19], int(sys.argv[3])
+
+
+      def read_status():
+          out = {"state": "unknown", "server": "", "last_error": "", "collector": False, "started": False, "events": []}
+          last = None
+          try:
+              handle = io.open(path, "r", encoding="utf-8", errors="replace")
+          except (IOError, OSError):
+              handle = None
+          if handle is not None:
+              for line in handle:
+                  line = line.strip()
+                  if not line.startswith("{"):
+                      continue
+                  try:
+                      rec = json.loads(line)
+                  except ValueError:
+                      continue
+                  ts = rec.get("ts", "")[:19]
+                  if since and ts < since:
+                      continue
+                  msg = rec.get("msg", "")
+                  err = rec.get("error", "")
+                  if rec.get("serverAddress"):
+                      out["server"] = rec["serverAddress"]
+                  if msg in ("zero networks segment connector is starting", "segment connector initialized"):
+                      out["started"] = True
+                      last = None
+                      out["collector"] = False
+                  elif msg == "connected successfully to segment server":
+                      last = "connected"
+                      out["last_error"] = ""
+                      out["collector"] = False
+                  elif msg == "starting collector":
+                      if last == "connected":
+                          out["collector"] = True
+                  elif rec.get("level") == "fatal" or msg in (
+                      "failed to create stream", "failed to create client",
+                      "couldn't connect to a segment server",
+                      "couldn't subscribe to the segment server stream",
+                  ):
+                      last = "error"
+                      out["collector"] = False
+                      if err and err != "no response from any segment server":
+                          out["last_error"] = err
+                      elif err and not out["last_error"]:
+                          out["last_error"] = err
+                  else:
+                      continue
+                  out["events"].append(ts + " " + msg + ((": " + err) if err else ""))
+                  out["events"] = out["events"][-5:]
+              handle.close()
+          if last == "connected":
+              out["state"] = "operational" if out["collector"] else "connected"
+          elif last == "error":
+              out["state"] = "failing"
+          elif since and not out["started"]:
+              out["state"] = "not_started"
+          return out
+
+
+      deadline = time.time() + timeout
+      while True:
+          status = read_status()
+          if status["state"] in ("connected", "operational") or time.time() >= deadline:
+              break
+          time.sleep(5)
+      print(json.dumps(status))
+
+- name: Record the connection status
+  ansible.builtin.set_fact:
+    __segment_connector_status: >-
+      {{ ((__segment_connector_status_raw | default({})).stdout | default('', true) | trim | from_json)
+         if (((__segment_connector_status_raw | default({})).stdout | default('', true) | trim | length) > 0)
+         else {'state': 'unknown', 'server': '', 'last_error': '', 'collector': false, 'started': false, 'events': []} }}
+
+- name: Record the connection state
+  ansible.builtin.set_fact:
+    segment_connector_connection_state: "{{ __segment_connector_status.state | default('unknown', true) }}"
+    __segment_connector_is_ok: "{{ __segment_connector_status.state | default('', true) in ['connected', 'operational'] }}"
+
+- name: Report that the Segment Connector is connected
+  ansible.builtin.debug:
+    msg: >-
+      Segment Connector on {{ inventory_hostname }} is connected to
+      {{ __segment_connector_status.server | default('', true) }}{{ __segment_connector_collector_text }}.
+  vars:
+    __segment_connector_collector_text: "{{ ' (collector started)' if (__segment_connector_status.collector | default(false) | bool) else '' }}"
+  when: __segment_connector_is_ok | bool
+
+- name: Find the hints that match the last connector error
+  ansible.builtin.set_fact:
+    __segment_connector_matched: >-
+      {{ (__segment_connector_hint_table
+          | selectattr('pattern', 'in', __segment_connector_status.last_error | default('', true) | lower)
+          | map(attribute='hint') | list)
+         + (['{not_started}'] if (segment_connector_connection_state == 'not_started') else []) }}
+  vars:
+    __segment_connector_hint_table:
+      - pattern: "name resolver error"
+        hint: "The host cannot resolve the segment server name {server}. Fix DNS for that name (a DNS forwarder, or a hosts entry) on this host."
+      - pattern: "produced zero addresses"
+        hint: "The host cannot resolve the segment server name {server}. Fix DNS for that name (a DNS forwarder, or a hosts entry) on this host."
+      - pattern: "failed to lookup txt records"
+        hint: >-
+          The host cannot do the DNS TXT lookup the connector needs to find its segment servers.
+          Allow DNS to the host's resolver and to public DNS (UDP and TCP 53).
+      - pattern: "connection refused"
+        hint: "The host cannot reach the segment server on TCP 443. Check the firewall, routing and any proxy between this host and the segment server."
+      - pattern: "i/o timeout"
+        hint: "The host cannot reach the segment server on TCP 443. Check the firewall, routing and any proxy between this host and the segment server."
+      - pattern: "deadline exceeded"
+        hint: "The host cannot reach the segment server on TCP 443. Check the firewall, routing and any proxy between this host and the segment server."
+      - pattern: "network is unreachable"
+        hint: "The host cannot reach the segment server on TCP 443. Check the firewall, routing and any proxy between this host and the segment server."
+      - pattern: "no route to host"
+        hint: "The host cannot reach the segment server on TCP 443. Check the firewall, routing and any proxy between this host and the segment server."
+      - pattern: "x509"
+        hint: "TLS to the segment server failed. Check for TLS inspection on the path and that the host clock is correct."
+      - pattern: "certificate"
+        hint: "TLS to the segment server failed. Check for TLS inspection on the path and that the host clock is correct."
+      - pattern: "tls handshake"
+        hint: "TLS to the segment server failed. Check for TLS inspection on the path and that the host clock is correct."
+      - pattern: "asset is not known for this segment server"
+        hint: >-
+          The host is enrolled, but the segment server does not know this asset yet. This usually
+          clears within a few minutes; if it persists, check the asset in the portal.
+  when: not (__segment_connector_is_ok | bool)
+
+- name: Build the connection hints
+  ansible.builtin.set_fact:
+    __segment_connector_hints: >-
+      {{ (__segment_connector_matched
+          | map('replace', '{server}', ((__segment_connector_status.server | default('', true) | regex_replace(':[0-9]+$', '')) or 'the segment server'))
+          | map('replace', '{not_started}', __segment_connector_not_started)
+          | unique | list)
+         if (__segment_connector_matched | length > 0)
+         else ['No known cause matched. Last connector events: ' ~ ((__segment_connector_status.events | default([]) | join('; ')) or 'none') ~ '.'] }}
+  vars:
+    __segment_connector_not_started: >-
+      No new connector start was found in the log. Check systemctl status zn-segment-connector
+      (or service zn-segment-connector status), /var/zeronetworks/logs/shell-std-err.log and
+      /var/zeronetworks/logs/zn-segment-connector.log.panic.
+  when: not (__segment_connector_is_ok | bool)
+
+- name: Warn that the Segment Connector did not report a connection
+  ansible.builtin.debug:
+    msg: "{{ __segment_connector_warning_lines | join(__segment_connector_nl) }}"
+  vars:
+    __segment_connector_nl: "\n"
+    __segment_connector_wait_text: "{{ (' within ' ~ segment_connector_verify_timeout ~ ' seconds') if (__segment_connector_waits | bool) else '' }}"
+    __segment_connector_head: >-
+      WARNING: the Segment Connector was installed on {{ inventory_hostname }}, but it did not report
+      a connection to a segment server{{ __segment_connector_wait_text }}. State:
+      {{ segment_connector_connection_state }}. Last error:
+      {{ (__segment_connector_status.last_error | default('', true)) or 'none' }}.
+    __segment_connector_tail: >-
+      The installer succeeded; this only reports what the connector log shows. Set
+      segment_connector_verify_strict=true to fail the play instead.
+    __segment_connector_warning_lines: >-
+      {{ [__segment_connector_head]
+         + (__segment_connector_hints | map('regex_replace', '^', '- ') | list)
+         + [__segment_connector_tail] }}
+  when: not (__segment_connector_is_ok | bool)
+
+- name: Fail when the connection check is strict and the connector is not connected
+  ansible.builtin.fail:
+    msg: >-
+      The Segment Connector on {{ inventory_hostname }} did not report a connection to a segment
+      server (state: {{ segment_connector_connection_state }}). Set segment_connector_verify_strict=false
+      to only warn.
+  when:
+    - segment_connector_verify_strict | bool
+    - not (__segment_connector_is_ok | bool)

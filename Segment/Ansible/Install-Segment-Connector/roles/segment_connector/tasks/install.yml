@@ -34,6 +34,13 @@
       segment_connector_installer_env must be a mapping. segment_connector_download_timeout
       must be empty, a number of seconds (600), or a Go duration (10m, 90s, 1h30m).
 
+- name: Validate the connection check settings
+  ansible.builtin.assert:
+    that:
+      - (segment_connector_verify_timeout | string) is match('^[0-9]+$')
+      - (segment_connector_verify_timeout | int) >= 10
+    fail_msg: segment_connector_verify_timeout must be a whole number of seconds, at least 10.
+
 - name: Validate enrollment options
   ansible.builtin.assert:
     that:
@@ -213,6 +220,15 @@
           ansible.builtin.include_tasks: report_version.yml
           when: segment_connector_report_version | bool
 
+        # Marks the start of this run, using the host's own clock, so the connection check
+        # ignores connector log lines from earlier runs.
+        - name: Record the start time for the connection check
+          ansible.builtin.command: date -u +%Y-%m-%dT%H:%M:%S
+          register: __segment_connector_verify_since
+          changed_when: false
+          check_mode: false
+          when: segment_connector_verify_connection | bool
+
         - name: Write installation token to a restricted file
           ansible.builtin.copy:
             content: "{{ segment_connector_token | replace('\\r\\n', '\\n') | replace('\\r', '\\n') }}"
@@ -261,3 +277,10 @@
       ansible.builtin.file:
         path: "{{ segment_connector_staging_dir }}/installer.zip"
         state: absent
+
+# Runs after a successful install or a skipped one (a failed install ends in the rescue above).
+- name: Check that the Segment Connector reached its segment server
+  ansible.builtin.include_tasks: verify_connection.yml
+  when:
+    - segment_connector_verify_connection | bool
+    - not ansible_check_mode

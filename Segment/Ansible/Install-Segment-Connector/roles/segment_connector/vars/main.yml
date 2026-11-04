@@ -5,6 +5,9 @@
 # Installer log written on the target host. Read by tasks/diagnose.yml on failure.
 __segment_connector_installer_log: /var/zeronetworks/logs/installer.log
 
+# Connector log on the target host. Read by tasks/verify_connection.yml.
+__segment_connector_connector_log: /var/zeronetworks/logs/zn-segment-connector.log
+
 # Environment variables derived from the named settings (download timeout, trace,
 # console logging). Named values win over the same keys in segment_connector_installer_env.
 __segment_connector_named_env: >-

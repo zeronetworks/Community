@@ -76,3 +76,13 @@ segment_connector_log_to_console: false
 
 # Show the installed Segment Connector version before install and uninstall runs.
 segment_connector_report_version: true
+
+# Check, after the install, that the connector reached its segment server. Reads the connector's
+# own log on the host. Also runs as a health check on hosts where the install is skipped.
+segment_connector_verify_connection: true
+# Seconds to wait for the connection after an install (the connector retries every 10 s).
+# Digits only, at least 10. Hosts where the install is skipped get a single check, no waiting.
+segment_connector_verify_timeout: 180
+# Fail the play when the connector does not connect. When false (default) a warning is shown,
+# because the installation itself succeeded.
+segment_connector_verify_strict: false

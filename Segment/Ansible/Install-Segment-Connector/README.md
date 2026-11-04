@@ -23,6 +23,7 @@ Install-Segment-Connector/
     │   ├── install.yml                  Copy, extract, and run the installer
     │   ├── uninstall.yml                Run the uninstaller
     │   ├── report_version.yml           Record the installer version
+    │   ├── verify_connection.yml        Check the connection to the segment server after install
     │   └── diagnose.yml                 Print logs and hints after a failure
     └── meta/main.yml                    Galaxy metadata and supported platforms
 ```
@@ -140,6 +141,9 @@ Set these in `group_vars`, in the inventory, or with `-e`. Defaults are in `role
 | `segment_connector_trace` | `false` | `ZN_AGENT_INSTALLER_TRACE_ENABLED=true` | Turns on installer trace logging. Use for debugging. |
 | `segment_connector_log_to_console` | `false` | `ZN_AGENT_INSTALLER_LOG_PRINT_TO_CONSOLE=true` | Prints installer log lines in the Ansible or AWX output. These lines are not redacted. Leave it off unless debugging. |
 | `segment_connector_report_version` | `true` | n/a | Runs `<installer> -version` before install or uninstall and sets the fact `segment_connector_installer_version`. Never fails the play. See [Installer version](#installer-version). |
+| `segment_connector_verify_connection` | `true` | n/a | Runs the connection check after the install, and as a health check on hosts where the install is skipped. See [Connection check](#connection-check). |
+| `segment_connector_verify_timeout` | `180` | n/a | Seconds to wait for the connection after an install. Whole number, at least 10. |
+| `segment_connector_verify_strict` | `false` | n/a | Fail the play instead of warning when the connector does not connect. |
 
 **Rules.** The role checks these before it changes anything on the host, and the installer checks them again:
 
@@ -209,6 +213,47 @@ The fact is set only when the version report runs. In a later play of the same r
 
 Set `segment_connector_report_version=false` to skip the version report.
 
+## Connection check
+
+A finished install does not prove that the connector can reach its segment server. The connector can still fail to connect, for example when the host cannot resolve the segment server's name. After the installer finishes, the role reads the connector's own log on the host (`/var/zeronetworks/logs/zn-segment-connector.log`) and reports whether the connector reached its segment server.
+
+- **Only new log lines count.** Before the installer runs, the role records the host's clock. The check looks only at log lines written after that time, so earlier runs in the log are ignored.
+- **Waiting after an install.** The role checks every 10 seconds, for up to `segment_connector_verify_timeout` seconds (default 180), until the connector reports `connected` or `operational`. The wait is long on purpose. Right after enrollment, the segment server can briefly answer `asset is not known for this segment server`.
+- **Health check on re-runs.** If the install is skipped because the connector is already installed, the role reads the whole current log and does one check. A re-run of the playbook is therefore a quick health check.
+
+The check sets the fact `segment_connector_connection_state` to one of these states:
+
+| State | Meaning |
+|---|---|
+| `operational` | The connector is connected, and the segment server has told it to start collecting. |
+| `connected` | The connector is connected to the segment server. The collector can take up to about a minute to start. |
+| `failing` | The last thing in the log is a connection error. |
+| `not_started` | The log has no new connector start since the install began. |
+| `unknown` | The log has no usable connection information. |
+
+If the connector has not reached `connected` or `operational` when the timeout ends, the role prints a warning. The warning names the state and the last connection error, and includes a hint for that error. For example, when the segment server name does not resolve:
+
+```
+WARNING: the Segment Connector was installed on host1, but it did not report a connection to a segment server within 180 seconds. State: failing. Last error: rpc error: code = Unavailable desc = name resolver error: produced zero addresses.
+- The host cannot resolve the segment server name segment-server.example.com. Fix DNS for that name (a DNS forwarder, or a hosts entry) on this host.
+The installer succeeded; this only reports what the connector log shows. Set segment_connector_verify_strict=true to fail the play instead.
+```
+
+By default this is a warning, not a failed play, because the installation itself succeeded. To change this:
+
+- **Wait longer:** `segment_connector_verify_timeout: 300`. Use a whole number of seconds, at least 10.
+- **Fail the play instead:** `segment_connector_verify_strict: true`.
+- **Turn the check off:** `segment_connector_verify_connection: false`.
+
+**Limits**
+
+- A `connected` or `operational` state does not prove that the portal shows the asset as Connected.
+- The check depends on the connector's log messages.
+- The check is skipped in check mode.
+- It works on systemd and sysvinit hosts.
+
+See [Troubleshooting](#troubleshooting) for the hints that appear with each warning.
+
 ## Run as root or as zn-user
 
 - `zn-user` (default): the installer creates a dedicated local account, `zn-user`, if it does not exist.
@@ -257,6 +302,9 @@ Non-fatal warnings printed before the install (missing `nft` and `iptables`, or 
 | Uninstall: no asset ID | The host has no asset ID to unregister. Pass `segment_connector_asset_id` to the uninstall run. |
 | Uninstall: unregistration failed | Run the uninstall again with `segment_connector_force=true`. |
 | Uninstall: cleanup incomplete | The host was unregistered, but removing the service or the local `zn-user` did not finish. Check `installer.log` and `install-script.log` for what remains and remove it manually. |
+| Warning "did not report a connection" with a name-resolver error as the last error | The host cannot resolve the segment server's name. Fix DNS on the host, or add a hosts entry for the segment server. See [Connection check](#connection-check). |
+| Warning "did not report a connection" with `asset is not known for this segment server` as the last error | The segment server does not know the asset yet. This usually clears within minutes after enrollment. If it does not clear, check the asset in the portal. The check waits up to `segment_connector_verify_timeout` for it to clear. |
+| Warning "did not report a connection" with state `not_started` | No new connector start was logged since the install began. Check `systemctl status zn-segment-connector` (or the init script on sysvinit hosts), `/var/zeronetworks/logs/shell-std-err.log`, and `/var/zeronetworks/logs/zn-segment-connector.log.panic`. |
 
 ## Security notes
 
