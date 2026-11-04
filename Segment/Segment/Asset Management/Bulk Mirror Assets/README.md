@@ -174,7 +174,7 @@ The results, state and rollback CSVs use the status codes below. The plan and ve
 | --- | --- | --- |
 | `planned` | Will be created (group memberships: Will be added) | Dry run: the write the script would send. |
 | `created` | Created | The write succeeded: the object was created or the group membership added. |
-| `updated` | Updated | An existing Connect (VPN) config was changed to include the target. |
+| `updated` | Updated | An existing object was modified instead of a new one being created. Currently only Connect (VPN) configs are reported this way; every other write, including group memberships, reports `created`. |
 | `rolled_back` | Rolled back | `--rollback` removed the object or group membership. |
 | `skipped_exists` | Skipped: already on target | An identical object, or one carrying this rule's `zn-mirror` marker, is already on the target (or the API answered 409). Also: the target is already in the group. |
 | `skipped_group_inherited` | Skipped: matched only through group membership | The source reaches the rule only through a group, so the rule is not copied. The target gets it by joining that group. |
