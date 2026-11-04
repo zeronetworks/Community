@@ -125,7 +125,7 @@ All files go to a dated subdirectory `outputs/<YYYY-MM-DD>/` (the date of the ru
 
 `--resume` and `--rollback` take explicit file paths, so pass the file from the dated folder (for example `--rollback outputs/<YYYY-MM-DD>/manual-mirror-results-<ts>.csv`).
 
-Rollback deletes the objects created by a results report. Run it as a dry run first, then add `--apply`. Connect config updates are not reverted automatically; the rollback report marks them `rollback_unsupported` so they can be reverted by hand.
+Rollback deletes the objects created by a results report. Run it as a dry run first, then add `--apply`. Connect config updates are not reverted automatically; the rollback report marks them `rollback_unsupported` so they can be reverted by hand. Removing a group membership (the `DELETE` with a JSON body on the group's members endpoint) has been verified against a real tenant with a tag group.
 
 ### Verbose dry run
 
@@ -171,7 +171,6 @@ Before planning, the script reads the target's existing rules and policies. An o
 Confirm these behaviours against the live API. The script was written from the OpenAPI spec and has not been run against a live tenant.
 
 - Rule listing with `entityParams` `direction=3` returns rules where the source is only the remote side.
-- Group membership `DELETE` accepts a JSON body (used by rollback).
 - Rule create accepts `state` for pending-review objects (the script sends them as disabled).
 - Switch rule create: the spec declares `remoteEntitiesIdList` as a property but requires `remoteEntityIdsList`. The script sends `remoteEntityIdsList`. Confirm which one the API accepts.
 - Connect user access config `PUT` replaces the whole object. Confirm the body rebuilt from the re-read config keeps every other setting.
