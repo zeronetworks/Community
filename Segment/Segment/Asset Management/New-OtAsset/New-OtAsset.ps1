@@ -2,7 +2,8 @@
 
 <#
 .SYNOPSIS
-    Creates OT/IoT assets in a Zero Networks tenant, one at a time or in bulk from a CSV file.
+    Creates OT/IoT assets in a Zero Networks tenant, one at a time or in bulk from a CSV file, or
+    marks the assets named in a CSV file as inactive.
 
 .DESCRIPTION
     Creates OT/IoT assets through the Zero Networks API. Use -Ip and -Name for one asset, or
@@ -31,8 +32,27 @@
     -InterfaceName. -Type defaults to "OT Device". If that name is not offered by the tenant but
     type 135 is, type 135 is used instead. An explicit -Type never falls back.
 
+    Inactivate mode uses -CsvFilePath with -MarkOtAssetsInactive. Nothing is created. Each row is
+    matched to one active OT asset whose name equals displayName exactly (case-sensitive) and
+    whose type equals the row's type. The matched assets are then marked inactive, at most 100
+    per request. Only the type and displayName columns are required. The ipv4, fqdn, switchId
+    and interfaceName columns are ignored, so the CSV file used to create the assets can be
+    reused to clean them up. Rows that do not match exactly one asset are reported as NotFound,
+    TypeMismatch or Ambiguous. An Invalid, TypeMismatch or Ambiguous row stops the whole run, so
+    nothing is inactivated, unless -ContinueOnError is set. NotFound rows do not stop the run.
+    Inactive assets can be made active again in the portal.
+
 .PARAMETER CsvFilePath
     CSV mode. Path to a CSV file with the columns described in DESCRIPTION. The file must exist.
+
+.PARAMETER MarkOtAssetsInactive
+    CSV mode only. Marks the existing OT assets named in the CSV file as inactive instead of
+    creating assets. See DESCRIPTION. Cannot be combined with -SkipExistingCheck or with the
+    single-mode parameters. Needs an API key that is allowed to change assets.
+
+.PARAMETER Comment
+    Inactivate mode only. Optional comment sent with each inactivate request. Requires
+    -MarkOtAssetsInactive.
 
 .PARAMETER Ip
     Single mode. Dotted IPv4 address of the asset, for example 192.0.2.50. Required in single mode.
@@ -64,16 +84,18 @@
     https://portal.zeronetworks.com is used if no host is found.
 
 .PARAMETER DryRun
-    Runs all validation and the read-only API lookups. Nothing is created. Add -Verbose to see
-    each request body. The body is also in the Request property of each result.
+    Runs all validation and the read-only API lookups. Nothing is created or inactivated. Add
+    -Verbose to see each request body. The body is also in the Request property of each result.
 
 .PARAMETER ContinueOnError
     Creates the valid rows and skips the invalid ones. Also keeps going after an API failure
-    for one row. The exit code is still non-zero if any row was not created.
+    for one row. The exit code is still non-zero if any row was not created. With
+    -MarkOtAssetsInactive, inactivates the matched rows even when other rows did not match,
+    and keeps going after a failed inactivate request.
 
 .PARAMETER SkipExistingCheck
     Does not download the existing OT asset list. Duplicate IPs and names are then reported by
-    the server, row by row, as Skipped.
+    the server, row by row, as Skipped. Not available with -MarkOtAssetsInactive.
 
 .EXAMPLE
     ./New-OtAsset.ps1 -Ip 192.0.2.50 -Name "Boiler Room PLC"
@@ -101,21 +123,35 @@
 
     Creates the valid rows, skips the invalid ones and reports them.
 
+.EXAMPLE
+    ./New-OtAsset.ps1 -CsvFilePath ./my-assets.csv -MarkOtAssetsInactive -DryRun
+
+    Matches every row to an active OT asset by name and type and shows what would be marked
+    inactive. Nothing is changed.
+
+.EXAMPLE
+    ./New-OtAsset.ps1 -CsvFilePath ./my-assets.csv -MarkOtAssetsInactive -Comment "Lab cleanup"
+
+    Marks the matched assets inactive, with a comment. They can be made active again in the
+    portal.
+
 .NOTES
     Requires PowerShell 7.0 or later. Keep this script, Get-OtAssetTypes.ps1, OtAssetCommon.ps1 and
     New-OtAsset.format.ps1xml in the same folder. Needs a read-write API key. Prefer the ZN_API_KEY
     environment variable over -ApiKey so the key does not appear in shell history.
 
     Exit codes:
-      0  Every row was created, or was a dry run.
-      1  At least one row was not created (Invalid, Skipped, Failed or NotAttempted).
+      0  Every row was created (or inactivated with -MarkOtAssetsInactive), or was a dry run.
+      1  At least one row was not created or inactivated (Invalid, Skipped, NotFound,
+         TypeMismatch, Ambiguous, Failed or NotAttempted).
       2  Setup error: no API key, unreadable CSV or missing columns, failure to read the type
          list or the existing assets, or a missing OtAssetCommon.ps1.
 
     Results are written to the pipeline as one object per row, with the properties Row, Name, Ip,
-    TypeId, Status, AssetId, Error and Request. They are shown as a table with the columns Row,
-    Name, Ip, Type, Status and Detail (Error, or else AssetId), defined in
-    New-OtAsset.format.ps1xml. The validation count and the summary go to the information
+    TypeId, TypeName, Status, AssetId, Error and Request. They are shown as a table with the
+    columns Row, Name, Ip, Type, type_name, Status and Detail (Error, or else AssetId), defined in
+    New-OtAsset.format.ps1xml. With -MarkOtAssetsInactive, AssetId is the matched existing asset
+    and Request is the inactivate request body that included it. The validation count and the summary go to the information
     stream. Per-row progress and request bodies go to the verbose stream.
 
 .LINK
@@ -125,8 +161,12 @@
 [CmdletBinding(DefaultParameterSetName = 'ByCsv')]
 param(
     [Parameter(ParameterSetName = 'ByCsv', Mandatory = $true)]
+    [Parameter(ParameterSetName = 'ByCsvInactivate', Mandatory = $true)]
     [ValidateScript({ Test-Path -LiteralPath $_ -PathType Leaf })]
     [string]$CsvFilePath,
+
+    [Parameter(ParameterSetName = 'ByCsvInactivate', Mandatory = $true)][switch]$MarkOtAssetsInactive,
+    [Parameter(ParameterSetName = 'ByCsvInactivate', Mandatory = $false)][string]$Comment,
 
     [Parameter(ParameterSetName = 'BySingle', Mandatory = $true)]
     [ValidatePattern('^((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$')]
@@ -142,7 +182,9 @@ param(
     [Parameter(Mandatory = $false)][string]$PortalUrl,
     [Parameter(Mandatory = $false)][switch]$DryRun,
     [Parameter(Mandatory = $false)][switch]$ContinueOnError,
-    [Parameter(Mandatory = $false)][switch]$SkipExistingCheck
+    [Parameter(ParameterSetName = 'ByCsv', Mandatory = $false)]
+    [Parameter(ParameterSetName = 'BySingle', Mandatory = $false)]
+    [switch]$SkipExistingCheck
 )
 
 $ErrorActionPreference = 'Stop'
@@ -173,6 +215,10 @@ $script:SwitchInterfaceCache = [System.Collections.Generic.Dictionary[string, ob
 .PARAMETER Path
     Path to the CSV file.
 
+.PARAMETER NameAndTypeOnly
+    Requires only the type and displayName columns. ipv4 becomes optional. Used by
+    -MarkOtAssetsInactive.
+
 .OUTPUTS
     System.Management.Automation.PSCustomObject[]. Each object has Row (int), Ipv4, Type,
     DisplayName, Fqdn, SwitchId and InterfaceName (trimmed strings, empty when absent).
@@ -185,7 +231,8 @@ function Read-OtAssetCsv {
     [CmdletBinding()]
     [OutputType([pscustomobject[]])]
     param(
-        [Parameter(Mandatory = $true)][string]$Path
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $false)][switch]$NameAndTypeOnly
     )
 
     $lines = @(Get-Content -LiteralPath $Path)
@@ -195,13 +242,19 @@ function Read-OtAssetCsv {
     }
     $headers = @($headerLine -split ',' | ForEach-Object { $_.Trim().Trim('"').Trim() } | Where-Object { $_ -ne '' })
 
-    $required = @('ipv4', 'type', 'displayName')
-    $optional = @('fqdn', 'switchId', 'interfaceName')
+    if ($NameAndTypeOnly) {
+        $required = @('type', 'displayName')
+        $optional = @('ipv4', 'fqdn', 'switchId', 'interfaceName')
+    }
+    else {
+        $required = @('ipv4', 'type', 'displayName')
+        $optional = @('fqdn', 'switchId', 'interfaceName')
+    }
     $known = $required + $optional
 
     $missing = @($required | Where-Object { $headers -notcontains $_ })
     if ($missing.Count -gt 0) {
-        throw "CSV '$Path' is missing required column(s): $($missing -join ', '). Required: ipv4, type, displayName. Optional: fqdn, switchId, interfaceName."
+        throw "CSV '$Path' is missing required column(s): $($missing -join ', '). Required: $($required -join ', '). Optional: $($optional -join ', ')."
     }
 
     $unused = @($headers | Where-Object { $known -notcontains $_ })
@@ -367,9 +420,12 @@ function Invoke-ZnPaginatedGet {
     Loads the tenant's active OT assets and indexes them by name and by IP address.
 
 .DESCRIPTION
-    Reads every active OT asset with cursor paging. Inactive assets are not requested. Names are
-    matched case-insensitively. Each IPv4 address, both managed and non-organization, maps to its
-    asset. When a name or address appears more than once, the first asset seen is kept.
+    Reads every active OT asset with cursor paging. Inactive assets are not requested. In ByName,
+    names are matched case-insensitively. Each IPv4 address, both managed and non-organization,
+    maps to its asset. When a name or address appears more than once, the first asset seen is
+    kept. ByExactName maps each name (case-sensitive) to every asset with that name, as objects
+    with Id, Name and TypeId. TypeId is read from the item's assetType field, or else its type
+    field, and is $null when neither holds an integer.
 
 .PARAMETER ApiBaseUrl
     Base URL returned by Get-ApiBaseUrl.
@@ -378,7 +434,8 @@ function Invoke-ZnPaginatedGet {
     API key for the tenant.
 
 .OUTPUTS
-    PSCustomObject with ByName and ByIp hashtables.
+    PSCustomObject with ByName and ByIp hashtables, ByExactName (Dictionary of string to a List of
+    objects) and HasTypeField (bool, true when any item had an assetType or type field).
 
 .NOTES
     Throws on API failure. The caller reports that as a setup error.
@@ -395,12 +452,29 @@ function Get-ExistingOtAssetIndex {
 
     $byName = @{}
     $byIp = @{}
+    $byExactName = [System.Collections.Generic.Dictionary[string, System.Collections.Generic.List[object]]]::new([System.StringComparer]::Ordinal)
+    $hasTypeField = $false
     foreach ($item in $items) {
         if ($null -eq $item) { continue }
 
         $name = [string]$item.name
         if ($name -ne '' -and -not $byName.ContainsKey($name)) {
             $byName[$name] = $item
+        }
+
+        if ($name -ne '') {
+            $assetTypeId = $null
+            $typeProperty = $item.PSObject.Properties['assetType']
+            if ($null -eq $typeProperty) { $typeProperty = $item.PSObject.Properties['type'] }
+            if ($null -ne $typeProperty) {
+                $hasTypeField = $true
+                $parsedType = 0
+                if ([int]::TryParse([string]$typeProperty.Value, [ref]$parsedType)) { $assetTypeId = $parsedType }
+            }
+            if (-not $byExactName.ContainsKey($name)) {
+                $byExactName[$name] = [System.Collections.Generic.List[object]]::new()
+            }
+            $byExactName[$name].Add([pscustomobject]@{ Id = [string]$item.id; Name = $name; TypeId = $assetTypeId })
         }
 
         $addresses = @(@($item.ipV4Addresses) + @($item.nonOrgIpV4Addresses))
@@ -411,7 +485,7 @@ function Get-ExistingOtAssetIndex {
         }
     }
 
-    return [pscustomobject]@{ ByName = $byName; ByIp = $byIp }
+    return [pscustomobject]@{ ByName = $byName; ByIp = $byIp; ByExactName = $byExactName; HasTypeField = $hasTypeField }
 }
 
 <#
@@ -522,6 +596,10 @@ function Get-SwitchInterfaceNames {
 .PARAMETER Rows
     Row objects from Read-OtAssetCsv or from single mode.
 
+.PARAMETER NamesOnly
+    Checks display names only, case-sensitively, and ignores IP addresses. Used by
+    -MarkOtAssetsInactive, where names are matched exactly.
+
 .OUTPUTS
     System.Collections.Hashtable. Maps row number (int) to a list of messages.
 
@@ -532,13 +610,17 @@ function Get-InFileDuplicateErrors {
     [CmdletBinding()]
     [OutputType([hashtable])]
     param(
-        [Parameter(Mandatory = $true)][AllowNull()][object[]]$Rows
+        [Parameter(Mandatory = $true)][AllowNull()][object[]]$Rows,
+        [Parameter(Mandatory = $false)][switch]$NamesOnly
     )
 
     $map = @{}
     $candidates = @($Rows | Where-Object { $null -ne $_ })
 
-    $ipGroups = @($candidates | Where-Object { $_.Ipv4 -ne '' } | Group-Object -Property Ipv4 | Where-Object { $_.Count -ge 2 })
+    $ipGroups = @()
+    if (-not $NamesOnly) {
+        $ipGroups = @($candidates | Where-Object { $_.Ipv4 -ne '' } | Group-Object -Property Ipv4 | Where-Object { $_.Count -ge 2 })
+    }
     foreach ($group in $ipGroups) {
         $rowText = (@($group.Group | ForEach-Object { $_.Row }) -join ', ')
         foreach ($member in $group.Group) {
@@ -548,7 +630,7 @@ function Get-InFileDuplicateErrors {
         }
     }
 
-    $nameGroups = @($candidates | Where-Object { $_.DisplayName -ne '' } | Group-Object -Property DisplayName | Where-Object { $_.Count -ge 2 })
+    $nameGroups = @($candidates | Where-Object { $_.DisplayName -ne '' } | Group-Object -Property DisplayName -CaseSensitive:$NamesOnly | Where-Object { $_.Count -ge 2 })
     foreach ($group in $nameGroups) {
         $rowText = (@($group.Group | ForEach-Object { $_.Row }) -join ', ')
         foreach ($member in $group.Group) {
@@ -594,7 +676,8 @@ function Get-InFileDuplicateErrors {
     API key for the tenant.
 
 .OUTPUTS
-    PSCustomObject with Errors (string[]) and TypeId (int, or $null when the type did not resolve).
+    PSCustomObject with Errors (string[]), TypeId (int, or $null when the type did not resolve) and
+    TypeName (the tenant's name for TypeId, or $null).
 
 .NOTES
     Writes a warning when the type resolves to 1001. Does not throw for validation problems.
@@ -704,8 +787,9 @@ function Test-OtAssetRow {
     }
 
     return [pscustomobject]@{
-        Errors = [string[]]$rowErrors.ToArray()
-        TypeId = $typeId
+        Errors   = [string[]]$rowErrors.ToArray()
+        TypeId   = $typeId
+        TypeName = (Get-OtAssetTypeName -TypeId $typeId -TypeList $TypeList)
     }
 }
 
@@ -749,6 +833,368 @@ function New-OtAssetBody {
     return $body
 }
 
+<#
+.SYNOPSIS
+    Returns the tenant's display name for an OT/IoT type ID.
+
+.DESCRIPTION
+    Looks the ID up in the type list returned by Get-OtAssetTypeList. The list is read live from
+    the tenant, so no names are hard-coded here.
+
+.PARAMETER TypeId
+    Numeric type ID, or $null.
+
+.PARAMETER TypeList
+    Type list returned by Get-OtAssetTypeList.
+
+.OUTPUTS
+    System.String, or $null when TypeId is $null or not in the list.
+
+.NOTES
+    Never throws.
+#>
+function Get-OtAssetTypeName {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory = $false)][AllowNull()][object]$TypeId,
+        [Parameter(Mandatory = $true)][object[]]$TypeList
+    )
+
+    if ($null -eq $TypeId) { return $null }
+    $hit = @($TypeList | Where-Object { [int]$_.Id -eq [int]$TypeId }) | Select-Object -First 1
+    if ($null -eq $hit) { return $null }
+    return [string]$hit.Name
+}
+
+<#
+.SYNOPSIS
+    Matches one CSV row to an active OT asset for -MarkOtAssetsInactive.
+
+.DESCRIPTION
+    Resolves the row's type, then looks for active OT assets whose name equals displayName
+    exactly (case-sensitive) and whose type equals the resolved type. An asset whose type was not
+    returned by the API matches on name alone, and a verbose message says so.
+
+.PARAMETER Row
+    Row object from Read-OtAssetCsv.
+
+.PARAMETER TypeList
+    Type list returned by Get-OtAssetTypeList.
+
+.PARAMETER ExistingIndex
+    Index returned by Get-ExistingOtAssetIndex.
+
+.OUTPUTS
+    PSCustomObject with Status ('Matched', 'Invalid', 'NotFound', 'TypeMismatch' or 'Ambiguous'),
+    TypeId, TypeName, AssetId (set only when Matched) and Errors (string[], empty when Matched).
+
+.NOTES
+    Does not throw for validation problems. Makes no API calls.
+#>
+function Find-OtAssetInactivateTarget {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory = $true)][pscustomobject]$Row,
+        [Parameter(Mandatory = $true)][object[]]$TypeList,
+        [Parameter(Mandatory = $true)][object]$ExistingIndex
+    )
+
+    $rowErrors = [System.Collections.Generic.List[string]]::new()
+    $typeId = $null
+    $name = [string]$Row.DisplayName
+
+    if ($name -eq '') {
+        $rowErrors.Add('displayName is blank')
+    }
+    try {
+        $typeId = Resolve-OtAssetType -Value ([string]$Row.Type) -TypeList $TypeList
+    }
+    catch {
+        $rowErrors.Add([string]$_.Exception.Message)
+        $typeId = $null
+    }
+    $typeName = Get-OtAssetTypeName -TypeId $typeId -TypeList $TypeList
+
+    $result = [pscustomobject]@{
+        Status   = 'Invalid'
+        TypeId   = $typeId
+        TypeName = $typeName
+        AssetId  = $null
+        Errors   = [string[]]@()
+    }
+    if ($rowErrors.Count -gt 0) {
+        $result.Errors = [string[]]$rowErrors.ToArray()
+        return $result
+    }
+
+    $candidates = @()
+    if ($ExistingIndex.ByExactName.ContainsKey($name)) {
+        $candidates = @($ExistingIndex.ByExactName[$name])
+    }
+
+    if ($candidates.Count -eq 0) {
+        $message = "no active OT asset is named '$name' (it may already be inactive)"
+        if ($ExistingIndex.ByName.ContainsKey($name)) {
+            $near = $ExistingIndex.ByName[$name]
+            $message += "; found '$([string]$near.name)' (id $([string]$near.id)), which differs in case"
+        }
+        $result.Status = 'NotFound'
+        $result.Errors = [string[]]@($message)
+        return $result
+    }
+
+    $typeMatches = @($candidates | Where-Object { $null -eq $_.TypeId -or [int]$_.TypeId -eq [int]$typeId })
+    foreach ($candidate in @($candidates | Where-Object { $null -eq $_.TypeId })) {
+        Write-Verbose "Row $($Row.Row): the API did not return a type for asset $($candidate.Id); type check skipped"
+    }
+
+    if ($typeMatches.Count -eq 1) {
+        $result.Status = 'Matched'
+        $result.AssetId = [string]$typeMatches[0].Id
+        return $result
+    }
+
+    $wanted = "$typeId"
+    if ($typeName) { $wanted += " ($typeName)" }
+    if ($typeMatches.Count -gt 1) {
+        $ids = @($typeMatches | ForEach-Object { [string]$_.Id }) -join ', '
+        $result.Status = 'Ambiguous'
+        $result.Errors = [string[]]@("$($typeMatches.Count) active OT assets are named '$name' with type $wanted (ids $ids); inactivate them in the portal")
+        return $result
+    }
+
+    $found = @($candidates | ForEach-Object {
+            $foundName = Get-OtAssetTypeName -TypeId $_.TypeId -TypeList $TypeList
+            $foundText = "type $($_.TypeId)"
+            if ($foundName) { $foundText += " ($foundName)" }
+            "id $($_.Id) has $foundText"
+        }) -join '; '
+    $result.Status = 'TypeMismatch'
+    $result.Errors = [string[]]@("an active OT asset named '$name' exists, but not with type ${wanted}: $found")
+    return $result
+}
+
+<#
+.SYNOPSIS
+    Runs -MarkOtAssetsInactive: matches every row and inactivates the matched assets.
+
+.DESCRIPTION
+    Loads the active OT assets, matches each row with Find-OtAssetInactivateTarget and flags
+    duplicate display names in the file. When any row is Invalid, TypeMismatch or Ambiguous,
+    nothing is sent unless ContinueOnError is set. NotFound rows never stop the run. Matched
+    asset IDs are sent to POST /assets/ot/actions/inactivate in row order, at most 100 per
+    request. A failed request marks its rows Failed and stops later requests unless
+    ContinueOnError is set. With DryRun, no request is sent and the rows become DryRun.
+
+.PARAMETER Rows
+    Row objects from Read-OtAssetCsv.
+
+.PARAMETER TypeList
+    Type list returned by Get-OtAssetTypeList.
+
+.PARAMETER ApiBaseUrl
+    Base URL returned by Get-ApiBaseUrl.
+
+.PARAMETER ApiKey
+    API key for the tenant.
+
+.PARAMETER Comment
+    Optional comment. Sent as 'comment' when it is not blank.
+
+.PARAMETER DryRun
+    Sends no inactivate request.
+
+.PARAMETER ContinueOnError
+    Sends the matched rows even when other rows did not match, and keeps going after a failed
+    request.
+
+.OUTPUTS
+    System.Collections.Generic.List[pscustomobject]. One evaluation per row, with Row, Name, Ip,
+    TypeId, TypeName, Status, AssetId, Error and Request.
+
+.NOTES
+    Throws when the existing OT asset list cannot be read. The caller reports that as a setup
+    error. Writes the match count to the information stream and one warning per unmatched row.
+#>
+function Invoke-OtAssetInactivation {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][object[]]$Rows,
+        [Parameter(Mandatory = $true)][object[]]$TypeList,
+        [Parameter(Mandatory = $true)][string]$ApiBaseUrl,
+        [Parameter(Mandatory = $true)][string]$ApiKey,
+        [Parameter(Mandatory = $false)][string]$Comment,
+        [Parameter(Mandatory = $false)][switch]$DryRun,
+        [Parameter(Mandatory = $false)][switch]$ContinueOnError
+    )
+
+    $batchSize = 100
+    $actionPath = '/assets/ot/actions/inactivate'
+
+    $existingIndex = Get-ExistingOtAssetIndex -ApiBaseUrl $ApiBaseUrl -ApiKey $ApiKey
+    if (-not $existingIndex.HasTypeField) {
+        Write-Verbose 'The OT asset list has no assetType or type field; assets are matched by name only.'
+    }
+
+    $duplicateErrors = Get-InFileDuplicateErrors -Rows $Rows -NamesOnly
+
+    $evaluations = [System.Collections.Generic.List[pscustomobject]]::new()
+    foreach ($row in $Rows) {
+        $match = Find-OtAssetInactivateTarget -Row $row -TypeList $TypeList -ExistingIndex $existingIndex
+
+        $status = [string]$match.Status
+        $messages = [System.Collections.Generic.List[string]]::new()
+        $messages.AddRange([string[]]$match.Errors)
+        if ($duplicateErrors.ContainsKey([int]$row.Row)) {
+            $messages.AddRange([string[]]@($duplicateErrors[[int]$row.Row]))
+            $status = 'Invalid'
+        }
+        foreach ($message in $messages) {
+            Write-Warning "Row $($row.Row): $message"
+        }
+
+        $assetId = $null
+        if ($status -eq 'Matched') { $assetId = $match.AssetId }
+        $errorText = $null
+        if ($messages.Count -gt 0) { $errorText = ($messages -join '; ') }
+
+        $evaluations.Add([pscustomobject]@{
+                Row      = [int]$row.Row
+                Name     = [string]$row.DisplayName
+                Ip       = [string]$row.Ipv4
+                TypeId   = $match.TypeId
+                TypeName = $match.TypeName
+                Status   = $status
+                AssetId  = $assetId
+                Error    = $errorText
+                Request  = $null
+            })
+    }
+
+    $matchedCount = @($evaluations | Where-Object { $_.Status -eq 'Matched' }).Count
+    Write-Information "Matched $($evaluations.Count) row(s) to active OT assets: $matchedCount matched, $($evaluations.Count - $matchedCount) not matched"
+
+    $blockingCount = @($evaluations | Where-Object { $_.Status -in @('Invalid', 'TypeMismatch', 'Ambiguous') }).Count
+    $targets = @($evaluations | Where-Object { $_.Status -eq 'Matched' })
+    foreach ($target in $targets) { $target.Status = 'NotAttempted' }
+
+    if ($blockingCount -gt 0 -and -not $ContinueOnError) {
+        Write-Warning "$blockingCount row(s) are Invalid, TypeMismatch or Ambiguous; nothing was inactivated. Fix the errors above or rerun with -ContinueOnError."
+        return , $evaluations
+    }
+
+    for ($start = 0; $start -lt $targets.Count; $start += $batchSize) {
+        $end = [Math]::Min($start + $batchSize, $targets.Count) - 1
+        $batch = @($targets[$start..$end])
+        $body = [ordered]@{ assetIds = [string[]]@($batch | ForEach-Object { [string]$_.AssetId }) }
+        if (-not [string]::IsNullOrWhiteSpace($Comment)) { $body['comment'] = $Comment }
+        $json = ConvertTo-Json -InputObject $body -Depth 5 -Compress
+        $rowRange = "rows $($batch[0].Row)-$($batch[-1].Row)"
+
+        if ($DryRun) {
+            Write-Verbose "[DryRun] $($rowRange): would POST $actionPath $json"
+            foreach ($evaluation in $batch) {
+                $evaluation.Status = 'DryRun'
+                $evaluation.Request = $json
+            }
+            continue
+        }
+
+        try {
+            $null = Invoke-ZnRestMethod -Method POST -ApiBaseUrl $ApiBaseUrl -ApiKey $ApiKey -Path $actionPath -Body $json
+            foreach ($evaluation in $batch) {
+                $evaluation.Status = 'Inactivated'
+                $evaluation.Request = $json
+            }
+            Write-Verbose "$($rowRange): inactivated $($batch.Count) asset(s)"
+        }
+        catch {
+            $postError = $_
+            $postStatus = 0
+            $postApiMessage = ''
+            if ($postError.TargetObject -is [pscustomobject] -and $postError.TargetObject.PSObject.Properties['StatusCode']) {
+                $postStatus = [int]$postError.TargetObject.StatusCode
+                $postApiMessage = [string]$postError.TargetObject.ApiMessage
+            }
+            if ($postStatus -eq 403) {
+                $failText = 'the API key is not allowed to inactivate OT assets (HTTP 403'
+                if ($postApiMessage) { $failText += ": $postApiMessage" }
+                $failText += '); use a read-write key that is allowed to change assets'
+            }
+            else {
+                $failText = [string]$postError.Exception.Message
+            }
+            Write-Warning "Inactivate request for $rowRange failed: $failText"
+            foreach ($evaluation in $batch) {
+                $evaluation.Status = 'Failed'
+                $evaluation.Error = $failText
+            }
+            if (-not $ContinueOnError) { break }
+        }
+    }
+
+    return , $evaluations
+}
+
+<#
+.SYNOPSIS
+    Writes the summary line and one result object per evaluation.
+
+.DESCRIPTION
+    Counts the evaluations by status and writes "Summary: ..." to the information stream, in a
+    fixed status order. Adds a dry-run hint when any row is DryRun and -Verbose is not set. Then
+    writes one ZnOtAssetResult object per evaluation to the pipeline.
+
+.PARAMETER Evaluations
+    Evaluation objects from the create or inactivate flow.
+
+.PARAMETER Action
+    Past-tense verb used in the dry-run hint: 'created' or 'inactivated'.
+
+.OUTPUTS
+    PSCustomObject with type name ZnOtAssetResult and the properties Row, Name, Ip, TypeId,
+    TypeName, Status, AssetId, Error and Request.
+
+.NOTES
+    Does not throw.
+#>
+function Write-OtAssetRunResult {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Evaluations,
+        [Parameter(Mandatory = $true)][ValidateSet('created', 'inactivated')][string]$Action
+    )
+
+    $tally = @{}
+    foreach ($evaluation in $Evaluations) {
+        $tally[$evaluation.Status] = 1 + [int]$tally[$evaluation.Status]
+    }
+    $statusOrder = @('Created', 'Inactivated', 'DryRun', 'Skipped', 'NotFound', 'TypeMismatch', 'Ambiguous', 'Failed', 'Invalid', 'NotAttempted')
+    $summaryParts = @($statusOrder | Where-Object { [int]$tally[$_] -gt 0 } | ForEach-Object { "$_ $([int]$tally[$_])" })
+    Write-Information "Summary: $($summaryParts -join ', ')"
+    if ([int]$tally['DryRun'] -gt 0 -and $VerbosePreference -eq [System.Management.Automation.ActionPreference]::SilentlyContinue) {
+        Write-Information "DryRun: nothing was $Action. Add -Verbose to see each request body."
+    }
+
+    foreach ($evaluation in $Evaluations) {
+        $result = [pscustomobject]@{
+            Row      = $evaluation.Row
+            Name     = $evaluation.Name
+            Ip       = $evaluation.Ip
+            TypeId   = $evaluation.TypeId
+            TypeName = $evaluation.TypeName
+            Status   = $evaluation.Status
+            AssetId  = $evaluation.AssetId
+            Error    = $evaluation.Error
+            Request  = $evaluation.Request
+        }
+        $result.PSTypeNames.Insert(0, 'ZnOtAssetResult')
+        $result
+    }
+}
+
 # Main flow. Any unexpected error is reported and the script exits with code 2.
 try {
     # Register the results table view once per session. Without the file, PowerShell's default
@@ -768,9 +1214,9 @@ try {
         exit 2
     }
 
-    if ($PSCmdlet.ParameterSetName -eq 'ByCsv') {
+    if ($PSCmdlet.ParameterSetName -ne 'BySingle') {
         try {
-            $rows = @(Read-OtAssetCsv -Path $CsvFilePath)
+            $rows = @(Read-OtAssetCsv -Path $CsvFilePath -NameAndTypeOnly:$MarkOtAssetsInactive)
         }
         catch {
             Write-Error -ErrorRecord $_ -ErrorAction Continue
@@ -798,6 +1244,20 @@ try {
     catch {
         Write-Error -ErrorRecord $_ -ErrorAction Continue
         exit 2
+    }
+
+    if ($MarkOtAssetsInactive) {
+        try {
+            $evaluations = Invoke-OtAssetInactivation -Rows $rows -TypeList $typeList -ApiBaseUrl $baseUrl -ApiKey $ApiKey -Comment $Comment -DryRun:$DryRun -ContinueOnError:$ContinueOnError
+        }
+        catch {
+            Write-Error -ErrorRecord $_ -ErrorAction Continue
+            exit 2
+        }
+        Write-OtAssetRunResult -Evaluations $evaluations -Action 'inactivated'
+        $notInactivatedCount = @($evaluations | Where-Object { $_.Status -notin @('Inactivated', 'DryRun') }).Count
+        if ($notInactivatedCount -gt 0) { exit 1 }
+        exit 0
     }
 
     # Single mode: fall back to type 135 when the default name is not offered by the tenant.
@@ -868,16 +1328,17 @@ try {
         }
 
         $evaluations.Add([pscustomobject]@{
-                Row     = [int]$row.Row
-                Name    = [string]$row.DisplayName
-                Ip      = [string]$row.Ipv4
-                TypeId  = $check.TypeId
-                Source  = $row
-                Errors  = [string[]]$allErrors.ToArray()
-                Status  = 'NotAttempted'
-                AssetId = $null
-                Error   = $null
-                Request = $null
+                Row      = [int]$row.Row
+                Name     = [string]$row.DisplayName
+                Ip       = [string]$row.Ipv4
+                TypeId   = $check.TypeId
+                TypeName = $check.TypeName
+                Source   = $row
+                Errors   = [string[]]$allErrors.ToArray()
+                Status   = 'NotAttempted'
+                AssetId  = $null
+                Error    = $null
+                Request  = $null
             })
     }
 
@@ -943,31 +1404,7 @@ try {
         }
     }
 
-    $tally = @{}
-    foreach ($evaluation in $evaluations) {
-        $tally[$evaluation.Status] = 1 + [int]$tally[$evaluation.Status]
-    }
-    $statusOrder = @('Created', 'DryRun', 'Skipped', 'Failed', 'Invalid', 'NotAttempted')
-    $summaryParts = @($statusOrder | Where-Object { [int]$tally[$_] -gt 0 } | ForEach-Object { "$_ $([int]$tally[$_])" })
-    Write-Information "Summary: $($summaryParts -join ', ')"
-    if ([int]$tally['DryRun'] -gt 0 -and $VerbosePreference -eq [System.Management.Automation.ActionPreference]::SilentlyContinue) {
-        Write-Information 'DryRun: nothing was created. Add -Verbose to see each request body.'
-    }
-
-    foreach ($evaluation in $evaluations) {
-        $result = [pscustomobject]@{
-            Row     = $evaluation.Row
-            Name    = $evaluation.Name
-            Ip      = $evaluation.Ip
-            TypeId  = $evaluation.TypeId
-            Status  = $evaluation.Status
-            AssetId = $evaluation.AssetId
-            Error   = $evaluation.Error
-            Request = $evaluation.Request
-        }
-        $result.PSTypeNames.Insert(0, 'ZnOtAssetResult')
-        $result
-    }
+    Write-OtAssetRunResult -Evaluations $evaluations -Action 'created'
 
     $notCreatedCount = @($evaluations | Where-Object { $_.Status -notin @('Created', 'DryRun') }).Count
     if ($notCreatedCount -gt 0) { exit 1 }

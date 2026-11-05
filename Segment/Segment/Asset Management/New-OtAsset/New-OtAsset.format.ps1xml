@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
     Default table view for the result objects written by New-OtAsset.ps1 (type name
-    ZnOtAssetResult). Detail shows Error when it is set, otherwise AssetId. All properties,
-    including Request, are still available to Select-Object, Format-List * and Export-Csv.
+    ZnOtAssetResult). Type is the numeric type ID and type_name is its name. Detail shows
+    Error when it is set, otherwise AssetId. All properties, including Request, are still
+    available to Select-Object, Format-List * and Export-Csv.
     Keep this file in the same folder as New-OtAsset.ps1.
 -->
 <Configuration>
@@ -21,7 +22,7 @@
           </TableColumnHeader>
           <TableColumnHeader>
             <Label>Name</Label>
-            <Width>32</Width>
+            <Width>26</Width>
           </TableColumnHeader>
           <TableColumnHeader>
             <Label>Ip</Label>
@@ -31,6 +32,10 @@
             <Label>Type</Label>
             <Width>4</Width>
             <Alignment>Right</Alignment>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Label>type_name</Label>
+            <Width>20</Width>
           </TableColumnHeader>
           <TableColumnHeader>
             <Label>Status</Label>
@@ -55,6 +60,9 @@
               </TableColumnItem>
               <TableColumnItem>
                 <PropertyName>TypeId</PropertyName>
+              </TableColumnItem>
+              <TableColumnItem>
+                <PropertyName>TypeName</PropertyName>
               </TableColumnItem>
               <TableColumnItem>
                 <PropertyName>Status</PropertyName>

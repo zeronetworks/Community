@@ -1,6 +1,6 @@
 # New-OtAsset
 
-PowerShell scripts for creating OT/IoT assets in Zero Networks, one at a time or in bulk from a CSV file. Every row is validated against your tenant before anything is created, so a bad row is reported with a clear reason instead of failing halfway through a run.
+PowerShell scripts for creating OT/IoT assets in Zero Networks, one at a time or in bulk from a CSV file. Every row is validated against your tenant before anything is created, so a bad row is reported with a clear reason instead of failing halfway through a run. The same CSV file can later be used to mark those assets inactive (see [Marking assets inactive](#marking-assets-inactive)).
 
 ## Requirements
 
@@ -12,7 +12,7 @@ PowerShell scripts for creating OT/IoT assets in Zero Networks, one at a time or
 
 | File | Purpose |
 | --- | --- |
-| `New-OtAsset.ps1` | Creates OT/IoT assets, either one at a time (`-Ip`/`-Name`) or from a CSV file (`-CsvFilePath`). |
+| `New-OtAsset.ps1` | Creates OT/IoT assets, either one at a time (`-Ip`/`-Name`) or from a CSV file (`-CsvFilePath`). With `-MarkOtAssetsInactive`, marks the assets named in a CSV file inactive instead. |
 | `Get-OtAssetTypes.ps1` | Lists the OT/IoT asset types available in your tenant and writes them to a CSV file. |
 | `OtAssetCommon.ps1` | Shared helper functions, dot-sourced by the scripts above. |
 | `New-OtAsset.format.ps1xml` | Table layout for the results of `New-OtAsset.ps1`. Loaded automatically. |
@@ -77,6 +77,13 @@ Skip downloading the existing asset list (duplicate IPs are then reported by the
 ./New-OtAsset.ps1 -CsvFilePath ./my-assets.csv -SkipExistingCheck
 ```
 
+Mark the assets named in a CSV file inactive (preview first with `-DryRun`):
+
+```powershell
+./New-OtAsset.ps1 -CsvFilePath ./my-assets.csv -MarkOtAssetsInactive -DryRun
+./New-OtAsset.ps1 -CsvFilePath ./my-assets.csv -MarkOtAssetsInactive -Comment "Lab cleanup"
+```
+
 Target a specific tenant:
 
 ```powershell
@@ -104,6 +111,8 @@ The file has every result property, including `Request`, the JSON body sent for 
 ## Parameters: New-OtAsset.ps1
 
 - `-CsvFilePath` - CSV mode. Required in CSV mode; the file must exist.
+- `-MarkOtAssetsInactive` - CSV mode only. Marks the existing OT assets named in the CSV file inactive instead of creating assets. See [Marking assets inactive](#marking-assets-inactive). Cannot be combined with `-SkipExistingCheck` or the single-mode parameters.
+- `-Comment` - Optional, only with `-MarkOtAssetsInactive`. Comment sent with each inactivate request.
 - `-Ip` - Single mode. Required; dotted IPv4 address.
 - `-Name` - Single mode. Required; display name.
 - `-Fqdn` - Optional. If omitted, the server defaults it to the display name.
@@ -111,9 +120,9 @@ The file has every result property, including `Request`, the JSON body sent for 
 - `-SwitchId` and `-InterfaceName` - Single mode, optional. Must be used together.
 - `-ApiKey` - Defaults to `$Env:ZN_API_KEY`.
 - `-PortalUrl` - Optional. Overrides the API host that is otherwise read from the API key, which falls back to `portal.zeronetworks.com`.
-- `-DryRun` - Runs all validation, including the read-only API lookups. Nothing is created. Add `-Verbose` to see each request body; the body is also in the `Request` property of each result.
-- `-ContinueOnError` - Creates the valid rows and skips the invalid ones, and keeps going after API failures. The exit code is still non-zero if any row was not created.
-- `-SkipExistingCheck` - Skips downloading the existing OT asset list. Duplicate IPs are then reported by the server, per row, as `Skipped`.
+- `-DryRun` - Runs all validation, including the read-only API lookups. Nothing is created or inactivated. Add `-Verbose` to see each request body; the body is also in the `Request` property of each result.
+- `-ContinueOnError` - Creates the valid rows and skips the invalid ones, and keeps going after API failures. The exit code is still non-zero if any row was not created. With `-MarkOtAssetsInactive`, inactivates the matched rows even when other rows did not match.
+- `-SkipExistingCheck` - Skips downloading the existing OT asset list. Duplicate IPs are then reported by the server, per row, as `Skipped`. Not available with `-MarkOtAssetsInactive`.
 
 ## Parameters: Get-OtAssetTypes.ps1
 
@@ -173,6 +182,51 @@ Before anything is created, every row is checked and all problems are reported a
 
 By default, one bad row means nothing is created.
 
+## Marking assets inactive
+
+`-MarkOtAssetsInactive` reads the same CSV format and marks the matching existing OT assets inactive. Nothing is created. This makes it easy to clean up: the CSV file you used to create a set of assets, for example a batch of test assets, can be reused unchanged to remove them from the active asset list.
+
+```powershell
+./New-OtAsset.ps1 -CsvFilePath ./my-assets.csv -MarkOtAssetsInactive -DryRun
+./New-OtAsset.ps1 -CsvFilePath ./my-assets.csv -MarkOtAssetsInactive -Comment "Lab cleanup"
+```
+
+How rows are matched:
+
+- Only the `type` and `displayName` columns are required. `ipv4`, `fqdn`, `switchId` and `interfaceName` are ignored, so a file with just `type,displayName` also works.
+- Each row must match exactly one active OT asset whose name equals `displayName` exactly (case-sensitive) and whose type equals the row's `type`. `type` accepts the same names and IDs as when creating.
+- A display name that appears more than once in the file makes those rows `Invalid`.
+- The matched assets are marked inactive in requests of up to 100 assets. `-Comment` is sent with each request.
+- An `Invalid`, `TypeMismatch` or `Ambiguous` row stops the run, so nothing is inactivated, unless you add `-ContinueOnError`. `NotFound` rows do not stop the run, so running the same file again after a cleanup is safe.
+- `-DryRun` shows what would be inactivated and sends nothing. Add `-Verbose` to see each request body.
+- The API key must be allowed to change assets. A read-only key gets HTTP 403.
+
+Inactive assets are not deleted. You can make them active again in the portal.
+
+Example dry run:
+
+```text
+WARNING: Row 2: an active OT asset named 'Floor2 Printer' exists, but not with type 4 (IP camera): id a:o:Xk3Pq9W2 has type 8 (Printer)
+WARNING: Row 4: no active OT asset is named 'Old Camera' (it may already be inactive)
+Matched 4 row(s) to active OT assets: 2 matched, 2 not matched
+WARNING: 1 row(s) are Invalid, TypeMismatch or Ambiguous; nothing was inactivated. Fix the errors above or rerun with -ContinueOnError.
+Summary: NotFound 1, TypeMismatch 1, NotAttempted 2
+
+ Row Name                       Ip              Type type_name            Status       Detail
+ --- ----                       --              ---- ---------            ------       ------
+   1 Lobby Cam                  10.0.0.20          4 IP camera            NotAttempted a:o:Xk3Pq9W1
+   2 Floor2 Printer             10.0.0.21          4 IP camera            TypeMismatch an active OT asset named 'Floor2
+                                                                                       Printer' exists, but not with
+                                                                                       type 4 (IP camera): id
+                                                                                       a:o:Xk3Pq9W2 has type 8 (Printer)
+   3 Line PLC                   10.0.0.22        135 OT Device            NotAttempted a:o:Xk3Pq9W3
+   4 Old Camera                 10.0.0.23          4 IP camera            NotFound     no active OT asset is named 'Old
+                                                                                       Camera' (it may already be
+                                                                                       inactive)
+```
+
+For a matched row, `Detail` is the ID of the asset that is (or would be) marked inactive.
+
 ## Results and exit codes
 
 `New-OtAsset.ps1` writes one object per row and shows the objects as a table. Example with `-ContinueOnError` and one invalid row:
@@ -182,39 +236,45 @@ WARNING: Row 4: type 'Nonsense' is not a recognized OT/IoT type for this tenant.
 Validated 4 row(s): 3 valid, 1 invalid
 Summary: Created 3, Invalid 1
 
- Row Name                             Ip              Type Status       Detail
- --- ----                             --              ---- ------       ------
-   1 Lobby Cam                        10.0.0.20          4 Created      a:o:Xk3Pq9W1
-   2 Floor2 Printer                   10.0.0.21          8 Created      a:o:Xk3Pq9W2
-   3 Line PLC                         10.0.0.22        135 Created      a:o:Xk3Pq9W3
-   4 Invalid Row                      10.0.0.99            Invalid      type 'Nonsense' is not a recognized
-                                                                        OT/IoT type for this tenant. Run
-                                                                        Get-OtAssetTypes.ps1 to list valid
-                                                                        names.
+ Row Name                       Ip              Type type_name            Status       Detail
+ --- ----                       --              ---- ---------            ------       ------
+   1 Lobby Cam                  10.0.0.20          4 IP camera            Created      a:o:Xk3Pq9W1
+   2 Floor2 Printer             10.0.0.21          8 Printer              Created      a:o:Xk3Pq9W2
+   3 Line PLC                   10.0.0.22        135 OT Device            Created      a:o:Xk3Pq9W3
+   4 Invalid Row                10.0.0.99                                 Invalid      type 'Nonsense' is not a
+                                                                                       recognized OT/IoT type for this
+                                                                                       tenant. Run Get-OtAssetTypes.ps1
+                                                                                       to list valid names.
 ```
 
-`Detail` is the new asset ID for created rows and the reason for rows that were not created. Each object has the properties `Row`, `Name`, `Ip`, `TypeId`, `Status`, `AssetId`, `Error` and `Request`. `Request` is the JSON body and is set for `Created` and `DryRun` rows. To see every property, add `| Format-List *`. To keep them, add `| Export-Csv`.
+`Type` is the numeric type ID and `type_name` is the tenant's name for it. `Detail` is the new asset ID for created rows and the reason for rows that were not created. Each object has the properties `Row`, `Name`, `Ip`, `TypeId`, `TypeName`, `Status`, `AssetId`, `Error` and `Request`. `Request` is the JSON body and is set for `Created`, `Inactivated` and `DryRun` rows. With `-MarkOtAssetsInactive`, `Request` is the inactivate request that included the row. To see every property, add `| Format-List *`. To keep them, add `| Export-Csv`.
 
 Status values:
 
 - `Created` - the asset was created.
-- `DryRun` - the row is valid; nothing was created because of `-DryRun`.
+- `Inactivated` - with `-MarkOtAssetsInactive`, the matched asset was marked inactive.
+- `DryRun` - the row is valid; nothing was created or inactivated because of `-DryRun`.
 - `Skipped` - the asset already exists on the server.
-- `Invalid` - the row failed validation.
+- `NotFound` - with `-MarkOtAssetsInactive`, no active OT asset has that exact name. It may already be inactive.
+- `TypeMismatch` - with `-MarkOtAssetsInactive`, an active asset has that name, but a different type. `Detail` shows both types.
+- `Ambiguous` - with `-MarkOtAssetsInactive`, more than one active asset has that name and type. Inactivate those in the portal.
 - `Failed` - the API rejected the request.
+- `Invalid` - the row failed validation.
 - `NotAttempted` - the row was valid, but the run stopped before it was sent.
 
 The validation count, the summary and the dry-run hint are written to the information stream, so they print above the table. Silence them with `-InformationAction SilentlyContinue`. Per-row progress and request bodies are written to the verbose stream; add `-Verbose` to see them. Validation problems are written as warnings (`Row N: ...`).
 
 Exit codes:
 
-- `New-OtAsset.ps1`: `0` = every row was created (or was a dry run). `1` = at least one row was not created. `2` = setup error, such as a missing API key, an unreadable CSV or missing columns, a failure to read the type list or the existing assets, or a missing helper file.
+- `New-OtAsset.ps1`: `0` = every row was created, or inactivated with `-MarkOtAssetsInactive` (or was a dry run). `1` = at least one row was not created or inactivated. `2` = setup error, such as a missing API key, an unreadable CSV or missing columns, a failure to read the type list or the existing assets, or a missing helper file.
 - `Get-OtAssetTypes.ps1`: `0` = success. `1` = failure.
 
 ## Troubleshooting
 
 - **HTTP 401:** the API key is bad or expired.
 - **HTTP 403 on create:** the API key is read-only. `New-OtAsset.ps1` needs a read-write key.
+- **"not allowed to inactivate OT assets (HTTP 403)":** the API key cannot change assets. Use a read-write key.
+- **`NotFound` with "differs in case":** names are matched case-sensitively with `-MarkOtAssetsInactive`. Fix the spelling in the CSV.
 - **Wrong tenant or host:** pass `-PortalUrl` with your tenant's admin URL.
 - **"type ... is not a recognized OT/IoT type":** run `Get-OtAssetTypes.ps1` to list the valid names.
 - **"ambiguous":** use the numeric ID for that type.
