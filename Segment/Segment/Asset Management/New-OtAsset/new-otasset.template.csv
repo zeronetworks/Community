@@ -1,0 +1,5 @@
+ipv4,type,displayName,fqdn,switchId,interfaceName
+192.0.2.10,IP camera,Lobby Camera,,,
+192.0.2.11,Printer,Floor 2 Printer,printer2.example.com,,
+192.0.2.12,OT Device,Line 1 PLC,,,
+192.0.2.13,14,Line 2 HMI,,,
