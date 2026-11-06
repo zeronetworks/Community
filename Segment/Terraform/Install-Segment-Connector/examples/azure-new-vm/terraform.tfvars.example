@@ -1,0 +1,29 @@
+# Copy this file to terraform.tfvars and fill in the values.
+# Do not put the token here. Set it with: export TF_VAR_token='<token>'
+
+# The resource group and region to create.
+resource_group_name = "rg-segment-connector-test"
+location            = "eastus"
+
+# The test VM. Use your own SSH public key file.
+vm_name             = "connector-test-01"
+vm_size             = "Standard_B1s"
+admin_username      = "azureuser"
+ssh_public_key_path = "~/.ssh/id_ed25519.pub"
+
+# A new storage account name. It must be unique in Azure, 3 to 24 lowercase letters and digits.
+storage_account_name   = "stzsegtest20261104"
+storage_container_name = "segment-connector"
+
+# The installer zip you downloaded from the portal. Put it in the project's installer/ folder.
+installer_zip_local_path = "../../installer/segment-connector-linux-installer-X.Y.Z.W.zip"
+
+# Enrollment. A new VM is not in the portal yet.
+allow_create   = true
+asset_fqdn     = ""
+asset_name     = "connector-test-01"
+with_static_ip = false
+
+# Other options.
+run_as            = "zn-user"
+reinstall_trigger = ""

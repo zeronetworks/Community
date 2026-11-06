@@ -1,0 +1,25 @@
+# Copy this file to terraform.tfvars and fill in the values.
+# Do not put the token here. Set it with: export TF_VAR_token='<token>'
+
+region      = "us-east-1"
+instance_id = "i-0123456789abcdef0"
+
+# An existing S3 bucket in the same region, for the installer files.
+bucket_name = "my-segment-connector-bucket"
+kms_key_id  = ""
+
+# The IAM role of the instance. Leave empty to attach instance_read_policy_json yourself.
+instance_role_name = "my-instance-role"
+
+# The installer zip you downloaded from the portal. Put it in the project's installer/ folder.
+installer_zip_local_path = "../../installer/segment-connector-linux-installer-X.Y.Z.W.zip"
+
+# Enrollment. For a host already in the portal, leave these as they are.
+allow_create   = false
+asset_fqdn     = ""
+asset_name     = ""
+with_static_ip = false
+
+# Other options.
+run_as            = "zn-user"
+reinstall_trigger = ""

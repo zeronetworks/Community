@@ -1,0 +1,3 @@
+{"ts":"__NOW__","level":"info","msg":"zero networks segment connector is starting"}
+{"ts":"__NOW__","level":"info","msg":"segment connector initialized"}
+{"ts":"__NOW__","level":"error","msg":"couldn't connect to a segment server","serverAddress":"segment.example.test:443","error":"name resolver error: produced zero addresses"}
