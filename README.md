@@ -71,7 +71,7 @@
 
 
 <details>
-<summary>Segment (37)</summary>
+<summary>Segment (38)</summary>
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Approve-ZNProposedDeletes.ps1](/home/runner/work/Community/Community/Segment/Segment/Approve-ZNProposedDeletes.ps1)** - Simple script to mass accept proposed delete rules
 
@@ -96,6 +96,9 @@
 
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Network Port Connectivity Check.ps1](/home/runner/work/Community/Community/Segment/Segment/Network%20Port%20Connectivity%20Check.ps1)** - Does network connectivity Test on Clients and Trust Server on the required ports based on the Deployment guide
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[Test-ZNConnectivity.ps1](/home/runner/work/Community/Community/Segment/Segment/Test-ZNConnectivity.ps1)** - Test-ZNConnectivity.ps1 [[-Region] <string>] [[-CustomerPrefix] <string>]
+
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**[ZN_Troubleshooter_v01.ps1](/home/runner/work/Community/Community/Segment/Segment/ZN_Troubleshooter_v01.ps1)** - ZN_Troubleshooter_v01.ps1 
 
@@ -283,4 +286,4 @@ If you have a script you would like to share to the community or improvements on
 - Once the pull request is approved and merged you can pull the changes from `upstream` to your local repo.
 
 <br><br>
-![generated_image](https://img.shields.io/badge/generated%20date-11/05/2026%2015:30:55-blue)
+![generated_image](https://img.shields.io/badge/generated%20date-11/12/2026%2015:52:37-blue)
