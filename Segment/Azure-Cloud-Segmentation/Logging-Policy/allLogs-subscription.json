@@ -81,6 +81,7 @@
     }
   },
   "variables": {
+    "grantRoles": "[equals(parameters('effect'), 'DeployIfNotExists')]",
     "assignmentName": "[if(empty(parameters('assignmentName')), take(format('zn-logs-{0}', parameters('resourceLocation')), 64), parameters('assignmentName'))]",
     "policySetDefinitionId": "[tenantResourceId('Microsoft.Authorization/policySetDefinitions', 'b6b86da9-e527-49de-ac59-6af0a9db10b8')]"
   },
@@ -117,7 +118,8 @@
       }
     },
     {
-      "comments": "Log Analytics Contributor (the role the policy definitions declare) for the assignment's identity at the assignment scope.",
+      "comments": "Log Analytics Contributor (the role the policy definitions declare) for the assignment's identity at the assignment scope. Only DeployIfNotExists needs it.",
+      "condition": "[variables('grantRoles')]",
       "type": "Microsoft.Authorization/roleAssignments",
       "apiVersion": "2022-04-01",
       "name": "[guid(subscription().id, variables('assignmentName'), '92aaf0da-9dab-42b6-94a3-d43ce8d16293')]",
@@ -133,7 +135,7 @@
     },
     {
       "comments": "Same role on the log storage account, deployed into the account's own subscription and resource group.",
-      "condition": "[parameters('grantRoleOnStorageAccount')]",
+      "condition": "[and(parameters('grantRoleOnStorageAccount'), variables('grantRoles'))]",
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "[take(format('{0}-storage-role', variables('assignmentName')), 64)]",

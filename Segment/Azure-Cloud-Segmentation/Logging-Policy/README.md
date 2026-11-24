@@ -12,12 +12,14 @@ These ARM templates use Azure Policy to keep the Azure logs the Zero Networks Az
 Each template also:
 
 - gives the assignment a **system-assigned managed identity**,
-- grants that identity **Log Analytics Contributor** (`92aaf0da-9dab-42b6-94a3-d43ce8d16293`) at the assignment scope. This is the role that every member definition of the initiative, and the custom definition, declares.
+- with the `DeployIfNotExists` effect, grants that identity **Log Analytics Contributor** (`92aaf0da-9dab-42b6-94a3-d43ce8d16293`) at the assignment scope. This is the role that every member definition of the initiative, and the custom definition, declares.
 - optionally grants the same role on the **log storage account**, wherever it lives (`grantRoleOnStorageAccount`, default `true`).
+
+With `AuditIfNotExists` or `Disabled`, the template creates no role assignments, because the assignment deploys nothing. To switch to `DeployIfNotExists` later, redeploy the template with that effect so it adds the roles.
 
 ## Which scope to use
 
-- **Subscription**: the default choice. Remediation tasks are created with the assignment and re-evaluate compliance first, so existing resources are fixed without a second step.
+- **Subscription**: the default choice. Remediation tasks are created with the assignment and re-evaluate compliance first, so existing resources are fixed without a second step. Expect about 20 minutes before remediated resources show as compliant.
 - **Management group**: to cover every current and future subscription under a management group with one assignment. Azure creates remediation tasks for management group assignments only after the first compliance evaluation, so you run remediation as a second step.
 
 Both use the same `#create/Microsoft.Template/uri/` portal link; the portal picks the scope from the template schema and asks for the subscription or management group.
@@ -61,7 +63,7 @@ Management group:
 | `resourceLocation` | Required | Region of the resources to cover. Must match the storage account's region. **Assign once per region** |
 | `resourceTypeList` | MySQL flexible server, PostgreSQL flexible server, Key vault, Event Hubs namespace, Service Bus namespace | Lowercase resource types to cover, from the initiative's allowed list |
 | `diagnosticSettingName` | `setByPolicy-Storage` | Name of the diagnostic setting created on each resource |
-| `effect` | `DeployIfNotExists` | Or `AuditIfNotExists` / `Disabled` |
+| `effect` | `DeployIfNotExists` | Or `AuditIfNotExists` / `Disabled`, which create no role assignments |
 | `assignmentName` | `zn-logs-<resourceLocation>` | Up to 64 characters at subscription scope, 24 at management group scope (the default is trimmed to fit) |
 | `grantRoleOnStorageAccount` | `true` | Also grant the role on the storage account |
 | `createRemediation` (subscription only) | `true` | Create one remediation task per resource type, filtered to `resourceLocation` |
@@ -74,7 +76,7 @@ Management group:
 | `storageAccountId` | Required | Resource ID of the log storage account. The policy skips this account, because Azure does not allow a storage account to send these logs to itself |
 | `policyDefinitionName` | `zn-blob-logs-to-storage` | Custom definition name. Redeploying updates it |
 | `diagnosticSettingName` | `zn-blob-logs` | Name of the diagnostic setting on each blob service |
-| `effect` | `DeployIfNotExists` | Or `AuditIfNotExists` / `Disabled` |
+| `effect` | `DeployIfNotExists` | Or `AuditIfNotExists` / `Disabled`, which create no role assignments |
 | `assignmentName` | `zn-blob-logs-<hash of storageAccountId>` | Up to 64 characters at subscription scope, 24 at management group scope |
 | `grantRoleOnStorageAccount` | `true` | Also grant the role on the storage account |
 | `createRemediation` (subscription only) | `true` | Create a remediation task that re-evaluates compliance first |
@@ -127,6 +129,19 @@ done
 ```
 
 For the blob logs assignment, run one `az policy remediation create` without `--definition-reference-id`. Remediation tasks are also available in the Azure portal under **Policy ⇒ Remediation**.
+
+## Removing an assignment
+
+Delete the role assignments before the policy assignment. Deleting the policy assignment also deletes its managed identity, which leaves the role assignments behind as **Identity not found** entries.
+
+```bash
+PRINCIPAL=$(az policy assignment show --name <assignment-name> --query identity.principalId -o tsv)
+az role assignment delete --assignee "$PRINCIPAL" --scope /subscriptions/<subscription-id>
+az role assignment delete --assignee "$PRINCIPAL" --scope <storage-account-resource-id>
+az policy assignment delete --name <assignment-name>
+```
+
+At management group scope, add `--scope /providers/Microsoft.Management/managementGroups/<management-group-id>` to the `az policy assignment` commands and use the same management group as the role assignment scope. The diagnostic settings the policy created stay on the resources. For the blob templates, also delete the custom definition with `az policy definition delete` (add `--management-group` at management group scope).
 
 ## Limitations
 
