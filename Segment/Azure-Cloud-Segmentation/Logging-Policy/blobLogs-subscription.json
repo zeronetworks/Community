@@ -1,0 +1,364 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "description": "Creates the custom policy definition that routes blob service logs (StorageRead, StorageWrite, StorageDelete) to a log storage account, and assigns it at the target subscription with a system-assigned identity and the Log Analytics Contributor role."
+  },
+  "parameters": {
+    "storageAccountId": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the log storage account the logs are written to. Example: /subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.Storage/storageAccounts/znccweu"
+      }
+    },
+    "policyDefinitionName": {
+      "type": "string",
+      "defaultValue": "zn-blob-logs-to-storage",
+      "metadata": {
+        "description": "Name of the custom policy definition. Redeploying with the same name updates it."
+      }
+    },
+    "diagnosticSettingName": {
+      "type": "string",
+      "defaultValue": "zn-blob-logs",
+      "metadata": {
+        "description": "Name of the diagnostic setting the policy creates on each blob service."
+      }
+    },
+    "effect": {
+      "type": "string",
+      "defaultValue": "DeployIfNotExists",
+      "allowedValues": [
+        "DeployIfNotExists",
+        "AuditIfNotExists",
+        "Disabled"
+      ],
+      "metadata": {
+        "description": "Policy effect. DeployIfNotExists creates the diagnostic settings; AuditIfNotExists only reports."
+      }
+    },
+    "assignmentName": {
+      "type": "string",
+      "defaultValue": "",
+      "maxLength": 64,
+      "metadata": {
+        "description": "Policy assignment name. Leave empty to derive one from the storage account ID."
+      }
+    },
+    "grantRoleOnStorageAccount": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Also grant the assignment's managed identity Log Analytics Contributor on the log storage account. Needed when the storage account is outside the assignment scope."
+      }
+    },
+    "createRemediation": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Create a remediation task, with compliance re-evaluation, so existing storage accounts get the diagnostic setting."
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[deployment().location]",
+      "metadata": {
+        "description": "Region that holds the policy assignment's managed identity metadata. Defaults to the deployment region."
+      }
+    }
+  },
+  "variables": {
+    "grantRoles": "[equals(parameters('effect'), 'DeployIfNotExists')]",
+    "assignmentName": "[if(empty(parameters('assignmentName')), take(format('zn-blob-logs-{0}', uniqueString(parameters('storageAccountId'))), 24), parameters('assignmentName'))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Authorization/policyDefinitions",
+      "apiVersion": "2025-03-01",
+      "name": "[parameters('policyDefinitionName')]",
+      "properties": {
+        "policyType": "Custom",
+        "mode": "All",
+        "displayName": "Route blob logs to a storage account for the Zero Networks Azure Connector",
+        "description": "Adds a diagnostic setting to each storage account's blob service that routes StorageRead, StorageWrite and StorageDelete logs to the log storage account. Skips the log storage account itself.",
+        "metadata": {
+          "category": "Monitoring",
+          "version": "1.0.0"
+        },
+        "parameters": {
+          "storageAccount": {
+            "type": "String",
+            "metadata": {
+              "displayName": "Log storage account resource ID",
+              "assignPermissions": true
+            }
+          },
+          "diagnosticSettingName": {
+            "type": "String",
+            "defaultValue": "zn-blob-logs",
+            "metadata": {
+              "displayName": "Diagnostic setting name"
+            }
+          },
+          "effect": {
+            "type": "String",
+            "defaultValue": "DeployIfNotExists",
+            "allowedValues": [
+              "DeployIfNotExists",
+              "AuditIfNotExists",
+              "Disabled"
+            ],
+            "metadata": {
+              "displayName": "Effect"
+            }
+          }
+        },
+        "policyRule": {
+          "if": {
+            "allOf": [
+              {
+                "field": "type",
+                "equals": "Microsoft.Storage/storageAccounts/blobServices"
+              },
+              {
+                "value": "[[toLower(first(split(field('id'), '/blobServices/')))]",
+                "notEquals": "[[toLower(parameters('storageAccount'))]"
+              }
+            ]
+          },
+          "then": {
+            "effect": "[[parameters('effect')]",
+            "details": {
+              "type": "Microsoft.Insights/diagnosticSettings",
+              "name": "[[parameters('diagnosticSettingName')]",
+              "roleDefinitionIds": [
+                "/providers/Microsoft.Authorization/roleDefinitions/92aaf0da-9dab-42b6-94a3-d43ce8d16293"
+              ],
+              "existenceCondition": {
+                "allOf": [
+                  {
+                    "field": "Microsoft.Insights/diagnosticSettings/storageAccountId",
+                    "equals": "[[parameters('storageAccount')]"
+                  },
+                  {
+                    "count": {
+                      "field": "Microsoft.Insights/diagnosticSettings/logs[*]",
+                      "where": {
+                        "allOf": [
+                          {
+                            "field": "Microsoft.Insights/diagnosticSettings/logs[*].enabled",
+                            "equals": "true"
+                          },
+                          {
+                            "field": "Microsoft.Insights/diagnosticSettings/logs[*].category",
+                            "in": [
+                              "StorageRead",
+                              "StorageWrite",
+                              "StorageDelete"
+                            ]
+                          }
+                        ]
+                      }
+                    },
+                    "equals": 3
+                  }
+                ]
+              },
+              "deployment": {
+                "properties": {
+                  "mode": "incremental",
+                  "parameters": {
+                    "resourceName": {
+                      "value": "[[field('fullName')]"
+                    },
+                    "storageAccount": {
+                      "value": "[[parameters('storageAccount')]"
+                    },
+                    "diagnosticSettingName": {
+                      "value": "[[parameters('diagnosticSettingName')]"
+                    }
+                  },
+                  "template": {
+                    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {
+                      "resourceName": {
+                        "type": "string"
+                      },
+                      "storageAccount": {
+                        "type": "string"
+                      },
+                      "diagnosticSettingName": {
+                        "type": "string"
+                      }
+                    },
+                    "resources": [
+                      {
+                        "type": "Microsoft.Storage/storageAccounts/blobServices/providers/diagnosticSettings",
+                        "apiVersion": "2021-05-01-preview",
+                        "name": "[[concat(parameters('resourceName'), '/Microsoft.Insights/', parameters('diagnosticSettingName'))]",
+                        "properties": {
+                          "storageAccountId": "[[parameters('storageAccount')]",
+                          "logs": [
+                            {
+                              "category": "StorageRead",
+                              "enabled": true
+                            },
+                            {
+                              "category": "StorageWrite",
+                              "enabled": true
+                            },
+                            {
+                              "category": "StorageDelete",
+                              "enabled": true
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Authorization/policyAssignments",
+      "apiVersion": "2025-03-01",
+      "name": "[variables('assignmentName')]",
+      "location": "[parameters('location')]",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "displayName": "[format('Zero Networks Azure Connector: blob logs to {0}', last(split(parameters('storageAccountId'), '/')))]",
+        "description": "Route blob service logs to the Zero Networks Azure Connector log storage account.",
+        "policyDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/policyDefinitions', parameters('policyDefinitionName'))]",
+        "parameters": {
+          "storageAccount": {
+            "value": "[parameters('storageAccountId')]"
+          },
+          "diagnosticSettingName": {
+            "value": "[parameters('diagnosticSettingName')]"
+          },
+          "effect": {
+            "value": "[parameters('effect')]"
+          }
+        }
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Authorization/policyDefinitions', parameters('policyDefinitionName'))]"
+      ]
+    },
+    {
+      "comments": "Log Analytics Contributor (the role the policy definitions declare) for the assignment's identity at the assignment scope. Only DeployIfNotExists needs it.",
+      "condition": "[variables('grantRoles')]",
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "name": "[guid(subscription().id, variables('assignmentName'), '92aaf0da-9dab-42b6-94a3-d43ce8d16293')]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '92aaf0da-9dab-42b6-94a3-d43ce8d16293')]",
+        "principalId": "[reference(subscriptionResourceId('Microsoft.Authorization/policyAssignments', variables('assignmentName')), '2025-03-01', 'full').identity.principalId]",
+        "principalType": "ServicePrincipal",
+        "description": "Zero Networks Azure Connector blob logging policy remediation"
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Authorization/policyAssignments', variables('assignmentName'))]"
+      ]
+    },
+    {
+      "comments": "Same role on the log storage account, deployed into the account's own subscription and resource group.",
+      "condition": "[and(parameters('grantRoleOnStorageAccount'), variables('grantRoles'))]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[take(format('{0}-storage-role', variables('assignmentName')), 64)]",
+      "subscriptionId": "[split(parameters('storageAccountId'), '/')[2]]",
+      "resourceGroup": "[split(parameters('storageAccountId'), '/')[4]]",
+      "properties": {
+        "mode": "Incremental",
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "parameters": {
+          "storageAccountName": {
+            "value": "[last(split(parameters('storageAccountId'), '/'))]"
+          },
+          "principalId": {
+            "value": "[reference(subscriptionResourceId('Microsoft.Authorization/policyAssignments', variables('assignmentName')), '2025-03-01', 'full').identity.principalId]"
+          },
+          "roleDefinitionGuid": {
+            "value": "92aaf0da-9dab-42b6-94a3-d43ce8d16293"
+          },
+          "roleDescription": {
+            "value": "Zero Networks Azure Connector blob logging policy remediation"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {
+            "storageAccountName": {
+              "type": "string"
+            },
+            "principalId": {
+              "type": "string"
+            },
+            "roleDefinitionGuid": {
+              "type": "string"
+            },
+            "roleDescription": {
+              "type": "string"
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[format('Microsoft.Storage/storageAccounts/{0}', parameters('storageAccountName'))]",
+              "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), parameters('principalId'), parameters('roleDefinitionGuid'))]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', parameters('roleDefinitionGuid'))]",
+                "principalId": "[parameters('principalId')]",
+                "principalType": "ServicePrincipal",
+                "description": "[parameters('roleDescription')]"
+              }
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Authorization/policyAssignments', variables('assignmentName'))]"
+      ]
+    },
+    {
+      "condition": "[and(parameters('createRemediation'), equals(parameters('effect'), 'DeployIfNotExists'))]",
+      "type": "Microsoft.PolicyInsights/remediations",
+      "apiVersion": "2024-10-01",
+      "name": "[format('{0}-remediation', variables('assignmentName'))]",
+      "properties": {
+        "policyAssignmentId": "[subscriptionResourceId('Microsoft.Authorization/policyAssignments', variables('assignmentName'))]",
+        "resourceDiscoveryMode": "ReEvaluateCompliance"
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Authorization/roleAssignments', guid(subscription().id, variables('assignmentName'), '92aaf0da-9dab-42b6-94a3-d43ce8d16293'))]",
+        "[take(format('{0}-storage-role', variables('assignmentName')), 64)]"
+      ]
+    }
+  ],
+  "outputs": {
+    "policyDefinitionId": {
+      "type": "string",
+      "value": "[subscriptionResourceId('Microsoft.Authorization/policyDefinitions', parameters('policyDefinitionName'))]"
+    },
+    "policyAssignmentId": {
+      "type": "string",
+      "value": "[subscriptionResourceId('Microsoft.Authorization/policyAssignments', variables('assignmentName'))]"
+    },
+    "principalId": {
+      "type": "string",
+      "value": "[reference(subscriptionResourceId('Microsoft.Authorization/policyAssignments', variables('assignmentName')), '2025-03-01', 'full').identity.principalId]"
+    }
+  }
+}
