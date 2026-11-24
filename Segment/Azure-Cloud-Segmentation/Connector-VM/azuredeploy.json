@@ -1,0 +1,545 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "description": "Zero Networks Azure Connector VM: a Windows Server VM with a system-assigned managed identity, no public IP address and no inbound rules, an optional new virtual network, the Storage Blob Data Reader role on each log storage account, and an optional Custom Script Extension that downloads the connector package and runs install.ps1 with the installation token. Deploy at the resource group that will hold the VM."
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Region for the VM and its network resources. Defaults to the resource group's region."
+      }
+    },
+    "vmName": {
+      "type": "string",
+      "defaultValue": "znCloudCollectorVm01",
+      "maxLength": 64,
+      "metadata": {
+        "description": "Azure resource name of the VM."
+      }
+    },
+    "computerName": {
+      "type": "string",
+      "defaultValue": "znCollector01",
+      "maxLength": 15,
+      "metadata": {
+        "description": "Windows computer name. 15 characters or fewer."
+      }
+    },
+    "vmSize": {
+      "type": "string",
+      "defaultValue": "Standard_B2s",
+      "metadata": {
+        "description": "VM size. The default is an example of a small size; use your organization's standard. The size must support Trusted Launch."
+      }
+    },
+    "imageSku": {
+      "type": "string",
+      "defaultValue": "2025-datacenter-azure-edition",
+      "metadata": {
+        "description": "SKU of the MicrosoftWindowsServer/WindowsServer image."
+      }
+    },
+    "enableHotpatching": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Enable Hotpatch. Supported only on Azure Edition images. Set to false for other image SKUs."
+      }
+    },
+    "osDiskType": {
+      "type": "string",
+      "defaultValue": "StandardSSD_LRS",
+      "allowedValues": [
+        "Standard_LRS",
+        "StandardSSD_LRS",
+        "Premium_LRS"
+      ],
+      "metadata": {
+        "description": "OS disk storage type."
+      }
+    },
+    "osDiskSizeGB": {
+      "type": "int",
+      "defaultValue": 0,
+      "minValue": 0,
+      "maxValue": 4095,
+      "metadata": {
+        "description": "OS disk size in GB. 0 keeps the image default (127 GB). The connector needs at least 5 GB free."
+      }
+    },
+    "availabilityZone": {
+      "type": "string",
+      "defaultValue": "",
+      "allowedValues": [
+        "",
+        "1",
+        "2",
+        "3"
+      ],
+      "metadata": {
+        "description": "Availability zone for the VM, and for the NAT gateway and its public IP address when the template creates them. Leave empty for no zone. The zone must be available for the VM size in the region."
+      }
+    },
+    "licenseType": {
+      "type": "string",
+      "defaultValue": "None",
+      "allowedValues": [
+        "None",
+        "Windows_Server"
+      ],
+      "metadata": {
+        "description": "Windows_Server applies Azure Hybrid Benefit with your own Windows Server licenses. None uses pay-as-you-go licensing."
+      }
+    },
+    "enableBootDiagnostics": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Enable boot diagnostics with a Microsoft-managed storage account."
+      }
+    },
+    "adminUsername": {
+      "type": "string",
+      "metadata": {
+        "description": "Local administrator user name for the VM."
+      }
+    },
+    "adminPassword": {
+      "type": "securestring",
+      "minLength": 12,
+      "metadata": {
+        "description": "Local administrator password for the VM. Must meet Azure's Windows password complexity requirements."
+      }
+    },
+    "existingSubnetId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Resource ID of an existing subnet for the VM, in the same region as the VM. Leave empty to create a new virtual network and subnet."
+      }
+    },
+    "newVnetName": {
+      "type": "string",
+      "defaultValue": "zn-azure-connector-vnet",
+      "metadata": {
+        "description": "Name of the new virtual network. Used only when existingSubnetId is empty."
+      }
+    },
+    "newVnetAddressPrefix": {
+      "type": "string",
+      "defaultValue": "10.10.0.0/16",
+      "metadata": {
+        "description": "Address space of the new virtual network. Used only when existingSubnetId is empty."
+      }
+    },
+    "newSubnetName": {
+      "type": "string",
+      "defaultValue": "zn-azure-connector-subnet",
+      "metadata": {
+        "description": "Name of the new subnet. Used only when existingSubnetId is empty."
+      }
+    },
+    "newSubnetAddressPrefix": {
+      "type": "string",
+      "defaultValue": "10.10.0.0/24",
+      "metadata": {
+        "description": "Address prefix of the new subnet. Used only when existingSubnetId is empty."
+      }
+    },
+    "outboundAccess": {
+      "type": "string",
+      "defaultValue": "NewNatGateway",
+      "allowedValues": [
+        "NewNatGateway",
+        "ExistingNatGateway",
+        "DefaultOutboundAccess",
+        "None"
+      ],
+      "metadata": {
+        "description": "Outbound internet path for the NEW subnet. The connector needs outbound HTTPS to download the package and reach Zero Networks. NewNatGateway creates a NAT gateway with its own public IP address (the VM itself gets none). ExistingNatGateway attaches the NAT gateway in existingNatGatewayId. DefaultOutboundAccess uses Azure default outbound access, which Microsoft is retiring. None leaves the subnet private, so add your own route (for example through your firewall) before the install runs. Ignored when existingSubnetId is set: the template does not change an existing subnet."
+      }
+    },
+    "existingNatGatewayId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Resource ID of an existing NAT gateway in the same region. Used only when outboundAccess is ExistingNatGateway."
+      }
+    },
+    "natGatewayName": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Name of the new NAT gateway. Leave empty for <vmName>-natgw. Used only when outboundAccess is NewNatGateway."
+      }
+    },
+    "natGatewayIdleTimeoutMinutes": {
+      "type": "int",
+      "defaultValue": 4,
+      "minValue": 4,
+      "maxValue": 120,
+      "metadata": {
+        "description": "TCP idle timeout of the new NAT gateway, in minutes."
+      }
+    },
+    "createNsg": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Create an NSG with no custom rules and attach it to the VM network interface. Set to false if the subnet NSG already covers the VM."
+      }
+    },
+    "privateIpAddress": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Static private IP address for the VM. Leave empty for a dynamic address."
+      }
+    },
+    "logStorageAccountIds": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Resource IDs of the log storage accounts the connector reads. The VM's managed identity gets Storage Blob Data Reader on each. They can be in any resource group or subscription in the tenant. Example: [\"/subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.Storage/storageAccounts/znccweu\"]"
+      }
+    },
+    "installationToken": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Azure Connector installation token from the Zero Networks portal (cloud environment, Clusters section). Temporary. Leave empty, together with packageDownloadUrl, to create the VM without installing the connector."
+      }
+    },
+    "packageDownloadUrl": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Temporary download link of the Azure Connector package, from the Zero Networks portal (Clusters section, Download) or API. Leave empty, together with installationToken, to create the VM without installing the connector."
+      }
+    },
+    "tags": {
+      "type": "object",
+      "defaultValue": {},
+      "metadata": {
+        "description": "Tags applied to every resource the template creates, for example {\"owner\": \"secops\"}."
+      }
+    }
+  },
+  "variables": {
+    "createVnet": "[empty(parameters('existingSubnetId'))]",
+    "createNatGateway": "[and(variables('createVnet'), equals(parameters('outboundAccess'), 'NewNatGateway'))]",
+    "subnetId": "[if(variables('createVnet'), resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('newVnetName'), parameters('newSubnetName')), parameters('existingSubnetId'))]",
+    "natGatewayName": "[if(empty(parameters('natGatewayName')), format('{0}-natgw', parameters('vmName')), parameters('natGatewayName'))]",
+    "natPublicIpName": "[format('{0}-pip', variables('natGatewayName'))]",
+    "nsgName": "[format('{0}-nsg', parameters('vmName'))]",
+    "nicName": "[format('{0}-nic', parameters('vmName'))]",
+    "storageBlobDataReaderRoleId": "2a2b9908-6ea1-4ae2-8e65-a410df84e7d1",
+    "nl": "\n",
+    "installScriptLines": [
+      "$ErrorActionPreference = 'Stop'",
+      "$ProgressPreference = 'SilentlyContinue'",
+      "$downloadUrl = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($DownloadUrlBase64))",
+      "$token = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($TokenBase64))",
+      "$workDir = Join-Path $env:ProgramData 'ZeroNetworks\\AzureConnectorSetup'",
+      "if (Test-Path $workDir) { Remove-Item -Path $workDir -Recurse -Force }",
+      "New-Item -ItemType Directory -Force -Path $workDir | Out-Null",
+      "$zipPath = Join-Path $workDir 'azure-connector.zip'",
+      "Write-Output 'Downloading the Azure Connector package'",
+      "Invoke-WebRequest -Uri $downloadUrl -OutFile $zipPath -UseBasicParsing",
+      "Expand-Archive -Path $zipPath -DestinationPath $workDir -Force",
+      "$installer = Get-ChildItem -Path $workDir -Filter 'install.ps1' -Recurse | Select-Object -First 1",
+      "if (-not $installer) { throw 'install.ps1 was not found in the package' }",
+      "Set-Location -Path $installer.DirectoryName",
+      "Write-Output ('Running ' + $installer.FullName)",
+      "& $installer.FullName -Token $token",
+      "if ($LASTEXITCODE) { throw ('install.ps1 exited with code ' + $LASTEXITCODE) }",
+      "(Get-Service -Name 'ZeroAzureConnector').WaitForStatus('Running', [TimeSpan]::FromMinutes(2))",
+      "Write-Output ('ZeroAzureConnector service status: ' + (Get-Service -Name 'ZeroAzureConnector').Status)"
+    ],
+    "installScriptBody": "[join(variables('installScriptLines'), variables('nl'))]",
+    "subnetNatGatewayId": "[if(not(variables('createVnet')), '', if(equals(parameters('outboundAccess'), 'NewNatGateway'), resourceId('Microsoft.Network/natGateways', variables('natGatewayName')), if(equals(parameters('outboundAccess'), 'ExistingNatGateway'), parameters('existingNatGatewayId'), '')))]",
+    "zones": "[if(empty(parameters('availabilityZone')), createArray(), createArray(parameters('availabilityZone')))]"
+  },
+  "resources": [
+    {
+      "condition": "[variables('createNatGateway')]",
+      "type": "Microsoft.Network/publicIPAddresses",
+      "apiVersion": "2024-07-01",
+      "name": "[variables('natPublicIpName')]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "Standard"
+      },
+      "properties": {
+        "publicIPAllocationMethod": "Static",
+        "publicIPAddressVersion": "IPv4"
+      },
+      "tags": "[parameters('tags')]",
+      "zones": "[variables('zones')]"
+    },
+    {
+      "condition": "[variables('createNatGateway')]",
+      "type": "Microsoft.Network/natGateways",
+      "apiVersion": "2024-07-01",
+      "name": "[variables('natGatewayName')]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "Standard"
+      },
+      "properties": {
+        "idleTimeoutInMinutes": "[parameters('natGatewayIdleTimeoutMinutes')]",
+        "publicIpAddresses": [
+          {
+            "id": "[resourceId('Microsoft.Network/publicIPAddresses', variables('natPublicIpName'))]"
+          }
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/publicIPAddresses', variables('natPublicIpName'))]"
+      ],
+      "tags": "[parameters('tags')]",
+      "zones": "[variables('zones')]"
+    },
+    {
+      "condition": "[variables('createVnet')]",
+      "type": "Microsoft.Network/virtualNetworks",
+      "apiVersion": "2024-07-01",
+      "name": "[parameters('newVnetName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "addressSpace": {
+          "addressPrefixes": [
+            "[parameters('newVnetAddressPrefix')]"
+          ]
+        },
+        "subnets": [
+          {
+            "name": "[parameters('newSubnetName')]",
+            "properties": {
+              "addressPrefix": "[parameters('newSubnetAddressPrefix')]",
+              "defaultOutboundAccess": "[equals(parameters('outboundAccess'), 'DefaultOutboundAccess')]",
+              "natGateway": "[if(empty(variables('subnetNatGatewayId')), null(), createObject('id', variables('subnetNatGatewayId')))]"
+            }
+          }
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/natGateways', variables('natGatewayName'))]"
+      ],
+      "tags": "[parameters('tags')]"
+    },
+    {
+      "condition": "[parameters('createNsg')]",
+      "comments": "NSG with no custom rules: no inbound access beyond Azure's default rules. The connector makes outbound connections only.",
+      "type": "Microsoft.Network/networkSecurityGroups",
+      "apiVersion": "2024-07-01",
+      "name": "[variables('nsgName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "securityRules": []
+      },
+      "tags": "[parameters('tags')]"
+    },
+    {
+      "type": "Microsoft.Network/networkInterfaces",
+      "apiVersion": "2024-07-01",
+      "name": "[variables('nicName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "ipconfig1",
+            "properties": {
+              "privateIPAllocationMethod": "[if(empty(parameters('privateIpAddress')), 'Dynamic', 'Static')]",
+              "subnet": {
+                "id": "[variables('subnetId')]"
+              },
+              "privateIPAddress": "[if(empty(parameters('privateIpAddress')), null(), parameters('privateIpAddress'))]"
+            }
+          }
+        ],
+        "networkSecurityGroup": "[if(parameters('createNsg'), createObject('id', resourceId('Microsoft.Network/networkSecurityGroups', variables('nsgName'))), null())]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/virtualNetworks', parameters('newVnetName'))]",
+        "[resourceId('Microsoft.Network/networkSecurityGroups', variables('nsgName'))]"
+      ],
+      "tags": "[parameters('tags')]"
+    },
+    {
+      "type": "Microsoft.Compute/virtualMachines",
+      "apiVersion": "2024-11-01",
+      "name": "[parameters('vmName')]",
+      "location": "[parameters('location')]",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "hardwareProfile": {
+          "vmSize": "[parameters('vmSize')]"
+        },
+        "storageProfile": {
+          "imageReference": {
+            "publisher": "MicrosoftWindowsServer",
+            "offer": "WindowsServer",
+            "sku": "[parameters('imageSku')]",
+            "version": "latest"
+          },
+          "osDisk": {
+            "createOption": "FromImage",
+            "deleteOption": "Delete",
+            "managedDisk": {
+              "storageAccountType": "[parameters('osDiskType')]"
+            },
+            "diskSizeGB": "[if(equals(parameters('osDiskSizeGB'), 0), null(), parameters('osDiskSizeGB'))]"
+          }
+        },
+        "osProfile": {
+          "computerName": "[parameters('computerName')]",
+          "adminUsername": "[parameters('adminUsername')]",
+          "adminPassword": "[parameters('adminPassword')]",
+          "windowsConfiguration": {
+            "provisionVMAgent": true,
+            "enableAutomaticUpdates": true,
+            "patchSettings": {
+              "patchMode": "AutomaticByPlatform",
+              "enableHotpatching": "[parameters('enableHotpatching')]"
+            }
+          }
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "[resourceId('Microsoft.Network/networkInterfaces', variables('nicName'))]",
+              "properties": {
+                "deleteOption": "Delete"
+              }
+            }
+          ]
+        },
+        "securityProfile": {
+          "securityType": "TrustedLaunch",
+          "uefiSettings": {
+            "secureBootEnabled": true,
+            "vTpmEnabled": true
+          }
+        },
+        "diagnosticsProfile": {
+          "bootDiagnostics": {
+            "enabled": "[parameters('enableBootDiagnostics')]"
+          }
+        },
+        "licenseType": "[if(equals(parameters('licenseType'), 'None'), null(), parameters('licenseType'))]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/networkInterfaces', variables('nicName'))]"
+      ],
+      "tags": "[parameters('tags')]",
+      "zones": "[variables('zones')]"
+    },
+    {
+      "comments": "Storage Blob Data Reader for the VM's managed identity on each log storage account, deployed into each account's own subscription and resource group.",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('zn-connector-blob-reader-{0}', copyIndex())]",
+      "subscriptionId": "[split(parameters('logStorageAccountIds')[copyIndex()], '/')[2]]",
+      "resourceGroup": "[split(parameters('logStorageAccountIds')[copyIndex()], '/')[4]]",
+      "copy": {
+        "name": "storageAccountRoleAssignments",
+        "count": "[length(parameters('logStorageAccountIds'))]"
+      },
+      "properties": {
+        "mode": "Incremental",
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "parameters": {
+          "storageAccountName": {
+            "value": "[last(split(parameters('logStorageAccountIds')[copyIndex()], '/'))]"
+          },
+          "principalId": {
+            "value": "[reference(resourceId('Microsoft.Compute/virtualMachines', parameters('vmName')), '2024-11-01', 'full').identity.principalId]"
+          },
+          "roleDefinitionGuid": {
+            "value": "[variables('storageBlobDataReaderRoleId')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {
+            "storageAccountName": {
+              "type": "string"
+            },
+            "principalId": {
+              "type": "string"
+            },
+            "roleDefinitionGuid": {
+              "type": "string"
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[format('Microsoft.Storage/storageAccounts/{0}', parameters('storageAccountName'))]",
+              "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), parameters('principalId'), parameters('roleDefinitionGuid'))]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', parameters('roleDefinitionGuid'))]",
+                "principalId": "[parameters('principalId')]",
+                "principalType": "ServicePrincipal",
+                "description": "Zero Networks Azure Connector: read logs from this storage account"
+              }
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Compute/virtualMachines', parameters('vmName'))]"
+      ]
+    },
+    {
+      "comments": "Downloads the connector package and runs install.ps1. The download link and token are passed only in protectedSettings, base64-encoded so the signed query string and any special characters survive the command line.",
+      "condition": "[and(not(empty(parameters('installationToken'))), not(empty(parameters('packageDownloadUrl'))))]",
+      "type": "Microsoft.Compute/virtualMachines/extensions",
+      "apiVersion": "2024-11-01",
+      "name": "[format('{0}/{1}', parameters('vmName'), 'InstallZeroAzureConnector')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "publisher": "Microsoft.Compute",
+        "type": "CustomScriptExtension",
+        "typeHandlerVersion": "1.10",
+        "autoUpgradeMinorVersion": true,
+        "settings": {},
+        "protectedSettings": {
+          "commandToExecute": "[concat('powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command \"iex ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(''', base64(concat('$DownloadUrlBase64 = ''', base64(parameters('packageDownloadUrl')), '''', variables('nl'), '$TokenBase64 = ''', base64(parameters('installationToken')), '''', variables('nl'), variables('installScriptBody'))), ''')))\"')]"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Compute/virtualMachines', parameters('vmName'))]"
+      ],
+      "tags": "[parameters('tags')]"
+    }
+  ],
+  "outputs": {
+    "vmName": {
+      "type": "string",
+      "value": "[parameters('vmName')]"
+    },
+    "managedIdentityPrincipalId": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Compute/virtualMachines', parameters('vmName')), '2024-11-01', 'full').identity.principalId]"
+    },
+    "privateIpAddress": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Network/networkInterfaces', variables('nicName')), '2024-07-01').ipConfigurations[0].properties.privateIPAddress]"
+    },
+    "natGatewayPublicIp": {
+      "type": "string",
+      "value": "[if(variables('createNatGateway'), reference(resourceId('Microsoft.Network/publicIPAddresses', variables('natPublicIpName')), '2024-07-01').ipAddress, '')]"
+    }
+  }
+}

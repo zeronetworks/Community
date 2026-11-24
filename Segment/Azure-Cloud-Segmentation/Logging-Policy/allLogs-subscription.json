@@ -1,0 +1,234 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "description": "Assigns the built-in initiative 'Enable allLogs category group resource logging for supported resources to storage' (b6b86da9-e527-49de-ac59-6af0a9db10b8) at the target subscription for one region, with a system-assigned identity and the Log Analytics Contributor role the member definitions declare."
+  },
+  "parameters": {
+    "storageAccountId": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the log storage account the logs are written to. Example: /subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.Storage/storageAccounts/znccweu"
+      }
+    },
+    "resourceLocation": {
+      "type": "string",
+      "metadata": {
+        "description": "Region of the resources to cover. Must be the region of the log storage account. Assign once per region.",
+        "strongType": "location"
+      }
+    },
+    "resourceTypeList": {
+      "type": "array",
+      "defaultValue": [
+        "microsoft.dbformysql/flexibleservers",
+        "microsoft.dbforpostgresql/flexibleservers",
+        "microsoft.keyvault/vaults",
+        "microsoft.eventhub/namespaces",
+        "microsoft.servicebus/namespaces"
+      ],
+      "metadata": {
+        "description": "Resource types to enable allLogs logging for, as lowercase type names from the initiative's allowed list. Defaults to the types the Zero Networks Azure Connector reads."
+      }
+    },
+    "diagnosticSettingName": {
+      "type": "string",
+      "defaultValue": "setByPolicy-Storage",
+      "metadata": {
+        "description": "Name of the diagnostic setting the policy creates on each resource."
+      }
+    },
+    "effect": {
+      "type": "string",
+      "defaultValue": "DeployIfNotExists",
+      "allowedValues": [
+        "DeployIfNotExists",
+        "AuditIfNotExists",
+        "Disabled"
+      ],
+      "metadata": {
+        "description": "Policy effect. DeployIfNotExists creates the diagnostic settings; AuditIfNotExists only reports."
+      }
+    },
+    "assignmentName": {
+      "type": "string",
+      "defaultValue": "",
+      "maxLength": 64,
+      "metadata": {
+        "description": "Policy assignment name. Leave empty to use zn-logs-<resourceLocation>."
+      }
+    },
+    "grantRoleOnStorageAccount": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Also grant the assignment's managed identity Log Analytics Contributor on the log storage account. Needed when the storage account is outside the assignment scope."
+      }
+    },
+    "createRemediation": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Create a remediation task per resource type, with compliance re-evaluation, so existing resources in resourceLocation get the diagnostic setting."
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[deployment().location]",
+      "metadata": {
+        "description": "Region that holds the policy assignment's managed identity metadata. Defaults to the deployment region."
+      }
+    }
+  },
+  "variables": {
+    "assignmentName": "[if(empty(parameters('assignmentName')), take(format('zn-logs-{0}', parameters('resourceLocation')), 64), parameters('assignmentName'))]",
+    "policySetDefinitionId": "[tenantResourceId('Microsoft.Authorization/policySetDefinitions', 'b6b86da9-e527-49de-ac59-6af0a9db10b8')]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Authorization/policyAssignments",
+      "apiVersion": "2025-03-01",
+      "name": "[variables('assignmentName')]",
+      "location": "[parameters('location')]",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "displayName": "[format('Zero Networks Azure Connector: allLogs to storage ({0})', parameters('resourceLocation'))]",
+        "description": "Enable allLogs category group resource logging to the Zero Networks Azure Connector log storage account.",
+        "policyDefinitionId": "[variables('policySetDefinitionId')]",
+        "parameters": {
+          "storageAccount": {
+            "value": "[parameters('storageAccountId')]"
+          },
+          "resourceLocation": {
+            "value": "[parameters('resourceLocation')]"
+          },
+          "resourceTypeList": {
+            "value": "[parameters('resourceTypeList')]"
+          },
+          "diagnosticSettingName": {
+            "value": "[parameters('diagnosticSettingName')]"
+          },
+          "effect": {
+            "value": "[parameters('effect')]"
+          }
+        }
+      }
+    },
+    {
+      "comments": "Log Analytics Contributor (the role the policy definitions declare) for the assignment's identity at the assignment scope.",
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "name": "[guid(subscription().id, variables('assignmentName'), '92aaf0da-9dab-42b6-94a3-d43ce8d16293')]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '92aaf0da-9dab-42b6-94a3-d43ce8d16293')]",
+        "principalId": "[reference(subscriptionResourceId('Microsoft.Authorization/policyAssignments', variables('assignmentName')), '2025-03-01', 'full').identity.principalId]",
+        "principalType": "ServicePrincipal",
+        "description": "Zero Networks Azure Connector logging policy remediation"
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Authorization/policyAssignments', variables('assignmentName'))]"
+      ]
+    },
+    {
+      "comments": "Same role on the log storage account, deployed into the account's own subscription and resource group.",
+      "condition": "[parameters('grantRoleOnStorageAccount')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[take(format('{0}-storage-role', variables('assignmentName')), 64)]",
+      "subscriptionId": "[split(parameters('storageAccountId'), '/')[2]]",
+      "resourceGroup": "[split(parameters('storageAccountId'), '/')[4]]",
+      "properties": {
+        "mode": "Incremental",
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "parameters": {
+          "storageAccountName": {
+            "value": "[last(split(parameters('storageAccountId'), '/'))]"
+          },
+          "principalId": {
+            "value": "[reference(subscriptionResourceId('Microsoft.Authorization/policyAssignments', variables('assignmentName')), '2025-03-01', 'full').identity.principalId]"
+          },
+          "roleDefinitionGuid": {
+            "value": "92aaf0da-9dab-42b6-94a3-d43ce8d16293"
+          },
+          "roleDescription": {
+            "value": "Zero Networks Azure Connector logging policy remediation"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {
+            "storageAccountName": {
+              "type": "string"
+            },
+            "principalId": {
+              "type": "string"
+            },
+            "roleDefinitionGuid": {
+              "type": "string"
+            },
+            "roleDescription": {
+              "type": "string"
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[format('Microsoft.Storage/storageAccounts/{0}', parameters('storageAccountName'))]",
+              "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), parameters('principalId'), parameters('roleDefinitionGuid'))]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', parameters('roleDefinitionGuid'))]",
+                "principalId": "[parameters('principalId')]",
+                "principalType": "ServicePrincipal",
+                "description": "[parameters('roleDescription')]"
+              }
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Authorization/policyAssignments', variables('assignmentName'))]"
+      ]
+    },
+    {
+      "comments": "One remediation task per selected resource type. Reference IDs in the initiative are the type name without 'microsoft.' and with '/' replaced by '-'.",
+      "condition": "[and(parameters('createRemediation'), equals(parameters('effect'), 'DeployIfNotExists'))]",
+      "type": "Microsoft.PolicyInsights/remediations",
+      "apiVersion": "2024-10-01",
+      "name": "[format('{0}-{1}', variables('assignmentName'), replace(replace(toLower(parameters('resourceTypeList')[copyIndex()]), 'microsoft.', ''), '/', '-'))]",
+      "copy": {
+        "name": "remediations",
+        "count": "[length(parameters('resourceTypeList'))]"
+      },
+      "properties": {
+        "policyAssignmentId": "[subscriptionResourceId('Microsoft.Authorization/policyAssignments', variables('assignmentName'))]",
+        "policyDefinitionReferenceId": "[replace(replace(toLower(parameters('resourceTypeList')[copyIndex()]), 'microsoft.', ''), '/', '-')]",
+        "resourceDiscoveryMode": "ReEvaluateCompliance",
+        "filters": {
+          "locations": [
+            "[parameters('resourceLocation')]"
+          ]
+        }
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Authorization/roleAssignments', guid(subscription().id, variables('assignmentName'), '92aaf0da-9dab-42b6-94a3-d43ce8d16293'))]",
+        "[take(format('{0}-storage-role', variables('assignmentName')), 64)]"
+      ]
+    }
+  ],
+  "outputs": {
+    "policyAssignmentId": {
+      "type": "string",
+      "value": "[subscriptionResourceId('Microsoft.Authorization/policyAssignments', variables('assignmentName'))]"
+    },
+    "principalId": {
+      "type": "string",
+      "value": "[reference(subscriptionResourceId('Microsoft.Authorization/policyAssignments', variables('assignmentName')), '2025-03-01', 'full').identity.principalId]"
+    }
+  }
+}
