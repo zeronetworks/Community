@@ -7,6 +7,7 @@ Standalone utility scripts that complement the Zero Networks platform but don't 
 | Script | Purpose |
 |---|---|
 | [Find-CommonGroupsForDestination.ps1](Find-CommonGroupsForDestination.ps1) | Find the AD groups shared by users that accessed a given destination, to help build identity-based segmentation rules. |
+| [audit-unmonitored-sources/](audit-unmonitored-sources/) | List the unmonitored sources that sent traffic to a destination asset or group, to decide what to onboard or which rules to write. |
 
 ---
 
