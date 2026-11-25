@@ -1,0 +1,6 @@
+.env
+reports/
+*.csv
+__pycache__/
+.pytest_cache/
+tests/
